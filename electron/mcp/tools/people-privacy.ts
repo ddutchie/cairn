@@ -7,6 +7,7 @@
  */
 import type Database from "better-sqlite3";
 import { agentHiddenNoteIds } from "../../db/people-queries";
+import { findLiveNoteByTitle } from "../../db/notes-queries";
 
 /**
  * Fields whose value names the item itself or the far end of a link (search
@@ -26,7 +27,7 @@ export function scrubAgentPrivate(db: Database.Database, result: unknown, args: 
   const hidden = agentHiddenNoteIds(db);
   if (hidden.size === 0) return result;
   // A read that names a hidden note (get_item, a graph neighbourhood around it) answers as if it didn't exist.
-  if (Object.values(args).some((v) => typeof v === "string" && hidden.has(v))) return { error: "Not found" };
+  if (namesHiddenNote(args, hidden)) return { error: "Not found" };
   if (isHiddenRef(result, hidden)) return { error: "Not found" };
   return scrub(result, hidden);
 }
@@ -44,7 +45,33 @@ function scrub(v: unknown, hidden: Set<string>): unknown {
   const out: Record<string, unknown> = {};
   for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
     if (typeof val === "string" && hidden.has(val)) continue;
+    // A single nested object that is (or points at) a hidden note goes whole, not just its id key.
+    if (val && typeof val === "object" && !Array.isArray(val) && isHiddenRef(val, hidden)) continue;
     out[k] = scrub(val, hidden);
   }
   return out;
+}
+
+/** True when any argument (a string, or strings inside arrays) is a hidden note's id. */
+function namesHiddenNote(args: unknown, hidden: Set<string>): boolean {
+  if (typeof args === "string") return hidden.has(args);
+  if (Array.isArray(args)) return args.some((v) => namesHiddenNote(v, hidden));
+  if (args && typeof args === "object") return Object.values(args as Record<string, unknown>).some((v) => namesHiddenNote(v, hidden));
+  return false;
+}
+
+/**
+ * Guard for agent WRITES: a call naming a hidden note (by id, or by the title
+ * `ensure_note` would match) is refused before anything runs, so the model can
+ * neither edit a persona note nor learn its id through a write result.
+ */
+export function refusesHiddenWrite(db: Database.Database, name: string, args: Record<string, unknown>): { error: string } | null {
+  const hidden = agentHiddenNoteIds(db);
+  if (hidden.size === 0) return null;
+  if (namesHiddenNote(args, hidden)) return { error: "Not found" };
+  if (name === "ensure_note" && typeof args.projectId === "string" && typeof args.title === "string") {
+    const existing = findLiveNoteByTitle(db, args.projectId, args.title);
+    if (existing && hidden.has(existing.id)) return { error: `A note titled "${args.title}" can't be used here. Pick another title.` };
+  }
+  return null;
 }

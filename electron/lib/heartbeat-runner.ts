@@ -37,6 +37,7 @@ import {
 } from "../db/automation-queries";
 import { isReadTool, isExternalTool, standingRuleTarget, standingRuleCoversTool, recordStandingAllowance } from "./automation-approval";
 import { getExternalToolDefs, checkRequirements, externalToolLabel, todayConnectorFacts } from "./external-tools";
+import { PEOPLE_READ_ACTIONS } from "../../shared/agent/tool-risk";
 import { createSessionEventFold } from "../../shared/agent/session-event-fold";
 import {
   automationFolderDir,
@@ -166,7 +167,7 @@ export function listPendingAutomationApprovals(runId: string): Array<{ callId: s
  * identifier (path/note/card/title) — args are not carried through the seam.
  */
 function shouldAutoAllowAutomationTool(automation: Automation, name: string, args: Record<string, unknown>, connectorTools: ReadonlySet<string>): boolean {
-  if (isReadTool(name)) return true;
+  if (isReadTool(name) || (name === "people" && PEOPLE_READ_ACTIONS.has(String(args.action)))) return true;
   if (name === RUN_SCRIPT_TOOL_NAME) return false;
   const target = standingRuleTarget(name, args);
   if (automation.standingRules.some((r) => standingRuleCoversTool(r.tool, name, args) && (r.target === undefined || r.target === target))) return true;

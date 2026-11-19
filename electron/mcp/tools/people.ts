@@ -12,10 +12,9 @@
  */
 import type Database from "better-sqlite3";
 import {
-  addAttendee, addEdge, addMention, createPerson, getPerson, getRelations, isPeopleEnabled, listOwnedCardIds,
+  addAttendee, addEdge, listAttendees, updateMeeting, addMention, createPerson, getPerson, getRelations, isPeopleEnabled, listOwnedCardIds,
   listPeople, listPersonMeetings, listPersonMentionNoteIds, listMeetingNoteIds, removeAttendee, removeEdge,
   removeMention, setCardOwner, updatePerson,
-  attendeeIdsFromSource,
 } from "../../db/people-queries";
 import { captureNoteMeeting, resolvePerson } from "../../db/people-capture";
 import { refreshMeetingFrontmatter } from "../../people-files";
@@ -326,19 +325,31 @@ export function set_note_attendees(db: Db, workspacePath: string, args: Args): u
   // Only a date: set it on the note's meeting (a note without attendees doesn't become one).
   if (!values && !note.meetingId) return { meeting: null };
   try {
+    const name = (id: string) => getPerson(db, id)?.name ?? id;
+    if (!values && note.meetingId) {
+      // Date only: move the meeting and leave attendance exactly as it is (re-capturing
+      // would confirm suggestions and drop attendees who are now dismissed or archived).
+      if (date) updateMeeting(db, note.meetingId, { startsAt: date });
+      refreshMeetingFrontmatter(db, workspacePath, [noteId]);
+      const current = listAttendees(db, note.meetingId);
+      const suggested = current.filter((a) => a.status === "suggested").map((a) => a.personId);
+      return {
+        meeting: {
+          id: note.meetingId,
+          attendees: current.filter((a) => a.status === "confirmed").map((a) => name(a.personId)),
+          ...(suggested.length ? { needsConfirming: suggested.map((id) => `${name(id)} (${id})`) } : {}),
+        },
+      };
+    }
     let attendees: string[] = [];
     let personIds: string[] = [];
     if (values) {
       const isPerson = db.prepare("SELECT 1 FROM people WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL");
       personIds = values.filter((v) => isPerson.get(v, note.ws));
       attendees = values.filter((v) => !personIds.includes(v));
-    } else {
-      // Date only: keep the declared attendees as they are.
-      personIds = note.meetingId ? attendeeIdsFromSource(db, note.meetingId, "declared") : [];
     }
     const r = captureNoteMeeting(db, { noteId, attendees, personIds, date, source: "declared", provenance: "explicit" });
     refreshMeetingFrontmatter(db, workspacePath, [noteId]);
-    const name = (id: string) => getPerson(db, id)?.name ?? id;
     return {
       meeting: {
         id: r.meetingId,

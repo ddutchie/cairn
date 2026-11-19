@@ -13,6 +13,7 @@ import { prepareAttachments, type Attachment } from "../../agent/attachments";
 import { updateCodingSession } from "../../db/sessions-queries";
 import type { Profile } from "../../agent/loop";
 import { buildToolset, skillCatalog } from "../../agent/tools/index";
+import { isPeopleEnabled } from "../../db/people-queries";
 import { createHooks } from "../../agent/hooks";
 import { getEngineHost, getJobRegistry, getLsp, getTerminals } from "./host";
 import { createHostStore, getSandboxMode, isScheduleEnabled } from "../../agent/host-store";
@@ -155,6 +156,7 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
     cairn: role === "automation-dev" ? undefined : {
       exclude: chat ? new Set<string>(CHAT_EXCLUDED_TOOLS) : undefined,
       getDb: () => a.ctx.db,
+      people: (st.people ??= isPeopleEnabled(a.ctx.db)),
       req: { message: a.prompt, threadId: a.sessionId, projectId: a.projectId, workspaceId: a.workspaceId, config: { baseUrl: a.llmConfig.baseUrl, model: a.llmConfig.model, apiKey: a.llmConfig.apiKey } },
       workspacePath: a.ctx.workspacePath,
       llmConfig: { baseUrl: a.llmConfig.baseUrl, model: a.llmConfig.model, apiKey: a.llmConfig.apiKey } as never,

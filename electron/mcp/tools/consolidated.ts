@@ -20,7 +20,7 @@ import type Database from "better-sqlite3";
 import { isPeopleEnabled } from "../../db/people-queries";
 import { isCairnReadTool } from "../../../shared/agent/tool-names";
 import { PEOPLE_READ_ACTIONS } from "../../../shared/agent/tool-risk";
-import { scrubAgentPrivate } from "./people-privacy";
+import { refusesHiddenWrite, scrubAgentPrivate } from "./people-privacy";
 
 type Args = Record<string, any>;
 /** Run one internal (per-operation) handler by name. */
@@ -227,6 +227,10 @@ export async function runConsolidatedTool(
   call: HandlerCall,
   opts: ConsolidatedOptions,
 ): Promise<unknown> {
+  if (!isReadCall(name, args)) {
+    const refused = refusesHiddenWrite(db, name, args);
+    if (refused) return refused;
+  }
   const result = await runTool(db, name, args, call, opts);
   return isReadCall(name, args) ? scrubAgentPrivate(db, result, args) : result;
 }
@@ -240,11 +244,12 @@ async function runTool(
 ): Promise<unknown> {
   switch (name) {
     case "people": {
-      let workspaceId: string | undefined;
-      if (typeof args.personId === "string" && args.personId) {
-        workspaceId = (db.prepare("SELECT workspace_id AS ws FROM people WHERE id = ?").get(args.personId) as { ws: string } | undefined)?.ws;
+      // The caller's workspace decides; a person id from another workspace is then "not found".
+      // Only the MCP surface, which has no active workspace, takes it from the person.
+      let workspaceId: string | undefined = resolveWorkspaceId(db, opts, { nodeId: typeof args.noteId === "string" ? args.noteId : undefined });
+      if (!opts.activeWorkspaceId && typeof args.personId === "string" && args.personId) {
+        workspaceId = (db.prepare("SELECT workspace_id AS ws FROM people WHERE id = ?").get(args.personId) as { ws: string } | undefined)?.ws ?? workspaceId;
       }
-      workspaceId ??= resolveWorkspaceId(db, opts, { nodeId: typeof args.noteId === "string" ? args.noteId : undefined });
       return call("people", { ...args, workspaceId });
     }
 

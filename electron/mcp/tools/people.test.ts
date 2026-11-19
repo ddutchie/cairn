@@ -17,6 +17,7 @@ import {
 } from "../../db/people-queries";
 import { findNoteFilePath } from "../../host-shared/notes-io";
 import { executeTool } from "./index";
+import { runConsolidatedTool } from "./consolidated";
 import { TOOL_SCHEMAS } from "../../lib/tool-schemas";
 import { isCairnReadTool } from "../../../shared/agent/tool-names";
 
@@ -216,5 +217,66 @@ describe("private persona notes", () => {
     expect(q.people.map((p: R) => p.name)).toEqual(["Ana Ruiz"]);
     expect(q.people[0].personaNoteId).toBeUndefined();
     expect(listPeople(db, "ws")[0].personaNoteId).toBe("n-private-ana");
+  });
+});
+
+describe("review fixes (W3 self-review)", () => {
+  it("a date-only update keeps suggestions suggested and doesn't drop a dismissed attendee", async () => {
+    person("Chris");
+    person("Chris");
+    const first = await run("update_notes", { noteIds: ["n1"], attendees: ["Chris"] });
+    expect(first.meeting.needsConfirming).toHaveLength(2);
+    await run("update_notes", { noteIds: ["n1"], date: "2026-11-20" });
+    const rows = listAttendees(db, meetingOf("n1")!);
+    expect(rows.map((a) => a.status)).toEqual(["suggested", "suggested"]);
+    // A declared attendee who is dismissed afterwards stays on the meeting through a date change.
+    const ana = person("Ana");
+    await run("update_notes", { noteIds: ["n1"], attendees: ["Ana"] });
+    updatePerson(db, ana.id, { status: "dismissed" });
+    await run("update_notes", { noteIds: ["n1"], date: "2026-11-21" });
+    expect(db.prepare("SELECT 1 FROM meeting_attendees WHERE meeting_id = ? AND person_id = ? AND deleted_at IS NULL").get(meetingOf("n1"), ana.id)).toBeTruthy();
+  });
+
+  describe("writes can't reach a hidden persona note", () => {
+    beforeEach(() => {
+      createNote(db, { id: "n-private-ana", projectId: "p", workspaceId: "ws", title: "Ana Ruiz (private)", content: "Career notes", isPinned: true });
+      const ana = person("Ana Ruiz", { personaNoteId: "n-private-ana" });
+      updatePerson(db, ana.id, { agentPrivate: true });
+    });
+    const body = () => (db.prepare("SELECT content FROM notes WHERE id = 'n-private-ana'").get() as { content: string }).content;
+
+    it("ensure_note by the persona's title is refused, even with overwrite", async () => {
+      const r = await run("ensure_note", { projectId: "p", title: "Ana Ruiz (private)", content: "REWRITTEN", overwrite: true });
+      expect(r.error).toBeTruthy();
+      expect(JSON.stringify(r)).not.toContain("n-private-ana");
+      expect(body()).toBe("Career notes");
+    });
+
+    it("edit_note and update_notes naming its id are refused", async () => {
+      expect((await run("edit_note", { noteId: "n-private-ana", newString: "more" })).error).toBe("Not found");
+      expect((await run("update_notes", { noteIds: ["n1", "n-private-ana"], title: undefined, folder: "x" })).error).toBe("Not found");
+      expect(body()).toBe("Career notes");
+    });
+  });
+
+  it("on chat the caller's workspace decides, so another workspace's person id is not found", async () => {
+    createWorkspace(db, { id: "ws2", name: "Other" });
+    const other = createPerson(db, { workspaceId: "ws2", name: "Zed" });
+    const seen: unknown[] = [];
+    await runConsolidatedTool(db, "people", { action: "get", personId: other.id }, async (_n, a) => { seen.push(a.workspaceId); return {}; }, { surface: "chat", activeWorkspaceId: "ws" });
+    expect(seen).toEqual(["ws"]);
+    // On MCP (no active workspace) the person's own workspace is used, as before.
+    await runConsolidatedTool(db, "people", { action: "get", personId: other.id }, async (_n, a) => { seen.push(a.workspaceId); return {}; }, { surface: "mcp" });
+    expect(seen).toEqual(["ws", "ws2"]);
+  });
+
+  it("a hidden note nested as a single object is removed whole", async () => {
+    createNote(db, { id: "n-private-ana", projectId: "p", workspaceId: "ws", title: "Ana Ruiz (private)", content: "Career notes SECRETBODY" });
+    updatePerson(db, person("Ana Ruiz", { personaNoteId: "n-private-ana" }).id, { agentPrivate: true });
+    const { scrubAgentPrivate } = await import("./people-privacy");
+    const out = scrubAgentPrivate(db, { ok: 1, note: { id: "n-private-ana", title: "Ana Ruiz (private)", content: "SECRETBODY" }, other: { id: "n1", title: "Weekly sync" } }) as R;
+    expect(JSON.stringify(out)).not.toContain("SECRETBODY");
+    expect(out.note).toBeUndefined();
+    expect(out.other.title).toBe("Weekly sync");
   });
 });
