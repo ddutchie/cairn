@@ -7,7 +7,7 @@
  * docs/plans/people-layer.md); the renderer gates the view on the flag.
  */
 
-import { registerContractHandle } from "./registry";
+import { registerContractHandle, broadcastEvent } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as pq from "../db/people-queries";
 import * as pv from "../db/people-view-queries";
@@ -17,6 +17,8 @@ export function registerPeopleHandlers(ctx: DbContext): void {
   registerContractHandle("people:flag:set", (_e, { on }) =>
     handle(() => {
       pq.setPeopleEnabled(ctx.db, on === true);
+      // Other windows re-read the flag on db:changed (see runChangeFeedRefresh).
+      broadcastEvent("db:changed", null);
       return pq.isPeopleEnabled(ctx.db);
     }),
   );

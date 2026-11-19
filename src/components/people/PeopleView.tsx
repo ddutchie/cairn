@@ -10,7 +10,7 @@
  * row (W6/W4), and the first-use hint that offers to turn the view on.
  */
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Lock, Plus, Search, Users, X } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
@@ -79,13 +79,19 @@ function CreatePersonForm({ onDone }: { onDone: (id: string | null) => void }) {
   const createPerson = useCairnStore((s) => s.createPerson);
   const [name, setName] = useState("");
   const [rel, setRel] = useState<RelationshipType | "none">("none");
+  const inFlight = useRef(false);
   const submit = async () => {
-    if (!name.trim()) return;
-    const created = await createPerson({
-      name,
-      relationship: rel === "none" ? [] : [{ type: rel, provenance: "explicit" }],
-    });
-    onDone(created?.id ?? null);
+    if (inFlight.current || !name.trim()) return;
+    inFlight.current = true;
+    try {
+      const created = await createPerson({
+        name,
+        relationship: rel === "none" ? [] : [{ type: rel, provenance: "explicit" }],
+      });
+      onDone(created?.id ?? null);
+    } finally {
+      inFlight.current = false;
+    }
   };
   return (
     <form

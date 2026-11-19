@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 import { requestNoteFind } from "@/lib/note-find";
 import { useHiddenPersonaIds, withoutPersonaNotes } from "@/lib/persona-notes";
-import { onChangeFeed } from "@/store/change-feed";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -99,11 +98,9 @@ export function NotesView() {
     loadPersonaNoteIds:      s.loadPersonaNoteIds,
   })));
   const hiddenPersona = useHiddenPersonaIds();
-  // Keep the persona-note set fresh (people sync in from other devices and agents).
+  // Refresh the persona-note set on open (the store keeps it current after that).
   useEffect(() => {
-    if (!peopleEnabled) return;
-    void loadPersonaNoteIds();
-    return onChangeFeed(() => { void loadPersonaNoteIds(); });
+    if (peopleEnabled) void loadPersonaNoteIds();
   }, [peopleEnabled, activeWorkspaceId, loadPersonaNoteIds]);
   const aiEnabled = aiConfig.aiEnabled ?? true;
 
@@ -333,9 +330,13 @@ export function NotesView() {
   // Merging the two previous competing effects eliminates the race where both
   // could fire in the same render cycle and produce two setState calls.
   const prevNoteIdsRef = useRef<string[]>(notes.map((n) => n.id));
+  const prevHiddenRef = useRef(hiddenPersona);
   useEffect(() => {
     const prevIds = prevNoteIdsRef.current;
-    if (notes.length > prevIds.length) {
+    // Showing/hiding persona notes grows or shrinks the list without anything being created.
+    const visibilityChanged = prevHiddenRef.current !== hiddenPersona;
+    prevHiddenRef.current = hiddenPersona;
+    if (notes.length > prevIds.length && !visibilityChanged) {
       // A new note was added — select the id that wasn't there before, rather
       // than assuming it sorted to index 0 (pinned notes can sort ahead of it).
       const prevSet = new Set(prevIds);
@@ -346,7 +347,7 @@ export function NotesView() {
       setActiveNoteId(notes[0].id);
     }
     prevNoteIdsRef.current = notes.map((n) => n.id);
-  }, [notes, activeNoteId]);
+  }, [notes, activeNoteId, hiddenPersona]);
 
   function handleCreateNote(inFolder = "") {
     if (!activeProjectId) return;

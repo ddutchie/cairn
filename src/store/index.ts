@@ -244,7 +244,12 @@ async function runChangeFeedRefresh(
   }
   if (!cs || cs.reset) return fullRefresh();
   setChangeFeedCursor(cs.feedId, cs.head);
+  // The People flag lives in settings, outside the change feed: re-read it on
+  // every event so a flip in another window lands here too.
+  void get().fetchPeopleFlag();
   if (cs.touched.length === 0) return;
+  // Persona notes are hidden from Notes by id; keep the set current whichever view is open.
+  if (get().peopleEnabled) void get().loadPersonaNoteIds();
 
   // A change this window didn't make (MCP, AI, sync, another window, file
   // watcher) invalidates the undo stack — same rule as the full refresh, but no

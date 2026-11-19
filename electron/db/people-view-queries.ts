@@ -20,18 +20,27 @@ interface MeetingDates { lastMetAt?: string; nextMeetingAt?: string }
 
 /** Last and next confirmed meeting per person in a workspace, relative to `now`. */
 function meetingDates(db: Db, workspaceId: string, now: string): Map<string, MeetingDates> {
+  // Compared by instant in JS: `startsAt` is stored as given, so it may carry
+  // an offset or fractional seconds that text ordering gets wrong.
   const rows = db.prepare(`
-    SELECT a.person_id AS personId,
-      MAX(CASE WHEN m.starts_at <= ? THEN m.starts_at END) AS lastMetAt,
-      MIN(CASE WHEN m.starts_at > ? THEN m.starts_at END) AS nextMeetingAt
+    SELECT a.person_id AS personId, m.starts_at AS startsAt
     FROM meeting_attendees a
     JOIN meetings m ON m.id = a.meeting_id AND m.deleted_at IS NULL
     WHERE m.workspace_id = ? AND a.deleted_at IS NULL AND a.status = 'confirmed'
-    GROUP BY a.person_id
-  `).all(now, now, workspaceId) as { personId: string; lastMetAt: string | null; nextMeetingAt: string | null }[];
-  return new Map(rows.map((r) => [r.personId, {
-    ...(r.lastMetAt ? { lastMetAt: r.lastMetAt } : {}),
-    ...(r.nextMeetingAt ? { nextMeetingAt: r.nextMeetingAt } : {}),
+  `).all(workspaceId) as { personId: string; startsAt: string }[];
+  const nowMs = Date.parse(now);
+  const best = new Map<string, { last?: { ms: number; at: string }; next?: { ms: number; at: string } }>();
+  for (const r of rows) {
+    const ms = Date.parse(r.startsAt);
+    if (Number.isNaN(ms)) continue;
+    const cur = best.get(r.personId) ?? {};
+    if (ms <= nowMs) { if (!cur.last || ms > cur.last.ms) cur.last = { ms, at: r.startsAt }; }
+    else if (!cur.next || ms < cur.next.ms) cur.next = { ms, at: r.startsAt };
+    best.set(r.personId, cur);
+  }
+  return new Map([...best].map(([id, v]) => [id, {
+    ...(v.last ? { lastMetAt: v.last.at } : {}),
+    ...(v.next ? { nextMeetingAt: v.next.at } : {}),
   }]));
 }
 
@@ -101,7 +110,8 @@ export function getPersonTimeline(db: Db, personId: string, limit = 100): Person
   `).all(personId, limit) as { id: string; projectId: string; title: string; updatedAt: string; columnName: string; done: number }[];
   for (const c of cards) items.push({ kind: "card", at: c.updatedAt, card: { ...c, done: c.done === 1 } });
 
-  return items.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  const ms = (at: string) => { const t = Date.parse(at); return Number.isNaN(t) ? 0 : t; };
+  return items.sort((a, b) => ms(b.at) - ms(a.at));
 }
 
 function getPersonaNote(db: Db, noteId: string | undefined): PersonaNote | null {

@@ -54,6 +54,16 @@ describe("listPersonSummaries", () => {
     expect(bo.nextMeetingAt).toBeUndefined();
   });
 
+  it("compares meeting times by instant, not text, when offsets differ", () => {
+    const a = person("Ada");
+    // 13:00+02:00 is 11:00Z: already past at 12:00Z, though it sorts after "12:00" as text.
+    meeting("Offset 1:1", "2026-11-18T13:00:00+02:00", a.id);
+    meeting("Later", "2026-11-18T12:30:00.500Z", a.id);
+    const ada = listPersonSummaries(db, "ws1", {}, NOW).find((p) => p.id === a.id)!;
+    expect(ada.lastMetAt).toBe("2026-11-18T13:00:00+02:00");
+    expect(ada.nextMeetingAt).toBe("2026-11-18T12:30:00.500Z");
+  });
+
   it("honours the status filter", () => {
     person("Confirmed");
     person("Proposed", { status: "suggested" });

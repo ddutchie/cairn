@@ -371,7 +371,10 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
       activePreviewItem: null,
       activeContextPanel: null,
   lastContentView: "overview",
+      // People data is per workspace: clear it so the old one can't show.
+      people: [], peopleSuggestions: [], peopleLoaded: false, selectedPersonId: null, personPage: null, personaNoteIds: [],
     });
+    if (get().peopleEnabled) void get().loadPersonaNoteIds();
     // Pull this workspace's chat threads/messages from SQLite (the durable
     // store) so switching workspaces surfaces their conversations.
     get().loadChatFromDb?.(wsId);

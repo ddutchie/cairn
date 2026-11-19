@@ -10,7 +10,7 @@
  * (W4), and the attendee strip on meeting notes (W5 part 2).
  */
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { CalendarDays, CheckCircle2, FileText, Kanban, Lock, Pencil, X, AtSign } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
@@ -157,11 +157,21 @@ function PersonSettings({ page }: { page: PersonPageModel }) {
   const [edgeOther, setEdgeOther] = useState<string | null>(null);
 
   const has = (t: RelationshipType) => person.relationship.some((r) => r.type === t);
+  // Writes land after a round trip; build each change on the previous one so
+  // two quick clicks (Peer, then Mentor) both stick.
+  const pendingRel = useRef<{ list: typeof person.relationship; writes: number } | null>(null);
   const toggleRelationship = (t: RelationshipType) => {
-    const next = has(t)
-      ? person.relationship.filter((r) => r.type !== t)
-      : [...person.relationship, { type: t, provenance: "explicit" as const }];
-    void updatePerson(person.id, { relationship: next });
+    const base = pendingRel.current?.list ?? person.relationship;
+    const next = base.some((r) => r.type === t)
+      ? base.filter((r) => r.type !== t)
+      : [...base, { type: t, provenance: "explicit" as const }];
+    const pending = pendingRel.current ?? { list: next, writes: 0 };
+    pending.list = next;
+    pending.writes += 1;
+    pendingRel.current = pending;
+    void updatePerson(person.id, { relationship: next }).finally(() => {
+      if (pendingRel.current && --pendingRel.current.writes === 0) pendingRel.current = null;
+    });
   };
 
   const addEdge = () => {
@@ -364,16 +374,19 @@ function Timeline({ items }: { items: PersonTimelineItem[] }) {
 
 function Persona({ page }: { page: PersonPageModel }) {
   const reveal = useReveal();
-  const { updateNote, loadPersonPage } = useCairnStore(useShallow((s) => ({ updateNote: s.updateNote, loadPersonPage: s.loadPersonPage })));
+  const updateNote = useCairnStore((s) => s.updateNote);
   const { persona } = page;
   const [draft, setDraft] = useState<string | null>(null);
+  // Our own save, shown until the page model catches up (it is read from the
+  // database, which the note write reaches a moment later).
+  const [saved, setSaved] = useState<{ base: string; content: string } | null>(null);
+  const content = persona ? (saved && saved.base === persona.content ? saved.content : persona.content) : "";
 
   const save = () => {
     if (!persona || draft === null) return;
-    if (draft !== persona.content) {
+    if (draft !== content) {
       updateNote(persona.id, { content: draft });
-      // The page model carries its own copy of the note; reread it.
-      window.setTimeout(() => void loadPersonPage(page.person.id), 300);
+      setSaved({ base: persona.content, content: draft });
     }
     setDraft(null);
   };
@@ -386,7 +399,7 @@ function Persona({ page }: { page: PersonPageModel }) {
         action={persona ? (
           <div className="flex items-center gap-1">
             {draft === null ? (
-              <Button variant="ghost" size="xs" onClick={() => setDraft(persona.content)}>
+              <Button variant="ghost" size="xs" onClick={() => setDraft(content)}>
                 <Pencil size={11} /> Edit
               </Button>
             ) : (
@@ -413,8 +426,8 @@ function Persona({ page }: { page: PersonPageModel }) {
             )}
             placeholder="What they care about, how they like to work, how to help them grow"
           />
-        ) : persona.content.trim()
-          ? <NoteMarkdownPreview content={persona.content} inline className="text-sm" />
+        ) : content.trim()
+          ? <NoteMarkdownPreview content={content} inline className="text-sm" />
           : <p className="text-xs text-[var(--text-tertiary)]">The persona note is empty.</p>
       ) : (
         // Slot (W5 part 2): link or convert a note to this person's persona.
