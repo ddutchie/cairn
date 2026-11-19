@@ -1182,6 +1182,16 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
       ownedCardIds:   () => Promise.resolve([]),
       attendees: () => Promise.resolve([]),
       attendee:  { add: noop, remove: noop },
+      migration: {
+        inventory: () => Promise.resolve({
+          workspaceId: "", personas: [], meetings: [], owners: [], ambiguousShortNames: [],
+          counts: { notesScanned: 0, personaCandidates: 0, highConfidence: 0, meetingNotes: 0, ownedChecklistItems: 0, openOwnedChecklistItems: 0, archivedCandidates: 0, existingPeople: 0, collisions: 0, ambiguousNames: 0 },
+        }),
+        apply: () => Promise.resolve({
+          dryRun: true, applied: false, reason: "flag_off", personas: [], meetings: [], frontmatterNotes: [],
+          index: { mentionsBefore: 0, mentionsAfter: 0, ownedItemsBefore: 0, ownedItemsAfter: 0 },
+        }),
+      },
     },
     flow:      { get: () => Promise.resolve(flowData), node: { create: noop, update: noop, delete: noop, summarize: noop }, edge: { create: noop, delete: noop }, url: { fetch: () => Promise.resolve({ title: "", description: "" }) } },
     tag:       { list: () => Promise.resolve(snap.tags), create: noop, update: noop, delete: noop },

@@ -14,7 +14,7 @@
 import * as z from "zod";
 
 import { isCairnReadTool } from "../../shared/agent/tool-names";
-import { PEOPLE_TOOLS, PEOPLE_TOOL_ARGS, PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION } from "../../shared/agent/people-tools";
+import { PEOPLE_TOOLS, PEOPLE_TOOL_ARGS, PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION_DESKTOP } from "../../shared/agent/people-tools";
 
 // ── Shared field shapes ────────────────────────────────────────────────────────
 
@@ -226,9 +226,9 @@ export const TOOL_SCHEMAS = {
   // ── People ────────────────────────────────────────────────────────────────────
 
   people: {
-    description: PEOPLE_TOOL_DESCRIPTION,
+    description: PEOPLE_TOOL_DESCRIPTION_DESKTOP,
     schema: z.object({
-      action:       z.enum(["query", "get", "timeline", "relationships", "upsert", "link"]),
+      action:       z.enum(["query", "get", "timeline", "relationships", "inventory", "upsert", "link"]),
       personId:     sIdOpt.describe("get/timeline/relationships/upsert: the person (or pass name)"),
       name:         sStrOpt.describe("query: name filter; get/upsert: the person's name"),
       relationship: sStrOpt.describe("query: only people with this relationship to the user (e.g. direct_report, manager, peer, stakeholder, mentor)"),

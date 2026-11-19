@@ -27,3 +27,12 @@ export const PEOPLE_ARG_DESCRIPTIONS = {
 /** The `people` tool's description for the model. */
 export const PEOPLE_TOOL_DESCRIPTION =
   "People the user works with, their meetings and relationships. Reads: 'query' (by name, relationship or status; empty lists everyone), 'get' (one person: details, relationships, persona note id), 'timeline' (their meetings, mentions and owned tasks, newest first), 'relationships' (who manages/mentors/partners whom). Writes: 'upsert' (create or update a person) and 'link' (an edge between two people, an attendee on a meeting note, or a mention). Anything you infer rather than read stated goes in as status 'suggested' for the user to confirm.";
+
+/**
+ * Desktop adds the read-only `inventory` action (a scan of person and meeting notes
+ * for migration, which reads files); mobile has no such action, so it never says so.
+ */
+export const PEOPLE_TOOL_DESCRIPTION_DESKTOP = PEOPLE_TOOL_DESCRIPTION.replace(
+  "'relationships' (who manages/mentors/partners whom).",
+  "'relationships' (who manages/mentors/partners whom), 'inventory' (read-only scan of the person and meeting notes already in the workspace, for migrating them; the user applies it).",
+);

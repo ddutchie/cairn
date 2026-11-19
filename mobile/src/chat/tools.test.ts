@@ -188,8 +188,9 @@ describe("People layer: the flag decides what the model sees", () => {
     const mobile = toolByName(TOOLS, "people")!;
     expect(props(mobile).sort()).toEqual(Object.keys(desktop).sort());
     const action = (mobile.jsonSchema as { properties: { action: { enum: string[] } } }).properties.action.enum;
-    expect(action).toEqual(desktop.action.options);
-    expect(mobile.description).toBe(TOOL_SCHEMAS.people.description);
+    // `inventory` (the migration scan) reads files, so it is desktop-only; everything else matches.
+    expect(action).toEqual(desktop.action.options.filter((o) => o !== "inventory"));
+    expect(mobile.description).toBe(TOOL_SCHEMAS.people.description.replace(/, 'inventory' \([^)]*\)/, ""));
     // The arguments on other tools exist on both, with the same words.
     const desktopOff = toolSchemasFor({ people: false });
     for (const [tool, args] of Object.entries(PEOPLE_TOOL_ARGS)) {

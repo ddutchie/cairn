@@ -57,6 +57,29 @@ describe("flag off", () => {
   });
 });
 
+describe("people inventory", () => {
+  it("is a read: lists candidates compactly and writes nothing", async () => {
+    createNote(db, { id: "pa", projectId: "p", workspaceId: "ws", title: "Ana Ruiz", content: "Eng.", folder: "People" });
+    createNote(db, { id: "mt", projectId: "p", workspaceId: "ws", title: "Sync", content: "**Attendees:** Ana Ruiz, Zed Unknown\n" });
+    const before = JSON.stringify(db.prepare("SELECT * FROM people").all()) + JSON.stringify(db.prepare("SELECT id, meeting_id FROM notes").all());
+    const r = await run("people", { action: "inventory" });
+    expect(r.error).toBeUndefined();
+    expect(r.personas).toEqual([{ noteId: "pa", title: "Ana Ruiz", name: "Ana Ruiz", confidence: "medium", action: "create" }]);
+    expect(r.meetings).toEqual([{ noteId: "mt", title: "Sync", unresolved: ["Zed Unknown"] }]);
+    expect(JSON.stringify(db.prepare("SELECT * FROM people").all()) + JSON.stringify(db.prepare("SELECT id, meeting_id FROM notes").all())).toBe(before);
+  });
+
+  it("is refused while the flag is off, and a private person's note stays out of it", async () => {
+    createNote(db, { id: "pa", projectId: "p", workspaceId: "ws", title: "Ana Ruiz", content: "Eng.", folder: "People" });
+    const ana = person("Ana Ruiz", { personaNoteId: "pa" });
+    updatePerson(db, ana.id, { agentPrivate: true });
+    const r = await run("people", { action: "inventory" });
+    expect(JSON.stringify(r)).not.toContain("pa");
+    setPeopleEnabled(db, false);
+    expect((await run("people", { action: "inventory" })).error).toMatch(/not turned on/);
+  });
+});
+
 describe("people tool", () => {
   it("upsert creates, then merges aliases and emails into the same person", async () => {
     const a = await run("people", { action: "upsert", name: "Ana Ruiz", emails: ["ana@acme.io"], relationships: [{ type: "direct_report" }], cadence: "weekly" });

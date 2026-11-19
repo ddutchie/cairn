@@ -32,7 +32,7 @@
 
 import type Database from "better-sqlite3";
 import { parseWikilinks } from "../../shared/notes/wikilinks";
-import { foldName, parseAttendeeValue, parseBodyMeetingLines } from "../../shared/people/parse";
+import { foldName, parseAttendeeValue, parseBodyMeetingLines, withoutCode } from "../../shared/people/parse";
 import { ownedItemsIn } from "../../shared/people/action-items";
 import { parseClaims, serializeClaims } from "../../shared/people/claims";
 import { mentionRowId } from "../../shared/people/ids";
@@ -54,7 +54,13 @@ const ID_CHUNK = 500;
  * other ids are ignored). With no `noteIds`, every live note of the workspace.
  * Idempotent: running it twice on the same bodies changes nothing.
  */
-export function indexNotePeople(db: Db, workspaceId: string, noteIds?: readonly string[]): void {
+export function indexNotePeople(
+  db: Db,
+  workspaceId: string,
+  noteIds?: readonly string[],
+  /** `bodyMeetings: false` leaves the `**Attendees:**` pass out (the migration attaches meetings only for notes the user approved). */
+  opts: { bodyMeetings?: boolean } = {},
+): void {
   if (!isPeopleEnabled(db)) return;
   const notes = noteIds ? liveNotes(db, workspaceId, noteIds) : (db.prepare(
     "SELECT id, content FROM notes WHERE workspace_id = ? AND archived_at IS NULL AND deleted_at IS NULL",
@@ -81,6 +87,7 @@ export function indexNotePeople(db: Db, workspaceId: string, noteIds?: readonly 
 
   // Meeting capture runs per note in its own transaction (captureNoteMeeting
   // opens one) and may create people, so it goes last.
+  if (opts.bodyMeetings === false) return;
   for (const n of notes) {
     try {
       indexBodyMeeting(db, n.id, n.content ?? "", bodyCandidates);
@@ -158,17 +165,6 @@ function personaIndex(db: Db, workspaceId: string): PersonaIndex {
     set.add(r.id);
   }
   return { byTitle, byNote };
-}
-
-/** The body without fenced code blocks and inline code, where `[[x]]` is text, not a link. */
-function withoutCode(body: string): string {
-  let fence = false;
-  const kept: string[] = [];
-  for (const line of body.split(/\r?\n/)) {
-    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; continue; }
-    if (!fence) kept.push(line.replace(/`[^`\n]*`/g, ""));
-  }
-  return kept.join("\n");
 }
 
 /**
