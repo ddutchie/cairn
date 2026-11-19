@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { View, Text, ScrollView, StyleSheet, TextInput } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { Check, Circle, Lock } from "lucide-react-native";
 import { ICON_EDIT, ICON_PEOPLE } from "@/components/toolbar-icons";
 import { ScreenChrome } from "@/components/screen-chrome";
@@ -101,7 +101,7 @@ export function PersonScreen() {
             {page.relations.map((r) => (
               <PressableScale
                 key={r.edge.id}
-                onPress={() => router.push({ pathname: "/people/[id]", params: { id: r.otherId } })}
+                onPress={() => router.push({ pathname: "/people/[id]", params: { id: r.otherId } } as Href)}
                 accessibilityLabel={describeRelation(r)}
               >
                 <Text style={s.line}>{describeRelation(r)}</Text>

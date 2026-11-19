@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useRouter, type Href } from "expo-router";
 import {
   Button,
   HStack,
@@ -243,7 +243,7 @@ export function ProjectsTreeSidebar({
                   systemImage="person.2"
                   onPress={() => {
                     haptics.selection();
-                    router.push("/people");
+                    router.push("/people" as Href);
                   }}
                 />
               </Section>

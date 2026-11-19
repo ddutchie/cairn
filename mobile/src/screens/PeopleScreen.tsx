@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { View, Text, SectionList, RefreshControl, StyleSheet } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import { ScreenChrome } from "@/components/screen-chrome";
 import { PressableScale } from "@/components/PressableScale";
 import { SearchField } from "@/components/SearchField";
@@ -84,7 +84,7 @@ export function PeopleScreen() {
         renderItem={({ item, section }) => (
           <PressableScale
             style={s.row}
-            onPress={() => router.push({ pathname: "/people/[id]", params: { id: item.id } })}
+            onPress={() => router.push({ pathname: "/people/[id]", params: { id: item.id } } as Href)}
             accessibilityLabel={item.name}
           >
             <View style={s.body}>

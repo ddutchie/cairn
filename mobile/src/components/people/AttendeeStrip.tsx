@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { View, Text, ScrollView, StyleSheet, Alert } from "react-native";
 import { Check, X, Plus } from "lucide-react-native";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import { PressableScale } from "@/components/PressableScale";
 import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
@@ -71,7 +71,7 @@ export function AttendeeStrip({ noteId, addRequest }: { noteId: string; addReque
     refreshCandidates();
   };
 
-  const open = (a: StripAttendee) => router.push({ pathname: "/people/[id]", params: { id: a.personId } });
+  const open = (a: StripAttendee) => router.push({ pathname: "/people/[id]", params: { id: a.personId } } as Href);
 
   if (!strip.meetingId && !pickerOpen) return null;
 

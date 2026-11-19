@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Platform } from "react-native";
-import { Stack, useFocusEffect, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useRouter, type Href } from "expo-router";
 import { getActiveSource } from "@/db";
 import { switchSource } from "@/sync/controller";
 import { useSyncSources } from "@/sync/useSyncSources";
@@ -99,7 +99,7 @@ export function WorkspaceMenuItems({
         </Stack.Toolbar.Menu>
         {peopleOn ? (
           <Stack.Toolbar.Menu inline title="People">
-            <Stack.Toolbar.MenuAction icon={ICON_PEOPLE} onPress={() => router.push("/people")}>
+            <Stack.Toolbar.MenuAction icon={ICON_PEOPLE} onPress={() => router.push("/people" as Href)}>
               People
             </Stack.Toolbar.MenuAction>
           </Stack.Toolbar.Menu>
@@ -139,7 +139,7 @@ export function WorkspaceMenuItems({
           </Section>
           {peopleOn ? (
             <Section title="People">
-              <Button label="People" systemImage="person.2" onPress={() => router.push("/people")} />
+              <Button label="People" systemImage="person.2" onPress={() => router.push("/people" as Href)} />
             </Section>
           ) : null}
           {sync ? (
