@@ -243,6 +243,9 @@ function ForceGraphCanvasImpl({
   const didInitialFitRef = useRef(false);
   // Set once the user pans/zooms, so auto-fit stops fighting their navigation.
   const userInteractedRef = useRef(false);
+  // Pan/zoom gestures (and zoom transitions) in progress. While anything is
+  // moving, dashed edges are drawn solid (see draw).
+  const gesturesRef = useRef(0);
 
   // Mutable refs the render loop reads without re-instantiating the simulation
   const transformRef = useRef<d3.ZoomTransform>(d3.zoomIdentity);
@@ -422,11 +425,13 @@ function ForceGraphCanvasImpl({
         return;
       }
       tweenRef.current = null;
+      // Redraw at rest so dashed edges get their dashes back (see draw).
+      scheduleDraw();
       if (tw.endPending) finishLayout();
     };
     tweenRef.current = tw;
     tw.raf = requestAnimationFrame(tick);
-  }, [finishLayout]);
+  }, [finishLayout, scheduleDraw]);
 
   useEffect(() => {
     const client = createForceLayoutClient({
@@ -674,13 +679,27 @@ function ForceGraphCanvasImpl({
       sceneCacheRef.current = scene;
     }
 
+    // Dashed strokes are the costliest thing on the canvas: the rasteriser
+    // cuts every dashed edge into short segments on every frame, which made
+    // pan and zoom slow on graphs with ~1,000+ dashed edges. While the view is
+    // moving (a gesture, a zoom transition, or a layout easing in) they're
+    // drawn solid at half opacity, about the same ink, and get their dashes
+    // back on the frame after the motion stops.
+    const moving = gesturesRef.current > 0 || tweenRef.current != null;
     const dashPattern = [3 / t.k, 3 / t.k];
     for (const b of scene.edges) {
       ctx.strokeStyle = b.stroke;
       ctx.lineWidth = b.width / t.k;
-      ctx.setLineDash(b.dash ? dashPattern : []);
+      if (b.dash && moving) {
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 0.5;
+      } else {
+        ctx.setLineDash(b.dash ? dashPattern : []);
+        ctx.globalAlpha = 1;
+      }
       ctx.stroke(b.path);
     }
+    ctx.globalAlpha = 1;
     ctx.setLineDash([]);
     for (const f of scene.fills) {
       ctx.fillStyle = f.fill;
@@ -794,9 +813,15 @@ function ForceGraphCanvasImpl({
       .scaleExtent([0.2, 6])
       .on("zoom", (ev) => { transformRef.current = ev.transform; scheduleDraw(); })
       .on("start", (ev) => {
+        gesturesRef.current++;
         // A pointer/wheel-driven zoom means the user has taken control; stop
         // auto-fitting on subsequent simulation ticks.
         if (ev.sourceEvent) userInteractedRef.current = true;
+      })
+      .on("end", () => {
+        gesturesRef.current = Math.max(0, gesturesRef.current - 1);
+        // Redraw at rest so dashed edges get their dashes back.
+        if (gesturesRef.current === 0) scheduleDraw();
       });
     zoomRef.current = zoom;
     selection.call(zoom);
