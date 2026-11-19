@@ -14,8 +14,11 @@
  *     unassigned and never create stub people.
  *   - Body meeting lines: `**Attendees:**` / `**When:**` → the note's meeting
  *     (`captureNoteMeeting`, source `body_line`, provenance `convention`).
- *     Removing the lines removes the attendees they added, as removing the
- *     `attendees` frontmatter key does. Stub people that only a half-typed
+ *     The people it lists are SUGGESTED attendees, never applied silently, so
+ *     they stay out of meeting lists, the graph and the frontmatter until the
+ *     user confirms them. Someone the user removed or dismissed is not added
+ *     again while the line still lists them. Removing the lines removes the
+ *     attendees they added, as removing the `attendees` frontmatter key does. Stub people that only a half-typed
  *     line created ("Ch" on the way to "Chris") are tombstoned again once the
  *     line moves on and nothing else refers to them.
  *
@@ -27,8 +30,9 @@
 import type Database from "better-sqlite3";
 import { parseWikilinks } from "../../shared/notes/wikilinks";
 import { foldName, parseAttendeeValue, parseBodyMeetingLines, parseChecklist } from "../../shared/people/parse";
-import { actionItemLineKey } from "../../shared/people/ids";
-import { addMention, attendeeIdsFromSource, deletePerson, getMeeting, isPeopleEnabled, removeMention } from "./people-queries";
+import { parseClaims, serializeClaims } from "../../shared/people/claims";
+import { actionItemLineKey, mentionRowId } from "../../shared/people/ids";
+import { addMention, attendeeIdsFromSource, deletePerson, getMeeting, isPeopleEnabled } from "./people-queries";
 import { captureNoteMeeting, loadCandidates, resolveIn } from "./people-capture";
 
 type Db = Database.Database;
@@ -59,14 +63,51 @@ export function indexNotePeople(db: Db, workspaceId: string, noteIds?: readonly 
     const candidates = loadCandidates(db, workspaceId);
     for (const n of notes) {
       const body = n.content ?? "";
-      indexMentions(db, n.id, body, personaPeople);
-      indexActionItems(db, n.id, body, candidates);
+      // One bad note must not leave the rest of the batch unindexed.
+      try {
+        indexMentions(db, n.id, body, personaPeople);
+        indexActionItems(db, n.id, body, candidates);
+      } catch (err) {
+        console.error(`[people] couldn't index note ${n.id}:`, err);
+      }
     }
   })();
 
   // Meeting capture runs per note in its own transaction (captureNoteMeeting
   // opens one) and may create people, so it goes last.
-  for (const n of notes) indexBodyMeeting(db, n.id, n.content ?? "");
+  for (const n of notes) {
+    try {
+      indexBodyMeeting(db, n.id, n.content ?? "");
+    } catch (err) {
+      console.error(`[people] couldn't capture meeting lines of note ${n.id}:`, err);
+    }
+  }
+}
+
+/**
+ * Re-index these notes wherever they live (the file watcher and sync call this
+ * for notes that changed outside the app's save path). Groups by workspace.
+ * No-op while the flag is off; never throws.
+ */
+export function indexNotesPeople(db: Db, noteIds: readonly string[]): void {
+  try {
+    if (noteIds.length === 0 || !isPeopleEnabled(db)) return;
+    const byWorkspace = new Map<string, string[]>();
+    for (let i = 0; i < noteIds.length; i += ID_CHUNK) {
+      const chunk = noteIds.slice(i, i + ID_CHUNK);
+      const rows = db.prepare(
+        `SELECT id, workspace_id FROM notes WHERE deleted_at IS NULL AND id IN (${chunk.map(() => "?").join(",")})`,
+      ).all(...chunk) as { id: string; workspace_id: string }[];
+      for (const r of rows) {
+        const list = byWorkspace.get(r.workspace_id);
+        if (list) list.push(r.id);
+        else byWorkspace.set(r.workspace_id, [r.id]);
+      }
+    }
+    for (const [workspaceId, ids] of byWorkspace) indexNotePeople(db, workspaceId, ids);
+  } catch (err) {
+    console.error("[people] indexing failed:", err);
+  }
 }
 
 function liveNotes(db: Db, workspaceId: string, ids: readonly string[]): NoteRow[] {
@@ -113,28 +154,59 @@ function personaIndex(db: Db, workspaceId: string): PersonaIndex {
   return { byTitle, byNote };
 }
 
-/** People a body links to through `[[Persona note]]` (alias, heading and folder forms included). */
+/** The body without fenced code blocks and inline code, where `[[x]]` is text, not a link. */
+function withoutCode(body: string): string {
+  let fence = false;
+  const kept: string[] = [];
+  for (const line of body.split(/\r?\n/)) {
+    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; continue; }
+    if (!fence) kept.push(line.replace(/`[^`\n]*`/g, ""));
+  }
+  return kept.join("\n");
+}
+
+/**
+ * People a body links to through `[[Persona note]]`. A title two people share
+ * is ambiguous and links to neither (as in `resolveIn`).
+ */
 function mentionedPersonIds(body: string, index: PersonaIndex, noteId?: string): Set<string> {
   const out = new Set<string>();
   const own = noteId ? index.byNote.get(noteId) : undefined;
-  for (const link of parseWikilinks(body)) {
+  for (const link of parseWikilinks(withoutCode(body))) {
     const ref = parseAttendeeValue(link.raw);
     if (!ref?.name) continue;
-    for (const pid of index.byTitle.get(foldName(ref.name)) ?? []) {
-      if (!own?.has(pid)) out.add(pid);
-    }
+    const hits = index.byTitle.get(foldName(ref.name)) ?? [];
+    if (hits.length !== 1) continue;
+    if (!own?.has(hits[0])) out.add(hits[0]);
   }
   return out;
 }
+
+/**
+ * A mention row marks who tombstoned it by its source: this pass releases a
+ * mention (link gone) by setting `owner`, which nothing else writes yet; a
+ * tombstone that still says `wikilink` or `manual` was the user's removal and
+ * is not revived while the link stays.
+ */
+const RELEASED_SOURCE = "owner";
 
 function indexMentions(db: Db, noteId: string, body: string, index: PersonaIndex): void {
   const want = mentionedPersonIds(body, index, noteId);
   const had = db.prepare(
     "SELECT person_id FROM note_mentions WHERE note_id = ? AND source = 'wikilink' AND deleted_at IS NULL",
   ).all(noteId) as { person_id: string }[];
-  for (const { person_id } of had) if (!want.has(person_id)) removeMention(db, noteId, person_id);
-  // addMention leaves an existing live mention (and its source) as it is.
-  for (const pid of want) addMention(db, noteId, pid, "wikilink");
+  const release = db.prepare(
+    "UPDATE note_mentions SET deleted_at = ?, source = ?, updated_at = ? WHERE note_id = ? AND person_id = ? AND deleted_at IS NULL",
+  );
+  const now = new Date().toISOString();
+  for (const { person_id } of had) if (!want.has(person_id)) release.run(now, RELEASED_SOURCE, now, noteId, person_id);
+  const row = db.prepare("SELECT deleted_at, source FROM note_mentions WHERE id = ?");
+  for (const pid of want) {
+    const existing = row.get(mentionRowId(noteId, pid)) as { deleted_at: string | null; source: string } | undefined;
+    if (existing?.deleted_at && existing.source !== RELEASED_SOURCE) continue; // the user removed it
+    // addMention leaves an existing live mention (and its source) as it is.
+    addMention(db, noteId, pid, "wikilink");
+  }
 }
 
 // ── Action items ──────────────────────────────
@@ -162,20 +234,45 @@ function indexActionItems(db: Db, noteId: string, body: string, candidates: Retu
 
 function indexBodyMeeting(db: Db, noteId: string, body: string): void {
   const lines = parseBodyMeetingLines(body);
+  const current = db.prepare("SELECT meeting_id FROM notes WHERE id = ?").get(noteId) as { meeting_id: string | null } | undefined;
+  const meetingId = current?.meeting_id ?? null;
   if (!lines) {
-    const current = db.prepare("SELECT meeting_id FROM notes WHERE id = ?").get(noteId) as { meeting_id: string | null } | undefined;
-    const hadFromBody = current?.meeting_id ? attendeeIdsFromSource(db, current.meeting_id, "body_line").length > 0 : false;
-    if (!hadFromBody) return;
-    const r = captureNoteMeeting(db, { noteId, attendees: [], source: "body_line", provenance: "convention" });
-    pruneOrphanStubs(db, r.removed);
+    if (!meetingId) return;
+    if (attendeeIdsFromSource(db, meetingId, "body_line").length > 0) {
+      const r = captureNoteMeeting(db, { noteId, attendees: [], source: "body_line", provenance: "convention" });
+      pruneOrphanStubs(db, r.removed);
+    }
+    releaseBodyClaims(db, meetingId, new Set());
     return;
   }
   // A body date moves only a meeting this note made; a calendar meeting keeps its own time.
-  const current = db.prepare("SELECT meeting_id FROM notes WHERE id = ?").get(noteId) as { meeting_id: string | null } | undefined;
-  const meeting = current?.meeting_id ? getMeeting(db, current.meeting_id) : null;
+  const meeting = meetingId ? getMeeting(db, meetingId) : null;
   const date = !meeting || meeting.source === "note" ? lines.date : null;
-  const r = captureNoteMeeting(db, { noteId, attendees: lines.attendees, date, source: "body_line", provenance: "convention" });
+  const r = captureNoteMeeting(db, {
+    noteId, attendees: lines.attendees, date, source: "body_line", provenance: "convention",
+    status: "suggested", keepRemoved: true,
+  });
   pruneOrphanStubs(db, r.removed);
+  releaseBodyClaims(db, r.meetingId, new Set([...r.attendees, ...r.suggested, ...r.skipped]));
+}
+
+/**
+ * A person removed from the meeting by someone else keeps this source's claim
+ * on (that's how `keepRemoved` knows not to re-add them). Once the body no
+ * longer lists them, turn the claim off, so adding them to the line again later
+ * is a fresh request rather than a revival of the removal.
+ */
+function releaseBodyClaims(db: Db, meetingId: string, listed: ReadonlySet<string>): void {
+  const rows = db.prepare("SELECT id, person_id, sources FROM meeting_attendees WHERE meeting_id = ? AND deleted_at IS NOT NULL")
+    .all(meetingId) as { id: string; person_id: string; sources: string }[];
+  const now = new Date().toISOString();
+  for (const r of rows) {
+    if (listed.has(r.person_id)) continue;
+    const claims = parseClaims(r.sources);
+    if (claims.body_line?.on !== true) continue;
+    claims.body_line = { on: false, at: now };
+    db.prepare("UPDATE meeting_attendees SET sources = ?, updated_at = ? WHERE id = ?").run(serializeClaims(claims), now, r.id);
+  }
 }
 
 /**

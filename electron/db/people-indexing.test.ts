@@ -1,12 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type Database from "better-sqlite3";
 import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
 import { createNote, updateNote } from "./notes-queries";
 import {
-  addAttendee, addEdge, attendeeIdsFromSource, addMention, createMeeting, createPerson, getPerson, listAttendees, setNoteMeeting, setPeopleEnabled, updatePerson,
+  addAttendee, addEdge, attendeeIdsFromSource, removeAttendee, removeMention, addMention, createMeeting, createPerson, getPerson, listAttendees, setNoteMeeting, setPeopleEnabled, updatePerson,
 } from "./people-queries";
 import { computeAutoRelationships } from "./auto-relationships";
-import { indexNotePeople } from "./people-indexing";
+import { indexNotePeople, indexNotesPeople } from "./people-indexing";
+import { renderMeetingFrontmatter } from "./people-capture";
 import { getKnowledgeGraph } from "./graph-queries";
 import { actionItemLineKey, noteMeetingId, stubPersonId } from "../../shared/people/ids";
 
@@ -184,6 +185,114 @@ describe("body_line claims", () => {
   });
 });
 
+describe("body-line attendees are suggestions", () => {
+  it("adds matched people and new stubs as suggested, keeps them out of the graph and frontmatter", () => {
+    const ana = person("Ana Ruiz");
+    note("n1", "Sync");
+    save("n1", "**Attendees:** Ana Ruiz, Dana Lee");
+    const meetingId = noteMeetingId("ws1", "n1");
+    expect(listAttendees(db, meetingId).map((a) => a.status)).toEqual(["suggested", "suggested"]);
+    expect(renderMeetingFrontmatter(db, "n1")?.attendees).toEqual([]);
+    const g = getKnowledgeGraph(db, "ws1");
+    expect(g.edges.some((e) => e.type === "attended")).toBe(false);
+    // An attendee someone else already confirmed stays confirmed.
+    addAttendee(db, { meetingId, personId: ana.id, source: "manual" });
+    save("n1", "**Attendees:** Ana Ruiz, Dana Lee\n");
+    expect(listAttendees(db, meetingId).find((a) => a.personId === ana.id)?.status).toBe("confirmed");
+  });
+
+  it("doesn't bring back someone the user removed while the line still lists them", () => {
+    const ana = person("Ana Ruiz");
+    const ben = person("Ben Ode");
+    note("n1", "Sync");
+    save("n1", "**Attendees:** Ana Ruiz, Ben Ode");
+    const meetingId = noteMeetingId("ws1", "n1");
+    removeAttendee(db, meetingId, ana.id);
+    save("n1", "**Attendees:** Ana Ruiz, Ben Ode\nmore text");
+    expect(listAttendees(db, meetingId).map((a) => a.personId)).toEqual([ben.id]);
+    // Once the line drops her, a later mention of her on the line is a fresh request.
+    save("n1", "**Attendees:** Ben Ode");
+    save("n1", "**Attendees:** Ana Ruiz, Ben Ode");
+    expect(listAttendees(db, meetingId).map((a) => a.personId).sort()).toEqual([ana.id, ben.id].sort());
+  });
+
+  it("doesn't re-create a dismissed stub's attendance", () => {
+    note("n1", "Sync");
+    save("n1", "**Attendees:** Dana Lee");
+    const meetingId = noteMeetingId("ws1", "n1");
+    const dana = stubPersonId("ws1", "dana lee");
+    removeAttendee(db, meetingId, dana);
+    save("n1", "**Attendees:** Dana Lee\nagain");
+    expect(listAttendees(db, meetingId)).toEqual([]);
+  });
+});
+
+describe("mention edge cases", () => {
+  it("skips a persona title two people share", () => {
+    persona("Ana Ruiz", "pa1");
+    const twin = person("Ana Twin");
+    note("pa2", "Ana Ruiz");
+    updatePerson(db, twin.id, { personaNoteId: "pa2" });
+    note("n1", "Sync");
+    save("n1", "[[Ana Ruiz]]");
+    expect(mentions("n1")).toEqual([]);
+  });
+
+  it("ignores links inside code", () => {
+    persona("Ana Ruiz");
+    note("n1", "Sync");
+    save("n1", "`[[Ana Ruiz]]`\n```\n[[Ana Ruiz]]\n```\n~~~\n[[Ana Ruiz]]\n~~~");
+    expect(mentions("n1")).toEqual([]);
+  });
+
+  it("doesn't revive a mention the user removed, but does when the link itself left and came back", () => {
+    const ana = persona("Ana Ruiz");
+    note("n1", "Sync");
+    save("n1", "[[Ana Ruiz]]");
+    removeMention(db, "n1", ana.id);
+    save("n1", "[[Ana Ruiz]] still here");
+    expect(mentions("n1")).toEqual([]);
+
+    const ben = persona("Ben Ode");
+    save("n1", "[[Ben Ode]]");
+    expect(mentions("n1").map((m) => m.person_id)).toEqual([ben.id]);
+    save("n1", "gone");
+    expect(mentions("n1")).toEqual([]);
+    save("n1", "[[Ben Ode]] back");
+    expect(mentions("n1").map((m) => m.person_id)).toEqual([ben.id]);
+  });
+});
+
+describe("resilience and entry points", () => {
+  it("one failing note doesn't stop the rest of the batch", () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const ana = person("Ana Ruiz");
+    note("bad", "Bad", "- [ ] **Ana Ruiz** - boom\n**Attendees:** Ana Ruiz");
+    note("good", "Good", "- [ ] **Ana Ruiz** - fine\n**Attendees:** Ana Ruiz");
+    db.exec(`
+      CREATE TRIGGER boom_items BEFORE INSERT ON note_action_items WHEN NEW.note_id = 'bad' BEGIN SELECT RAISE(ABORT, 'boom'); END;
+      CREATE TRIGGER boom_meetings BEFORE INSERT ON meetings WHEN NEW.title = 'Bad' BEGIN SELECT RAISE(ABORT, 'boom'); END;
+    `);
+    expect(() => indexNotePeople(db, "ws1", ["bad", "good"])).not.toThrow();
+    expect(items("good").map((r) => r.owner_person_id)).toEqual([ana.id]);
+    expect(attendeeIdsFromSource(db, noteMeetingId("ws1", "good"), "body_line")).toEqual([ana.id]);
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it("indexNotesPeople indexes changed notes by id, and does nothing with the flag off", () => {
+    const ana = persona("Ana Ruiz");
+    note("n1", "One", "[[Ana Ruiz]]\n- [ ] **Ana Ruiz** - x");
+    setPeopleEnabled(db, false);
+    indexNotesPeople(db, ["n1"]);
+    expect(mentions("n1")).toEqual([]);
+    setPeopleEnabled(db, true);
+    indexNotesPeople(db, ["n1", "missing"]);
+    expect(mentions("n1").map((m) => m.person_id)).toEqual([ana.id]);
+    expect(items("n1")).toHaveLength(1);
+  });
+});
+
 describe("indexing as a whole", () => {
   const body = "**Attendees:** Ana Ruiz\n\nWith [[Ana Ruiz]].\n- [ ] **Ana Ruiz** - follow up";
 
@@ -226,6 +335,8 @@ describe("knowledge graph people nodes", () => {
     const stub = person("Maybe", { status: "suggested" });
     note("n1", "Sync", "**Attendees:** Ana Ruiz, Ben Ode\n\nSee [[Ana Ruiz]]");
     computeAutoRelationships(db, "ws1", ["n1"]);
+    // Body-line attendees are only suggested until the user confirms them.
+    for (const p of [ana, ben]) addAttendee(db, { meetingId: noteMeetingId("ws1", "n1"), personId: p.id, source: "manual" });
     addEdge(db, { workspaceId: "ws1", sourceId: ben.id, targetId: ana.id, type: "manager_of" });
     addEdge(db, { workspaceId: "ws1", sourceId: ana.id, targetId: ben.id, type: "mentor_of", endedAt: "2026-01-01T00:00:00.000Z" });
     addEdge(db, { workspaceId: "ws1", sourceId: ana.id, targetId: ben.id, type: "buddy_of" });

@@ -109,6 +109,18 @@ migration, plus how it's built and released.
    person's persona note or creating a person doesn't re-index other notes
    until they're saved or a full recompute runs; W3/W5 can call
    `indexNotePeople` after those writes.
+   After review: `indexNotesPeople` also runs from the file watcher (after
+   `capturePeopleFromFile`) and the sync applied-rows hook, for notes edited
+   outside the app (database rows only, never the file, so no echo). Body-line
+   attendees are `suggested` (`captureNoteMeeting` takes `status` and
+   `keepRemoved`), so they stay out of lists, the graph and the frontmatter
+   until confirmed; someone the user removed isn't re-added while the line
+   lists them (a tombstoned row whose `body_line` claim is still on; the claim
+   goes off once the line drops them; `removeAttendeeSource` now records the
+   dropped claim before tombstoning). Mentions: a persona title two people share
+   links to neither, code fences and inline code are skipped, and a tombstoned
+   mention is revived only if this pass released it (source `owner`, otherwise
+   unused). Each note is indexed in its own try/catch.
    - **Sync follow-up (any time, not tied to data):** `exportOplog` stamps
      forwarded ops with this device's protocol version, so a v4 device seen
      only through a v5 relay is never flagged "behind". Stamp only own ops.

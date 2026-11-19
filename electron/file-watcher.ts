@@ -24,6 +24,7 @@ import { parseNoteFile, adoptExternalNoteFile, importVaultProjects, isImportPath
 import { findNoteFilePath, noteDir } from "./host-shared/notes-io";
 import * as q from "./db/queries";
 import { capturePeopleFromFile } from "./people-files";
+import { indexNotesPeople } from "./db/people-indexing";
 
 let watcher: FSWatcher | null = null;
 let savedWorkspacePath: string | null = null;
@@ -218,6 +219,10 @@ function capturePeopleSafely(db: Database.Database, filePath: string, noteId: st
   } catch (err) {
     console.error(`[people] couldn't read meeting properties from ${filePath}:`, err);
   }
+  // Mentions, owned checklist items and body meeting lines of the edited body
+  // (the app's own saves index through computeAutoRelationships). Writes
+  // database rows only, never the file, so it can't echo back to the watcher.
+  indexNotesPeople(db, [noteId]);
 }
 
 function handleFileAdd(filePath: string, workspacePath: string, db: Database.Database, onChanged: () => void): void {
