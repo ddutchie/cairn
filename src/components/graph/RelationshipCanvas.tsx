@@ -108,6 +108,9 @@ export function RelationshipCanvas() {
             onToggle={() => setKinds((prev) => { const next = new Set(prev); if (next.has(k)) next.delete(k); else next.add(k); return next; })}
           />
         ))}
+        {!me && people.some((p) => p.relationship.length > 0) && (
+          <span className="ml-1 text-xs text-[var(--text-tertiary)]">Links to you need a person marked &quot;This is me&quot;: add yourself, then Edit</span>
+        )}
         {hiddenCount > 0 && (
           <span className="ml-1 text-xs text-[var(--text-tertiary)]">{hiddenCount} without a link here</span>
         )}
@@ -115,7 +118,7 @@ export function RelationshipCanvas() {
 
       {links.length === 0 ? (
         <CanvasEmptyState message={allLinks.length === 0
-          ? "No relationships yet. Set a manager, mentor or stakeholder on a person's page, or mark yourself and give people a relationship to you."
+          ? "No relationships yet. Set a manager, mentor or stakeholder on a person's page, or add yourself as a person, turn on \"This is me\" and give people a relationship to you."
           : "Nothing to show with these filters. Turn a relationship type back on."} />
       ) : (
         <svg ref={svgRef} width={dims.width} height={dims.height} role="group" aria-label={summary} className="block select-none touch-none">

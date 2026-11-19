@@ -234,6 +234,12 @@ function PersonSettings({ page }: { page: PersonPageModel }) {
       <Field label="Emails">
         <BlurInput ariaLabel="Emails" placeholder="Comma separated" value={person.emails.join(", ")} onSave={(v) => void updatePerson(person.id, { emails: splitList(v) })} />
       </Field>
+      <Field label="This is me">
+        <div className="flex items-center gap-2 pt-1">
+          <Toggle checked={person.isMe} onCheckedChange={(on) => void updatePerson(person.id, { isMe: on })} label="This is me" />
+          <span className="text-xs text-[var(--text-tertiary)]">Relationships like direct report or peer link people to you on the map</span>
+        </div>
+      </Field>
       <Field label="Private from agents">
         <div className="flex items-center gap-2 pt-1">
           <Toggle checked={person.agentPrivate} onCheckedChange={(on) => void updatePerson(person.id, { agentPrivate: on })} label="Private from agents" />
