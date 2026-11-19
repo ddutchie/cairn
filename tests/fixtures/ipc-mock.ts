@@ -300,6 +300,16 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       attendee:  { add: noop, remove: noop },
       profile:   { get: () => Promise.resolve({ fields: {}, stale: false }), refresh: () => Promise.resolve({ fields: {}, stale: false }) },
       prep:      { get: () => Promise.resolve({ brief: null, running: false }), run: () => Promise.resolve({ skipped: "off" }), onUpdated: () => () => {} },
+      migration: {
+        inventory: () => Promise.resolve({
+          workspaceId: "", personas: [], meetings: [], owners: [], ambiguousShortNames: [],
+          counts: { notesScanned: 0, personaCandidates: 0, highConfidence: 0, meetingNotes: 0, ownedChecklistItems: 0, openOwnedChecklistItems: 0, archivedCandidates: 0, existingPeople: 0, collisions: 0, ambiguousNames: 0 },
+        }),
+        apply: () => Promise.resolve({
+          dryRun: true, applied: false, reason: "flag_off", personas: [], meetings: [], frontmatterNotes: [],
+          index: { mentionsBefore: 0, mentionsAfter: 0, ownedItemsBefore: 0, ownedItemsAfter: 0 },
+        }),
+      },
     },
 
     // ── Tags ──────────────────────────────────────────────────

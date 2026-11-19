@@ -23,6 +23,7 @@ import type {
   AttendeeInput, PeopleListFilter, PersonEdgeInput, PersonEdgePatch, PersonPage, PersonSummary,
 } from "../types/people-view";
 import type { PersonProfile, PrepBrief } from "../people/oneonone";
+import type { MigrationApprovals, MigrationInventory, MigrationResult } from "../types/people-migration";
 import type { TodayBrief, TodayHistoryEntry, TodayMarks, TodaySettings, TodayState } from "../today/brief";
 import type { TodayRoute } from "../today/route";
 import type { ChatPopoutPayload } from "../agent/chat-popout";
@@ -341,6 +342,17 @@ export interface IpcContract {
   "db:people:attendees": { args: [req: { meetingId: string; statuses?: PeopleStatus[] }]; result: MeetingAttendee[] };
   "db:people:attendee:add": { writes: true; args: [input: AttendeeInput]; result: MeetingAttendee };
   "db:people:attendee:remove": { writes: true; args: [req: { meetingId: string; personId: string }]; result: void };
+  /** Read-only scan of a workspace's person and meeting notes (works with the flag off). */
+  "db:people:migration:inventory": { args: [req: { workspaceId: string }]; result: MigrationInventory };
+  /**
+   * Apply what the user approved from the inventory, or with `dryRun` report what it would do and
+   * write nothing. Does nothing while the flag is off. Idempotent.
+   */
+  "db:people:migration:apply": {
+    writes: true;
+    args: [req: { workspaceId: string; approvals: MigrationApprovals; dryRun?: boolean }];
+    result: MigrationResult;
+  };
 
   // ── 1:1 loop (W6) ───────────────────────────────────────────────────────
   /** A person's Slack profile fields from the device cache. Never calls out. */
@@ -349,9 +361,8 @@ export interface IpcContract {
   "people:profile:refresh": { args: [req: { personId: string }]; result: PersonProfile };
   /** The newest prep brief for a person, and whether one is being prepared now. */
   "people:prep:get": { args: [req: { workspaceId: string; personId: string }]; result: { brief: PrepBrief | null; running: boolean } };
-  /** Start a prep brief. `skipped` says why nothing started. */
+  /** Start a prep brief. `skipped` says why nothing started. Not `writes`: that flag is for db:* channels that change synced rows (it broadcasts db:changed); a prep writes a device-local file, like `today:run`. */
   "people:prep:run": {
-    writes: true;
     args: [req: { workspaceId: string; personId: string; meetingId?: string }];
     result: { runId: string } | { skipped: "busy" | "off" | "no-ai" | "unknown-person" };
   };
@@ -1042,7 +1053,9 @@ const CHANNELS: ChannelRecord = {
   "people:profile:get": "read",
   "people:profile:refresh": "read",
   "people:prep:get": "read",
-  "people:prep:run": "write",
+  "people:prep:run": "read",
+  "db:people:migration:inventory": "read",
+  "db:people:migration:apply": "write",
   "db:automation:list": "read",
   "db:automation:get": "read",
   "db:automation:create": "write",

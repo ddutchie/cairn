@@ -18,7 +18,9 @@
 import fs from "node:fs";
 import matter from "gray-matter";
 import type Database from "better-sqlite3";
-import { findNoteFilePath } from "./host-shared/notes-io";
+import path from "node:path";
+import { findNoteFilePath, projectNotesDir } from "./host-shared/notes-io";
+import type { NoteFrontmatterHints } from "../shared/people/inventory";
 import { isPeopleEnabled, listAttendees } from "./db/people-queries";
 import { captureNoteMeeting, notesAffectedBy, pinUnreferenced, rememberPersonaTitles, renderMeetingFrontmatter, type CaptureResult, type MeetingFrontmatter } from "./db/people-capture";
 import { parseAttendeeList, parseMeetingDate } from "../shared/people/parse";
@@ -214,4 +216,48 @@ export class FrontmatterRetryQueue {
   }
 
   get size(): number { return this.pending.size; }
+}
+
+const asList = (v: unknown): string[] =>
+  (Array.isArray(v) ? v : typeof v === "string" ? v.split(",") : []).map((x) => String(x).trim()).filter(Boolean);
+
+/**
+ * A reader for the frontmatter keys the migration inventory looks at (`type`,
+ * `tags`, `aliases`, `email`, `attendees`, `date`), which Cairn keeps only in
+ * the .md files. Reads each project's notes folder once, on first use, and
+ * never writes. Unreadable files and notes without a file give null.
+ */
+export function makeFrontmatterReader(db: Database.Database, workspacePath: string, workspaceId: string): (noteId: string) => NoteFrontmatterHints | null {
+  let byId: Map<string, NoteFrontmatterHints> | null = null;
+  const walk = (dir: string, out: Map<string, NoteFrontmatterHints>) => {
+    let entries: string[];
+    try { entries = fs.readdirSync(dir); } catch { return; }
+    for (const entry of entries) {
+      const fp = path.join(dir, entry);
+      try {
+        const stat = fs.lstatSync(fp); // never follow symlinks
+        if (stat.isDirectory()) { walk(fp, out); continue; }
+        if (!entry.endsWith(".md") || !stat.isFile()) continue;
+        const { data } = matter(fs.readFileSync(fp, "utf-8"));
+        if (typeof data.id !== "string") continue;
+        out.set(data.id, {
+          type: typeof data.type === "string" ? data.type : undefined,
+          tags: asList(data.tags ?? data.tag),
+          aliases: asList(data.aliases ?? data.alias ?? data.aka),
+          emails: asList(data.emails ?? data.email),
+          hasAttendees: Object.prototype.hasOwnProperty.call(data, "attendees"),
+          attendees: data.attendees,
+          date: data.date ?? data.when,
+        });
+      } catch { /* unreadable file: skip */ }
+    }
+  };
+  return (noteId) => {
+    if (!byId) {
+      byId = new Map();
+      const projects = db.prepare("SELECT name FROM projects WHERE workspace_id = ?").all(workspaceId) as { name: string }[];
+      for (const p of projects) walk(projectNotesDir(workspacePath, p.name), byId);
+    }
+    return byId.get(noteId) ?? null;
+  };
 }

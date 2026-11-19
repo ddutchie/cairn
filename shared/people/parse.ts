@@ -142,6 +142,28 @@ const NOT_NAMES = new Set([
   "users", "user", "admins", "admin", "staff", "others", "other", "attendees", "participants", "guests", "?", "-", "–",
 ]);
 
+/** True for a placeholder or group where a name would be ("TBD", "team", "users"): never a person. */
+export function isGroupName(name: string): boolean {
+  return NOT_NAMES.has(foldName(name));
+}
+
+/** The body without fenced code blocks and inline code, where `[[x]]` and "Attendees:" are text, not metadata. */
+export function withoutCode(body: string): string {
+  let fence: { ch: string; len: number } | null = null;
+  const kept: string[] = [];
+  for (const line of body.split(/\r?\n/)) {
+    const m = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (m) {
+      // A fence closes only on the same character, at least as long, with nothing after it.
+      if (!fence) fence = { ch: m[1][0], len: m[1].length };
+      else if (m[1][0] === fence.ch && m[1].length >= fence.len && m[2].trim() === "") fence = null;
+      continue;
+    }
+    if (!fence) kept.push(line.replace(/`[^`\n]*`/g, ""));
+  }
+  return kept.join("\n");
+}
+
 /** Attendees and date found in a note body's metadata lines. */
 export interface BodyMeetingLines {
   attendees: AttendeeRef[];

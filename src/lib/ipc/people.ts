@@ -7,6 +7,7 @@
 import type {
   Meeting, MeetingAttendee, PeopleStatus, Person, PersonCreateInput, PersonEdge, PersonPatch, PersonRelation,
 } from "../../../shared/types/people";
+import type { MigrationApprovals, MigrationInventory, MigrationResult } from "../../../shared/types/people-migration";
 import type {
   AttendeeInput, PeopleListFilter, PersonEdgeInput, PersonEdgePatch, PersonPage, PersonSummary,
 } from "../../../shared/types/people-view";
@@ -51,4 +52,9 @@ export const peopleClient = {
   /** A prep run saved a brief; returns the unsubscribe function (a no-op off-Electron). */
   onPrepUpdated: (cb: (event: IpcEvents["people:prep:updated"]) => void): (() => void) =>
     window.electron?.people?.prep?.onUpdated(cb) ?? (() => {}),
+  /** Read-only: the person and meeting notes the workspace already has. */
+  migrationInventory: (workspaceId: string): Promise<MigrationInventory> => people((p) => p.migration.inventory(workspaceId)),
+  /** Writes only what `approvals` lists; `dryRun` reports without writing. */
+  migrationApply: (workspaceId: string, approvals: MigrationApprovals, dryRun?: boolean): Promise<MigrationResult> =>
+    people((p) => p.migration.apply(workspaceId, approvals, dryRun)),
 };

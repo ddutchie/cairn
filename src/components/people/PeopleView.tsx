@@ -28,6 +28,7 @@ import { RELATIONSHIP_TYPES, type RelationshipType } from "../../../shared/types
 import type { PersonSummary } from "../../../shared/types/people-view";
 import { PEOPLE_GROUPS, RELATIONSHIP_LABELS, groupPeople, type PeopleGroupKey } from "./people-model";
 import { PersonPage } from "./PersonPage";
+import { MigrationPanel } from "./MigrationPanel";
 
 // ── List ────────────────────────────────────────────────────────────────────
 
@@ -134,6 +135,7 @@ export function PeopleView() {
   const [query, setQuery] = useState("");
   const [only, setOnly] = useState<PeopleGroupKey | "all">("all");
   const [creating, setCreating] = useState(false);
+  const [finding, setFinding] = useState(false);
 
   // Load on open and on workspace switch (people are workspace-wide).
   useEffect(() => {
@@ -154,13 +156,17 @@ export function PeopleView() {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
+      {finding && <MigrationPanel key={activeWorkspaceId} onClose={() => setFinding(false)} />}
       <ViewToolbar
         title="People"
         description="The people you work with, their meetings and notes"
         actions={
-          <Button size="sm" variant="outline" onClick={() => setCreating(true)} disabled={creating}>
-            <Plus size={12} /> Add person
-          </Button>
+          <>
+            <Button size="sm" variant="ghost" onClick={() => setFinding(true)}>Find in notes</Button>
+            <Button size="sm" variant="outline" onClick={() => setCreating(true)} disabled={creating}>
+              <Plus size={12} /> Add person
+            </Button>
+          </>
         }
       >
         <div className="relative w-56 max-w-full">
@@ -191,7 +197,7 @@ export function PeopleView() {
             <EmptyState
               icon={Users}
               title="No people yet"
-              description="Add the people you work with, or let meetings and agents suggest them."
+              description="Add the people you work with, let meetings and agents suggest them, or find the person notes you already have."
               action={!creating ? <Button size="sm" variant="outline" onClick={() => setCreating(true)}><Plus size={12} /> Add person</Button> : undefined}
               className="py-10"
             />

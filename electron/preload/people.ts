@@ -3,6 +3,7 @@
 import { invokeContract, onIpcEvent } from "./ipc";
 import type { IpcEvents } from "../../shared/ipc/contract";
 import type { PeopleStatus, PersonCreateInput, PersonPatch } from "../../shared/types/people";
+import type { MigrationApprovals } from "../../shared/types/people-migration";
 import type { AttendeeInput, PeopleListFilter, PersonEdgeInput, PersonEdgePatch } from "../../shared/types/people-view";
 
 export const peopleApi = {
@@ -42,6 +43,11 @@ export const peopleApi = {
       run: (workspaceId: string, personId: string, meetingId?: string) => invokeContract("people:prep:run", { workspaceId, personId, meetingId }),
       /** A prep run saved a brief for someone. */
       onUpdated: (cb: (payload: IpcEvents["people:prep:updated"]) => void) => onIpcEvent("people:prep:updated", cb),
+    },
+    migration: {
+      inventory: (workspaceId: string) => invokeContract("db:people:migration:inventory", { workspaceId }),
+      apply:     (workspaceId: string, approvals: MigrationApprovals, dryRun?: boolean) =>
+        invokeContract("db:people:migration:apply", { workspaceId, approvals, dryRun }),
     },
   },
 } as const;
