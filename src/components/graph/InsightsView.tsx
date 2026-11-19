@@ -3,7 +3,7 @@
 import React, { useCallback, useState, useMemo } from "react";
 import {
   Clock, Grid3x3, Table2, Activity, Workflow, Crosshair, BarChart2,
-  Search, Sparkles, Minus, Plus,
+  Search, Sparkles, Minus, Plus, Network, Users,
 } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
@@ -25,10 +25,13 @@ import { SankeyCanvas }    from "@/components/graph/SankeyCanvas";
 import { BeeswarmCanvas }  from "@/components/graph/BeeswarmCanvas";
 import { BulletCanvas }    from "@/components/graph/BulletCanvas";
 import { SemanticMapCanvas } from "@/components/graph/SemanticMapCanvas";
+import { RelationshipCanvas } from "@/components/graph/RelationshipCanvas";
+import { OrgChartCanvas } from "@/components/graph/OrgChartCanvas";
 import { GraphDetailPanel } from "@/components/graph/GraphDetailPanel";
 import { NodeTypeChip } from "@/components/graph/NodeTypeChip";
 
-type InsightsLayout = "timeline" | "matrix" | "table" | "ridgeline" | "sankey" | "beeswarm" | "bullet" | "semantic-map";
+type InsightsLayout = "timeline" | "matrix" | "table" | "ridgeline" | "sankey" | "beeswarm" | "bullet" | "semantic-map"
+  | "relationships" | "org-chart";
 
 const LAYOUTS: { key: InsightsLayout; icon: React.ReactNode; label: string; tip: string }[] = [
   { key: "ridgeline",    icon: <Activity  size={12} />, label: "Ridgeline",    tip: "Task activity over time"         },
@@ -39,6 +42,12 @@ const LAYOUTS: { key: InsightsLayout; icon: React.ReactNode; label: string; tip:
   { key: "matrix",       icon: <Grid3x3  size={12} />, label: "Matrix",       tip: "Tag co-occurrence heatmap"       },
   { key: "table",        icon: <Table2   size={12} />, label: "Table",        tip: "Flat sortable table"              },
   { key: "semantic-map", icon: <Sparkles size={12} />, label: "Semantic", tip: "Notes plotted by semantic similarity" },
+];
+
+/** Shown only while `feature.people` is on. */
+const PEOPLE_LAYOUTS: typeof LAYOUTS = [
+  { key: "relationships", icon: <Network size={12} />, label: "Relationships", tip: "How the people you work with relate to each other" },
+  { key: "org-chart",     icon: <Users   size={12} />, label: "Org chart",     tip: "Reporting lines, with you highlighted" },
 ];
 
 const ALL_NODE_TYPES: GraphNodeType[] = ["project", "note", "card", "tag"];
@@ -53,6 +62,7 @@ export function InsightsView() {
     graphFilters,
     selectedGraphNodeId,
     projects,
+    peopleEnabled,
     loadGraph,
     setGraphFilters,
     setSelectedGraphNode,
@@ -66,12 +76,17 @@ export function InsightsView() {
     graphFilters:        s.graphFilters,
     selectedGraphNodeId: s.selectedGraphNodeId,
     projects:            s.projects,
+    peopleEnabled:       s.peopleEnabled,
     loadGraph:           s.loadGraph,
     setGraphFilters:     s.setGraphFilters,
     setSelectedGraphNode: s.setSelectedGraphNode,
   })));
 
-  const [layout,    setLayout]    = useState<InsightsLayout>("ridgeline");
+  const [chosenLayout, setLayout] = useState<InsightsLayout>("ridgeline");
+  const layouts = useMemo(() => (peopleEnabled ? [...LAYOUTS, ...PEOPLE_LAYOUTS] : LAYOUTS), [peopleEnabled]);
+  // The flag turning off while a People canvas is open falls back to the default.
+  const layout: InsightsLayout = layouts.some((l) => l.key === chosenLayout) ? chosenLayout : "ridgeline";
+  const peopleLayout = layout === "relationships" || layout === "org-chart";
   const [tableSearch,     setTableSearch]     = useState("");
   const [tableTypeFilter, setTableTypeFilter] = useState<GraphNodeType[]>([]);
 
@@ -134,17 +149,20 @@ export function InsightsView() {
       <ViewTabs
         ariaLabel="Insights canvases"
         panelId="insights-canvas"
-        tabs={LAYOUTS.map(({ key, icon, label, tip }) => ({ value: key, label, icon, title: tip }))}
+        tabs={layouts.map(({ key, icon, label, tip }) => ({ value: key, label, icon, title: tip }))}
         value={layout}
         onChange={setLayout}
       >
-        <span className="text-xs text-[var(--text-tertiary)] tabular-nums">{allNodes.length} items</span>
+        {!peopleLayout && <span className="text-xs text-[var(--text-tertiary)] tabular-nums">{allNodes.length} items</span>}
         <IconButton
           size="sm"
-          label={layout === "ridgeline" ? "Reset view to data range" : "Reload data"}
+          label={layout === "ridgeline" ? "Reset view to data range" : peopleLayout ? "Reload people" : "Reload data"}
           onClick={layout === "ridgeline"
             ? () => { if (ridgeDefaultView) setRidgeView(ridgeDefaultView); }
-            : () => { if (activeWorkspaceId) loadGraph(activeWorkspaceId); }}
+            : () => {
+              if (peopleLayout) void useCairnStore.getState().loadPeople();
+              else if (activeWorkspaceId) loadGraph(activeWorkspaceId);
+            }}
         >
           <RefreshSpin size={12} spinning={graphLoading} />
         </IconButton>
@@ -154,14 +172,16 @@ export function InsightsView() {
       <ViewToolbar>
 
         {/* Project filter */}
-        <ProjectScopePicker
-          projects={workspaceProjects}
-          selectedIds={graphFilters.projectIds}
-          onChange={(next) => {
-            setGraphFilters({ projectIds: next });
-            if (activeWorkspaceId) loadGraph(activeWorkspaceId);
-          }}
-        />
+        {!peopleLayout && (
+          <ProjectScopePicker
+            projects={workspaceProjects}
+            selectedIds={graphFilters.projectIds}
+            onChange={(next) => {
+              setGraphFilters({ projectIds: next });
+              if (activeWorkspaceId) loadGraph(activeWorkspaceId);
+            }}
+          />
+        )}
 
         {/* Table search + type filter */}
         {layout === "table" && (
@@ -230,12 +250,12 @@ export function InsightsView() {
 
           {/* Blocking overlay only for the first load — later reloads keep the
               current canvases on screen (the toolbar spinner shows progress). */}
-          {(graphLoading || graphStale) && !graphError && graphData.nodes.length === 0 && (
+          {!peopleLayout && (graphLoading || graphStale) && !graphError && graphData.nodes.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center bg-[var(--background)]/80 z-10">
               <span className="text-xs text-[var(--text-tertiary)]">Loading…</span>
             </div>
           )}
-          {graphError && (
+          {!peopleLayout && graphError && (
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="text-xs text-[var(--danger)]">{graphError}</span>
             </div>
@@ -268,6 +288,8 @@ export function InsightsView() {
           {layout === "semantic-map" && (
             <SemanticMapCanvas nodes={allNodes} selectedNodeId={selectedGraphNodeId} onNodeClick={handleNodeClick} />
           )}
+          {peopleEnabled && layout === "relationships" && <RelationshipCanvas />}
+          {peopleEnabled && layout === "org-chart" && <OrgChartCanvas />}
         </div>
 
         {selectedNode && (

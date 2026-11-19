@@ -9,7 +9,7 @@ import type {
 } from "../../../shared/types/people";
 import type { MigrationApprovals, MigrationInventory, MigrationResult } from "../../../shared/types/people-migration";
 import type {
-  AttendeeInput, PeopleListFilter, PersonEdgeInput, PersonEdgePatch, PersonPage, PersonSummary,
+  AttendeeInput, PeopleListFilter, PeopleNetwork, PersonEdgeInput, PersonEdgePatch, PersonPage, PersonSummary,
 } from "../../../shared/types/people-view";
 import type { PersonProfile, PrepBrief } from "../../../shared/people/oneonone";
 import type { IpcEvents, IpcReturn } from "../../../shared/ipc/contract";
@@ -22,6 +22,7 @@ export const peopleClient = {
   setEnabled: (on: boolean): Promise<boolean> => people((p) => p.flag.set(on)),
   list: (filter: PeopleListFilter): Promise<Person[]> => people((p) => p.list(filter)),
   summaries: (filter: PeopleListFilter): Promise<PersonSummary[]> => people((p) => p.summaries(filter)),
+  network: (workspaceId: string): Promise<PeopleNetwork> => people((p) => p.network(workspaceId)),
   get: (id: string): Promise<Person | null> => people((p) => p.get(id)),
   page: (id: string): Promise<PersonPage | null> => people((p) => p.page(id)),
   create: (input: PersonCreateInput): Promise<Person> => people((p) => p.create(input)),

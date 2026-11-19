@@ -6,7 +6,7 @@
 
 import type { ID } from "./domain";
 import type {
-  AttendeeSource, Meeting, PeopleStatus, Person, PersonEdgeType, PersonRelation, Provenance, RelationshipType,
+  AttendeeSource, Meeting, PeopleStatus, Person, PersonEdge, PersonEdgeType, PersonRelation, Provenance, RelationshipType,
 } from "./people";
 
 /** A person in the list, with the dates the list shows. */
@@ -93,3 +93,25 @@ export interface AttendeeInput {
   source?: AttendeeSource;
   provenance?: Provenance;
 }
+
+/** Two people who were confirmed attendees of the same meeting(s). */
+export interface CoAttendance {
+  a: ID;
+  b: ID;
+  /** Meetings they both attended. */
+  meetings: number;
+}
+
+/**
+ * What the Insights relationship canvas and org chart read: every live,
+ * confirmed edge in the workspace (ended ones included, so they can be drawn
+ * as "former") and pairwise co-attendance. Meetings with more than
+ * `NETWORK_MAX_MEETING_SIZE` confirmed attendees are skipped: an all-hands
+ * says nothing about who works with whom and would add n² pairs.
+ */
+export interface PeopleNetwork {
+  edges: PersonEdge[];
+  coAttendance: CoAttendance[];
+}
+
+export const NETWORK_MAX_MEETING_SIZE = 12;

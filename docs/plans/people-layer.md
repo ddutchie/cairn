@@ -131,6 +131,29 @@ migration, plus how it's built and released.
    Deleting a note tombstones the meeting it made (`nmt:`) with its last note;
    the unscoped graph hides note-made meetings with no live, unarchived note.
    Archiving does not tombstone (unarchiving would lose confirmed attendees).
+   W7 as built (`feat/people-w7-insights`): two Insights layouts,
+   `RelationshipCanvas` and `OrgChartCanvas` (`src/components/graph/`), added to
+   `InsightsView` only while `peopleEnabled` (a People layout selected when the
+   flag flips off falls back to Ridgeline). Data: one new read channel,
+   `db:people:network` (`getPeopleNetwork` in `people-view-queries.ts`): every
+   live confirmed edge between live confirmed, unarchived people (ended ones
+   included) plus pairwise co-attendance from confirmed attendees; meetings
+   with more than `NETWORK_MAX_MEETING_SIZE` (12) attendees are skipped so an
+   all-hands doesn't add n² "worked together" pairs. Everything else comes from
+   the `people` slice. Pure logic is in `src/lib/people/`: `network.ts`
+   (`deriveLinks`: stored edges plus links derived from each person's
+   relationship chips to the `is_me` person, stored edge wins; `buildOrgChart`:
+   earliest current `manager_of` edge is the parent, other managers become
+   "Also reports to", ended edges are history, cycles are cut at the
+   alphabetically-first member and reported, people with no reporting link are
+   "unplaced", me leads the roots) and `layout.ts` (settled d3-force layout,
+   fewer ticks above 100/300 people; d3-hierarchy tidy tree for the forest).
+   The relationship canvas draws only people with a visible link (plus me) and
+   counts the rest; "meetings together" is off by default and is a pair count,
+   never a time or activity measure. Persona-note privacy is untouched: these
+   are the user's own screens. Zoom is wheel/drag; person nodes and org cards
+   are focusable buttons (Enter/Space opens the person). Not done: edge editing
+   from the canvas, a keyboard pan/zoom, a minimum-viable mobile version.
    W9 as built (`claude/people-w9-migration-e448d5`): the tooling and tests for the
    migration gate. Not run on the pilot corpus (that needs Gerard's other
    machine). Pure heuristics in `shared/people/inventory.ts` (`guessPersona`,
