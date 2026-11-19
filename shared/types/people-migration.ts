@@ -156,4 +156,6 @@ export interface MigrationResult {
   index: { mentionsBefore: number; mentionsAfter: number; ownedItemsBefore: number; ownedItemsAfter: number };
   /** Meeting notes whose frontmatter `attendees`/`date` were (or, in a dry run, would be) rewritten. */
   frontmatterNotes: ID[];
+  /** Meeting notes whose file couldn't be written (the database changes stand); run again to retry. */
+  frontmatterFailed?: ID[];
 }

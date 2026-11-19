@@ -59,7 +59,7 @@ describe("migration with note files", () => {
     setPeopleEnabled(db, true);
     const filesBefore = new Map([personaFile, benFile, meetingFile, journalFile].map((f) => [f, fs.readFileSync(f, "utf-8")]));
     const approvals = { personas: inv.personas.map((p) => ({ noteId: p.noteId })), meetings: ["mt"] };
-    const refresh = (ids: string[]) => refreshMeetingFrontmatter(db, ws, ids).written;
+    const refresh = (ids: string[]) => refreshMeetingFrontmatter(db, ws, ids);
 
     const preview = applyMigration(db, "ws1", approvals, { dryRun: true, readFrontmatter, refreshFrontmatter: refresh });
     expect(preview.frontmatterNotes).toEqual(["mt"]);
@@ -82,7 +82,7 @@ describe("migration with note files", () => {
   it("writes no file while the flag is off", () => {
     const meetingFile = noteFile("mt", "Sync", "Meetings", "**Attendees:** Ana Ruiz\n");
     const before = fs.readFileSync(meetingFile, "utf-8");
-    const r = applyMigration(db, "ws1", { meetings: ["mt"] }, { refreshFrontmatter: (ids) => refreshMeetingFrontmatter(db, ws, ids).written });
+    const r = applyMigration(db, "ws1", { meetings: ["mt"] }, { refreshFrontmatter: (ids) => refreshMeetingFrontmatter(db, ws, ids) });
     expect(r.applied).toBe(false);
     expect(fs.readFileSync(meetingFile, "utf-8")).toBe(before);
   });

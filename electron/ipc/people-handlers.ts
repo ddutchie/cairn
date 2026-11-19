@@ -59,7 +59,7 @@ export function registerPeopleHandlers(ctx: DbContext): void {
       const result = applyMigration(ctx.db, workspaceId, approvals ?? {}, {
         dryRun: dryRun === true,
         readFrontmatter: makeFrontmatterReader(ctx.db, ctx.workspacePath, workspaceId),
-        refreshFrontmatter: (noteIds) => refreshMeetingFrontmatter(ctx.db, ctx.workspacePath, noteIds, suppressNextChange).written,
+        refreshFrontmatter: (noteIds) => refreshMeetingFrontmatter(ctx.db, ctx.workspacePath, noteIds, suppressNextChange),
       });
       if (!result.dryRun && result.applied) broadcastEvent("db:changed", null);
       return result;

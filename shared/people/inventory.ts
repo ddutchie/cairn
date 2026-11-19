@@ -107,7 +107,7 @@ const EMAIL_IN_TEXT = /[^\s@<>()[\]"',;]+@[^\s@<>()[\]"',;]+\.[^\s@<>()[\]"',;]+
 function emailsFrom(note: InventoryNote): string[] {
   const out = new Set<string>();
   for (const e of note.frontmatter?.emails ?? []) if (isEmail(e)) out.add(e.trim().toLowerCase());
-  for (const line of note.content.split(/\r?\n/).slice(0, 40)) {
+  for (const line of withoutCode(note.content).split(/\r?\n/).slice(0, 40)) {
     const m = /^\s*(?:[-*]\s+)?(?:\*\*|__)?e-?mails?(?:\s*:\s*(?:\*\*|__)|(?:\*\*|__)\s*:|\s*:)\s*(.+)$/i.exec(line);
     if (!m) continue;
     for (const e of m[1].match(EMAIL_IN_TEXT) ?? []) if (isEmail(e)) out.add(e.toLowerCase());

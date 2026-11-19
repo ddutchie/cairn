@@ -20,7 +20,7 @@ beforeEach(() => {
 afterEach(() => db.close());
 
 const inventory = () => buildInventory(db, "ws1", { readFrontmatter: c.readFrontmatter });
-const apply = (approvals: MigrationApprovals, dryRun = false, refresh?: (ids: string[]) => string[]) =>
+const apply = (approvals: MigrationApprovals, dryRun = false, refresh?: (ids: string[]) => { written: string[]; failed: string[] }) =>
   applyMigration(db, "ws1", approvals, { dryRun, readFrontmatter: c.readFrontmatter, refreshFrontmatter: refresh });
 const cand = (key: string): PersonaCandidate => inventory().personas.find((p) => p.noteId === c.n[key])!;
 
@@ -43,6 +43,9 @@ function approveAll(extra: Partial<MigrationApprovals> = {}): MigrationApprovals
     ...extra,
   };
 }
+
+/** The approve-all list with Ana's accepted first-name alias on her own entry. */
+const withAnaAlias = () => (approveAll().personas ?? []).map((p) => (p.noteId === c.n.ana ? { ...p, aliases: ["Ana"] } : p));
 
 describe("inventory", () => {
   it("finds the persona candidates with confidence and reasons, and leaves out deleted notes and other workspaces", () => {
@@ -206,7 +209,8 @@ describe("apply: people", () => {
     expect(getPerson(db, migratedPersonId("ws1", c.n.samA))).toBeNull();
     // Both with the same name: the second would be linked to the first, so it is refused.
     const same = apply({ personas: [{ noteId: c.n.samA }, { noteId: c.n.samB }] });
-    expect(same.personas.map((p) => p.outcome)).toEqual(["created", "skipped"]);
+    expect(same.personas.map((p) => p.outcome)).toEqual(["skipped", "skipped"]); // all or none
+    expect(getPerson(db, migratedPersonId("ws1", c.n.samA))).toBeNull();
     expect(getPerson(db, migratedPersonId("ws1", c.n.samB))).toBeNull();
   });
 
@@ -339,7 +343,8 @@ describe("apply: safety", () => {
   it("never changes a note: not the persona notes, not the meeting notes", () => {
     const notes = () => db.prepare("SELECT id, title, content, folder, tag_ids, archived_at, deleted_at, version, updated_at FROM notes ORDER BY id").all();
     const before = notes();
-    apply(approveAll({ personas: [...(approveAll().personas ?? []), { noteId: c.n.ana, aliases: ["Ana"] }] }));
+    apply(approveAll({ personas: withAnaAlias() }));
+    expect(getPerson(db, migratedPersonId("ws1", c.n.ana))!.aliases).toContain("Ana");
     const after = notes() as Array<{ id: string; version: number }>;
     // Only the meeting link (and its bookkeeping) may differ on meeting notes; bodies, titles and folders never.
     const strip = (rows: unknown[]) => (rows as Array<Record<string, unknown>>).map(({ version: _v, updated_at: _u, ...rest }) => rest);
@@ -358,7 +363,7 @@ describe("apply: safety", () => {
   });
 
   it("is idempotent: a second run reports no change and writes nothing", () => {
-    const approvals = approveAll({ personas: [...(approveAll().personas ?? []), { noteId: c.n.ana, aliases: ["Ana"] }] });
+    const approvals = approveAll({ personas: withAnaAlias() });
     const first = apply(approvals);
     const afterFirst = snapshot();
     expect((afterFirst.sync_pending ?? []).length).toBeGreaterThan(0); // the capture triggers are live, so equality below means no sync churn
@@ -382,7 +387,7 @@ describe("apply: safety", () => {
   });
 
   it("asks for the frontmatter refresh only for meeting notes that gained confirmed attendees, and never in a dry run", () => {
-    const refresh = vi.fn((ids: string[]) => ids);
+    const refresh = vi.fn((ids: string[]) => ({ written: ids, failed: [] as string[] }));
     apply(approveAll(), true, refresh);
     expect(refresh).not.toHaveBeenCalled();
     const r = apply(approveAll(), false, refresh);

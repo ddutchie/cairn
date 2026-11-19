@@ -204,7 +204,9 @@ migration, plus how it's built and released.
         know is listed with sensible confidence, that nothing else is ticked
         (a low guess is never ticked for you), that the two Sebastiens and
         Sebastian show as skipped or ambiguous, and that "Chris" (or any first
-        name two people share) shows in the ambiguity line.
+        name two people share) shows in the ambiguity line. For a skipped
+        duplicate name (both "Sam Whitfield" notes), rename one of the notes,
+        reopen Find in notes, and tick both; the panel has no rename control.
      4. Tick the first-name aliases you want ("Also answer to “Sebastien”" only
         where it points to one person), then Preview. The summary should show
         about the number of people you ticked, the meetings with attendees,
@@ -214,8 +216,11 @@ migration, plus how it's built and released.
         `attendees`/`date` properties; open two persona notes and confirm the
         text is exactly as before; open a person page and compare their open
         items with the unchecked lines they own.
-     6. Run Find in notes again: nothing left to create, every persona "Already
-        a person", and Apply on the same ticks reports "Nothing to change".
+     6. Run Find in notes again: every persona you ticked now shows "Already a
+        person" (greyed out; those rows can't be ticked again), and the ones
+        you left unticked or that were skipped are unchanged. To replay the
+        approvals, call `db:people:migration:apply` with the same list: it
+        reports "unchanged" for everything already done and writes nothing.
      7. Volatile-text cleanup (phase 4) is not part of this tool: do it with the
         agent as normal note edits after the checks above.
    - **Acceptance criteria for the gate**: (a) inventory of the real corpus

@@ -116,7 +116,7 @@ export function MigrationPanel({ onClose }: { onClose: () => void }) {
         <Check
           id={`mig-p-${c.noteId}`}
           checked={people.has(c.noteId)}
-          disabled={skipped}
+          disabled={skipped || busy}
           onChange={(v) => toggle(people, setPeople, c.noteId, v)}
           label={
             <span className="flex flex-wrap items-center gap-1.5">
@@ -129,7 +129,7 @@ export function MigrationPanel({ onClose }: { onClose: () => void }) {
         />
         {!skipped && c.suggestedAliases.map((a) => (
           <div key={a} className="ml-6 mt-0.5">
-            <Check id={`mig-a-${c.noteId}-${a}`} checked={aliases.has(`${c.noteId}|${a}`)} onChange={(v) => toggle(aliases, setAliases, `${c.noteId}|${a}`, v)}
+            <Check id={`mig-a-${c.noteId}-${a}`} disabled={busy} checked={aliases.has(`${c.noteId}|${a}`)} onChange={(v) => toggle(aliases, setAliases, `${c.noteId}|${a}`, v)}
               label={<span className="text-xs text-[var(--text-secondary)]">Also answer to “{a}” (so “{a}” in notes finds them)</span>} />
           </div>
         ))}
@@ -181,7 +181,7 @@ export function MigrationPanel({ onClose }: { onClose: () => void }) {
                     const known = m.attendees.filter((a) => a.resolution === "person" || a.resolution === "candidate").length;
                     return (
                       <li key={m.noteId} className="py-1.5">
-                        <Check id={`mig-m-${m.noteId}`} checked={meetings.has(m.noteId)} onChange={(v) => toggle(meetings, setMeetings, m.noteId, v)}
+                        <Check id={`mig-m-${m.noteId}`} disabled={busy} checked={meetings.has(m.noteId)} onChange={(v) => toggle(meetings, setMeetings, m.noteId, v)}
                           label={<span className="flex items-center gap-1.5"><span className="truncate">{m.title}</span>
                             <span className="text-2xs text-[var(--text-tertiary)]">{known} of {m.attendees.length} known</span></span>} />
                       </li>

@@ -156,7 +156,7 @@ export function PeopleView() {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
-      {finding && <MigrationPanel onClose={() => setFinding(false)} />}
+      {finding && <MigrationPanel key={activeWorkspaceId} onClose={() => setFinding(false)} />}
       <ViewToolbar
         title="People"
         description="The people you work with, their meetings and notes"

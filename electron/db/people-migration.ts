@@ -28,7 +28,7 @@ import {
   firstName, guessMeeting, guessPersona, type InventoryNote, type NoteFrontmatterHints, type PersonaGuess,
 } from "../../shared/people/inventory";
 import {
-  foldName, isGroupName, parseAttendeeValue, parseChecklist, parseMeetingDate, withoutCode, type AttendeeRef,
+  foldName, isGroupName, parseAttendeeValue, parseChecklist, withoutCode, type AttendeeRef,
 } from "../../shared/people/parse";
 import { migratedPersonId } from "../../shared/people/ids";
 import type {
@@ -343,7 +343,7 @@ export interface ApplyOptions extends InventoryOptions {
    * meetings (`refreshMeetingFrontmatter`); returns the notes it rewrote.
    * Skipped in a dry run. Without it, files are never touched.
    */
-  refreshFrontmatter?: (noteIds: string[]) => string[];
+  refreshFrontmatter?: (noteIds: string[]) => { written: string[]; failed: string[] };
 }
 
 class Rollback extends Error {}
@@ -397,7 +397,13 @@ export function applyMigration(db: Db, workspaceId: string, approvals: Migration
     if (!(err instanceof Rollback)) throw err;
   }
   // Files change only after the database committed, and never in a dry run.
-  result.frontmatterNotes = dryRun ? meetingNotes : (opts.refreshFrontmatter?.(meetingNotes) ?? []);
+  if (dryRun) result.frontmatterNotes = meetingNotes;
+  else if (opts.refreshFrontmatter) {
+    // The database already committed; a note whose file couldn't be written is reported and retried by re-running.
+    const r = opts.refreshFrontmatter(meetingNotes);
+    result.frontmatterNotes = r.written;
+    if (r.failed.length) result.frontmatterFailed = r.failed;
+  }
   return result;
 }
 
@@ -410,10 +416,13 @@ function run(db: Db, workspaceId: string, approvals: MigrationApprovals, notes: 
 
   const seen = new Set<string>();
   const approvedNotes = new Set((approvals.personas ?? []).map((a) => a.noteId));
+  const blocked = blockedGroups(db, workspaceId, approvals, byNote, guesses);
   for (const approval of approvals.personas ?? []) {
     if (seen.has(approval.noteId)) continue;
     seen.add(approval.noteId);
-    result.personas.push(applyPersona(db, workspaceId, approval, byNote, guesses, approvedNotes));
+    result.personas.push(blocked.has(approval.noteId)
+      ? { noteId: approval.noteId, outcome: "skipped", reason: "ambiguous_name" }
+      : applyPersona(db, workspaceId, approval, byNote, guesses, approvedNotes));
   }
 
   // Mentions and action items for every note, now that the people exist. The
@@ -428,14 +437,56 @@ function run(db: Db, workspaceId: string, approvals: MigrationApprovals, notes: 
   const meetingNotes: string[] = [];
   const noteById = new Map(notes.map((n) => [n.id, n]));
   const meetingIds = new Set<string>();
+  const meetingCandidates = new Set(inventory.meetings.map((m) => m.noteId));
   for (const noteId of approvals.meetings ?? []) {
     if (meetingIds.has(noteId)) continue;
     meetingIds.add(noteId);
-    const r = applyMeeting(db, workspaceId, noteId, noteById.get(noteId), new Set(inventory.meetings.map((m) => m.noteId)));
+    const r = applyMeeting(db, workspaceId, noteId, noteById.get(noteId), meetingCandidates);
     result.meetings.push(r);
     if (r.outcome !== "skipped" && r.attendees.length > 0) meetingNotes.push(noteId);
   }
   return { result, meetingNotes };
+}
+
+/**
+ * Notes that share a name are migrated all or none. A group is blocked (every
+ * approved member skipped) when two members would get the same final name, or
+ * when any member couldn't be migrated now (another person answers to the name,
+ * the user deleted or dismissed theirs): migrating the rest would leave the
+ * bare name pointing at one of them.
+ */
+function blockedGroups(
+  db: Db,
+  workspaceId: string,
+  approvals: MigrationApprovals,
+  byNote: Map<string, PersonaCandidate>,
+  guesses: Map<string, Guessed>,
+): Set<string> {
+  const approved = new Map((approvals.personas ?? []).map((a) => [a.noteId, a]));
+  const people = livePeople(db, workspaceId);
+  const existing = loadCandidates(db, workspaceId);
+  const blocked = new Set<string>();
+  const seenGroup = new Set<string>();
+  for (const [noteId] of approved) {
+    const g = guesses.get(noteId);
+    const cand = byNote.get(noteId);
+    if (!g || !cand || seenGroup.has(noteId)) continue;
+    const keys = new Set([cand.name, cand.title].map(foldName));
+    const members = [...guesses.values()].filter((o) => !o.note.archived && [o.guess.name, o.note.title].some((k) => keys.has(foldName(k))));
+    if (members.length < 2) continue;
+    members.forEach((m) => seenGroup.add(m.note.id));
+    const mine = members.filter((m) => approved.has(m.note.id));
+    const finalNames = mine.map((m) => foldName(approved.get(m.note.id)!.name?.trim() || byNote.get(m.note.id)!.name));
+    const clash = new Set(finalNames).size !== finalNames.length;
+    const stuck = mine.some((m) => {
+      const name = approved.get(m.note.id)!.name?.trim() || byNote.get(m.note.id)!.name;
+      const c = collide(people, existing, m.note, { ...m.guess, name }, name);
+      const gone = !!(db.prepare("SELECT deleted_at FROM people WHERE id = ?").get(migratedPersonId(workspaceId, m.note.id)) as { deleted_at: string | null } | undefined)?.deleted_at;
+      return gone || (!!c.skip && c.skip !== "already_linked") || !!c.person;
+    });
+    if (clash || stuck) mine.forEach((m) => blocked.add(m.note.id));
+  }
+  return blocked;
 }
 
 function applyPersona(
@@ -537,7 +588,7 @@ function applyMeeting(
   // a body "When:" moves only a meeting this note made, never a calendar one.
   const current = note.meetingId ? getMeeting(db, note.meetingId) : null;
   const dateAllowed = !current || current.source === "note";
-  const fmDate = guess.frontmatterAttendees.length ? parseMeetingDate(note.frontmatter?.date) : null;
+  const fmDate = guess.frontmatterAttendees.length ? guess.date : null; // the date the inventory showed
   const common = { noteId, provenance: "convention" as const, status: "confirmed" as const, keepRemoved: true, noStubs: true, candidates };
   let meetingId = note.meetingId;
   if (guess.frontmatterAttendees.length) {

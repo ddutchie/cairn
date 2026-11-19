@@ -237,7 +237,7 @@ export function makeFrontmatterReader(db: Database.Database, workspacePath: stri
       try {
         const stat = fs.lstatSync(fp); // never follow symlinks
         if (stat.isDirectory()) { walk(fp, out); continue; }
-        if (!entry.endsWith(".md")) continue;
+        if (!entry.endsWith(".md") || !stat.isFile()) continue;
         const { data } = matter(fs.readFileSync(fp, "utf-8"));
         if (typeof data.id !== "string") continue;
         out.set(data.id, {
