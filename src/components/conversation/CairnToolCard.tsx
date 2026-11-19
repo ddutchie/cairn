@@ -24,7 +24,9 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
   // (the engine puts a failed call's whole result text in `error`).
   const resultText = toolCall.output ?? toolCall.error;
   const parsed = parseObject(resultText);
-  const base = toolCall.viewTitle ? { pre: toolCall.viewTitle } : humanizeTool(toolCall.name, toolCall.args, cairnNameLookup);
+  // A people call names its person by an opaque id: read the name from the result when the call didn't carry one.
+  const summaryArgs = toolCall.name === "people" ? withPersonName(toolCall.args, parsed) : toolCall.args;
+  const base = toolCall.viewTitle ? { pre: toolCall.viewTitle } : humanizeTool(toolCall.name, summaryArgs, cairnNameLookup);
   // A style rule that was already in the guide must not read as "Added".
   const hitCount = toolCall.ok && (toolCall.name === "search_notes" || toolCall.name === "search_tasks") ? resultCount(resultText) : undefined;
   const summary = toolCall.name === "update_user_writing_style" && toolCall.ok && parsed?.updated === false
@@ -72,6 +74,14 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
       ) : raw}
     </ToolCard>
   );
+}
+
+/** The call's arguments with `name` filled in from the result (person, edge source or attendee) when the call only had an id. */
+function withPersonName(args: Record<string, unknown> | undefined, parsed: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!args || (typeof args.name === "string" && args.name.trim()) || !parsed) return args;
+  const at = (k: string) => (parsed[k] && typeof parsed[k] === "object" ? parsed[k] as Record<string, unknown> : undefined);
+  const name = [parsed.name, at("person")?.name, at("attendee")?.name, at("mention")?.name, at("edge")?.source].find((v) => typeof v === "string" && v.trim());
+  return name ? { ...args, name } : args;
 }
 
 /** The one person a `people` result is about (get, upsert, timeline, a person's relationships), if any. */

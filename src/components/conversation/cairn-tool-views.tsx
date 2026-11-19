@@ -415,7 +415,7 @@ const people: View = (_tc, args, out, ctx) => {
     const add = (f: string, v: unknown) => { const s = str(v); if (s) rows.push([f, s]); };
     add("name", args.name ?? person?.name);
     if (Array.isArray(args.relationships) && args.relationships.length) {
-      rows.push(["relationship", (args.relationships as unknown[]).map((r) => REL_LABEL(str(asRec(r)?.type) ?? "")).filter(Boolean).join(", ")]);
+      rows.push(["relationship", recs(args.relationships).map((r) => `${REL_LABEL(str(r.type) ?? "")}${str(r.label) ? ` · ${str(r.label)}` : ""}`).join(", ")]);
     }
     add("1:1", args.cadence);
     if (Array.isArray(args.aliases) && args.aliases.length) add("aliases", args.aliases.join(", "));
