@@ -25,12 +25,17 @@ export function RelationshipCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const fs = useFontScale();
-  const { width, height } = useContainerDims(containerRef);
+  const dims = useContainerDims(containerRef);
+  // Rounded so a live resize doesn't re-run the layout on every pixel.
+  const width = Math.max(100, Math.round(dims.width / 50) * 50);
+  const height = Math.max(100, Math.round(dims.height / 50) * 50);
   const open = useOpenPerson();
   const { people, network, loading } = usePeopleNetwork();
   const [kinds, setKinds] = useState<ReadonlySet<LinkKind>>(() => new Set(DEFAULT_LINK_KINDS));
   const [focusId, setFocusId] = useState<string | null>(null);
   const [zoom, setZoom] = useState({ k: 1, x: 0, y: 0 });
+  const zoomRef = useRef(zoom);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
 
   const allLinks = useMemo(() => deriveLinks(people, network.edges, network.coAttendance), [people, network]);
   const counts = useMemo(() => {
@@ -72,6 +77,7 @@ export function RelationshipCanvas() {
     if (!svg) return;
     const behaviour = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.5, 6])
+      .extent([[0, 0], [dims.width, dims.height]])
       .filter((e: Event) => {
         if (e.type === "wheel") return true;
         if ((e as MouseEvent).button) return false;
@@ -80,7 +86,10 @@ export function RelationshipCanvas() {
       .on("zoom", (e) => setZoom({ k: e.transform.k, x: e.transform.x, y: e.transform.y }));
     const sel = d3.select(svg);
     sel.call(behaviour);
+    // A fresh svg starts at identity; carry the current view over so the first gesture doesn't snap.
+    sel.call(behaviour.transform, d3.zoomIdentity.translate(zoomRef.current.x, zoomRef.current.y).scale(zoomRef.current.k));
     return () => { sel.on(".zoom", null); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- extent follows the size; re-binding per pixel isn't wanted
   }, [positions, links.length]);
 
   if (loading) return null;
@@ -109,10 +118,10 @@ export function RelationshipCanvas() {
           ? "No relationships yet. Set a manager, mentor or stakeholder on a person's page, or mark yourself and give people a relationship to you."
           : "Nothing to show with these filters. Turn a relationship type back on."} />
       ) : (
-        <svg ref={svgRef} width={width} height={height} role="group" aria-label={summary} className="block select-none touch-none">
+        <svg ref={svgRef} width={dims.width} height={dims.height} role="group" aria-label={summary} className="block select-none touch-none">
           <defs>
             {LINK_KINDS.map((k) => (
-              <marker key={k} id={`rel-arrow-${k}`} viewBox="0 0 10 10" refX="14" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <marker key={k} id={`rel-arrow-${k}`} viewBox="0 0 10 10" refX="18" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
                 <path d="M0,0 L10,5 L0,10 z" fill={LINK_COLOR[k]} />
               </marker>
             ))}

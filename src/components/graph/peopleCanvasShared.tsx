@@ -43,7 +43,11 @@ export function usePeopleNetwork() {
     let cancelled = false;
     peopleClient.network(workspaceId)
       .then((data) => { if (!cancelled) setNetwork({ workspaceId, data }); })
-      .catch((err) => console.warn("[people] network read failed", err));
+      .catch((err) => {
+        // Render with what the people list alone gives (relationship chips) rather than a blank canvas.
+        console.warn("[people] network read failed", err);
+        if (!cancelled) setNetwork({ workspaceId, data: EMPTY_NETWORK });
+      });
     return () => { cancelled = true; };
   }, [workspaceId, people]);
 

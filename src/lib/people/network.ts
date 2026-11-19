@@ -98,7 +98,8 @@ export function deriveLinks(
     const { kind, directed } = EDGE_KIND[e.type];
     const key = pairKey(kind, e.sourceId, e.targetId, directed);
     if (seen.has(key)) continue;
-    seen.add(key);
+    // An ended edge is history; it must not hide a current relationship chip.
+    if (!e.endedAt) seen.add(key);
     links.push({
       id: `e:${e.id}`, kind, source: e.sourceId, target: e.targetId, directed,
       label: e.label, ended: !!e.endedAt, derived: false, weight: 1,

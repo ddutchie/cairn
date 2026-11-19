@@ -44,6 +44,14 @@ describe("deriveLinks", () => {
     expect(links[0].derived).toBe(false);
   });
 
+  it("lets a current chip stand when the stored edge has ended", () => {
+    const me = person("Me", { isMe: true });
+    const ann = person("Ann", { rel: ["direct_report"] });
+    const links = deriveLinks([me, ann], [edge("me", "ann", "manager_of", { endedAt: "2026-01-01" })], []);
+    expect(links.filter((l) => l.kind === "reporting" && !l.ended)).toHaveLength(1);
+    expect(buildOrgChart([me, ann], links).roots[0].children.map((c) => c.person.name)).toEqual(["Ann"]);
+  });
+
   it("derives nothing from chips when no one is me", () => {
     expect(deriveLinks([person("Ann", { rel: ["direct_report"] })], [], [])).toEqual([]);
   });

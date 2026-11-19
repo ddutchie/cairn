@@ -44,8 +44,17 @@ export function OrgChartCanvas() {
 
   const nameFont = 11 * fs;
   const subFont = 9 * fs;
+  // Truncate by estimated width so text stays inside the fixed card at any font scale.
+  const nameMax = Math.max(8, Math.floor((ORG_CARD_W - 20) / (0.55 * nameFont)));
+  const subMax = Math.max(8, Math.floor((ORG_CARD_W - 20) / (0.52 * subFont)));
+  const onlyMe = chart.roots.length === 1 && chart.roots[0].children.length === 0 && chart.roots[0].alsoReportsTo.length === 0;
   return (
     <div className="flex flex-col flex-1 min-w-0 min-h-0">
+      {onlyMe && (
+        <p role="status" className="px-3 py-1.5 text-xs text-[var(--text-tertiary)] border-b border-[var(--border-subtle)]">
+          No reporting lines yet. Set who manages whom on a person&apos;s page, or give people the Manager or Direct report relationship.
+        </p>
+      )}
       {chart.cyclesBroken > 0 && (
         <p role="status" className="px-3 py-1.5 text-xs text-[var(--warning)] border-b border-[var(--border-subtle)]">
           {chart.cyclesBroken === 1 ? "A reporting loop" : `${chart.cyclesBroken} reporting loops`} in your data {chart.cyclesBroken === 1 ? "was" : "were"} cut so the chart can draw. Check the manager links.
@@ -81,7 +90,7 @@ export function OrgChartCanvas() {
             return (
               <g
                 key={id} transform={`translate(${x},${y})`} role="button" tabIndex={0}
-                aria-label={`${p.name}${isMe ? " (you)" : ""}${sub && !isMe ? `, ${sub}` : ""}${reports ? `, ${reports} direct ${reports === 1 ? "report" : "reports"}` : ""}. Open person`}
+                aria-label={`${p.name}${isMe ? " (you)" : ""}${sub && !isMe ? `, ${sub}` : ""}${reports ? `, ${reports} direct ${reports === 1 ? "report" : "reports"}` : ""}${node.cycleBroken ? ", manager link cut to break a loop" : ""}. Open person`}
                 className="cursor-pointer outline-none [&:focus-visible>rect]:stroke-[var(--accent)] [&:focus-visible>rect]:stroke-[2.5]"
                 onClick={() => open(id)}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(id); } }}
@@ -92,11 +101,11 @@ export function OrgChartCanvas() {
                   stroke={isMe || myLine.has(id) ? "var(--accent)" : "var(--border)"} strokeWidth={isMe ? 2 : 1}
                 />
                 <text x={10} y={ORG_CARD_H / 2 - (sub ? 2 : -4)} fontSize={nameFont} fontWeight={500} fill="var(--text-primary)" pointerEvents="none">
-                  {truncateName(p.name, 20)}
+                  {truncateName(p.name, nameMax)}
                 </text>
                 {sub && (
                   <text x={10} y={ORG_CARD_H / 2 + 11} fontSize={subFont} fill="var(--text-tertiary)" pointerEvents="none">
-                    {truncateName(sub, 26)}
+                    {truncateName(sub, subMax)}
                   </text>
                 )}
                 {node.cycleBroken && <title>Their manager link was cut to break a loop</title>}
