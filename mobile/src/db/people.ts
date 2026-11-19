@@ -63,6 +63,8 @@ export function setPersonStatus(personId: string, status: PeopleStatus): void {
 // ── Person page ──────────────────────────────
 
 export interface OpenItem {
+  /** Digest of the note body this item was read from: a tick against a changed body is refused (reload instead). */
+  bodyDigest: string;
   noteId: string;
   noteTitle: string;
   lineKey: string;
@@ -79,6 +81,16 @@ export interface OpenItems {
 }
 
 interface NoteBody { id: string; title: string; content: string }
+
+/** A cheap content digest (FNV-1a) to detect that a note changed between listing and tapping. */
+function digest(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return `${text.length}:${h.toString(16)}`;
+}
 
 /** Live notes in the workspace that contain an unchecked task line. */
 function notesWithOpenTasks(ws: string): NoteBody[] {
@@ -114,7 +126,7 @@ export function loadOpenItems(person: Person): OpenItems {
   for (const n of notes) {
     for (const item of ownedItemsIn(n.content ?? "", candidates)) {
       if (item.done) continue;
-      const row: OpenItem = { noteId: n.id, noteTitle: n.title, lineKey: item.lineKey, text: item.text, ownerText: item.ownerText };
+      const row: OpenItem = { bodyDigest: digest(n.content ?? ""), noteId: n.id, noteTitle: n.title, lineKey: item.lineKey, text: item.text, ownerText: item.ownerText };
       if (item.ownerPersonId === person.id) out.theyOwe.push(row);
       else if (me && item.ownerPersonId === me.id && about.has(n.id)) out.iOwe.push(row);
     }
@@ -131,11 +143,12 @@ export function loadPersonPage(personId: string): (PersonPage & { items: OpenIte
 /**
  * Tick or untick an owned checklist line. Only the box in the note body
  * changes; the note is saved like any edit, so it syncs and the desktop
- * re-indexes it. Returns false when the line is gone (the note was edited since).
+ * re-indexes it. Returns false when the line is gone or the note changed since the list was read (the caller reloads).
  */
-export function setActionItemDone(noteId: string, lineKey: string, done: boolean): boolean {
+export function setActionItemDone(noteId: string, lineKey: string, done: boolean, bodyDigest?: string): boolean {
   const note = getDb().getFirstSync<NoteBody>("SELECT id, title, content FROM notes WHERE id = ? AND deleted_at IS NULL", noteId);
   if (!note) return false;
+  if (bodyDigest !== undefined && digest(note.content ?? "") !== bodyDigest) return false;
   const next = setItemDone(note.content ?? "", lineKey, done);
   if (next === null) return false;
   if (next !== note.content) updateNote(noteId, note.title, next);
@@ -185,19 +198,27 @@ export function attendeeCandidates(noteId: string): Person[] {
 
 /** Add a person to the note's meeting (made on the first add), as the user's own manual choice. */
 export function addNoteAttendee(noteId: string, personId: string): MeetingAttendee {
-  return write((db) => {
-    let meetingId = getDb().getFirstSync<{ meeting_id: string | null }>("SELECT meeting_id FROM notes WHERE id = ?", noteId)?.meeting_id ?? null;
+  // Capture (which may make the meeting and link the note) and the attendee insert commit together:
+  // a rejected add (say the person was deleted by sync) leaves the note unlinked.
+  const db = peopleDb();
+  const out = db.transaction(() => {
+    const note = getDb().getFirstSync<{ meeting_id: string | null }>("SELECT meeting_id FROM notes WHERE id = ? AND deleted_at IS NULL", noteId);
+    if (!note) throw new Error("This note is gone.");
+    let meetingId = note.meeting_id;
     if (meetingLinkPending(db, meetingId)) {
       // The note points at a calendar meeting whose row hasn't synced yet; capturing now would
       // replace that link with a new meeting. Retry after the next sync.
       throw new Error("This note's meeting hasn't synced to this device yet. Sync, then try again.");
     }
+    // A missing link, or one to a deleted meeting (a restored note), gets a meeting of its own.
     if (!meetingId || !pq.getMeeting(db, meetingId)) {
       // Nobody is listed yet, so nothing this call could remove.
       meetingId = captureNoteMeeting(db, { noteId, attendees: [], source: "manual", provenance: "explicit" }).meetingId;
     }
     return pq.addAttendee(db, { meetingId, personId, status: "confirmed", source: "manual", provenance: "explicit" });
-  });
+  })();
+  notifyLocalWrite();
+  return out;
 }
 
 /** Confirm a suggested attendee (the user's own claim, so a file or line dropping them later doesn't remove them). */
@@ -208,7 +229,7 @@ export function confirmNoteAttendee(noteId: string, personId: string): void {
 /** Remove (or dismiss, for a suggestion) an attendee from the note's meeting. */
 export function removeNoteAttendee(noteId: string, personId: string): void {
   write((db) => {
-    const meetingId = getDb().getFirstSync<{ meeting_id: string | null }>("SELECT meeting_id FROM notes WHERE id = ?", noteId)?.meeting_id;
+    const meetingId = getDb().getFirstSync<{ meeting_id: string | null }>("SELECT meeting_id FROM notes WHERE id = ? AND deleted_at IS NULL", noteId)?.meeting_id;
     if (meetingId) pq.removeAttendee(db, meetingId, personId);
   });
 }

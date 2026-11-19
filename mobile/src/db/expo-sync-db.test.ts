@@ -58,4 +58,12 @@ describe("createExpoSyncDb transaction", () => {
     sync.transaction(() => 1)();
     expect(log).toEqual(["BEGIN", "ROLLBACK", "BEGIN", "COMMIT"]);
   });
+
+  it("nests across two adapters made over the same handle", () => {
+    const { db, log } = fakeDb();
+    const a = createExpoSyncDb(db);
+    const b = createExpoSyncDb(db);
+    a.transaction(() => { b.transaction(() => 1)(); })();
+    expect(log).toEqual(["BEGIN", "SAVEPOINT cairn_sp_1", "RELEASE cairn_sp_1", "COMMIT"]);
+  });
 });

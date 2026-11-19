@@ -118,7 +118,7 @@ export function AttendeeStrip({ noteId, addRequest }: { noteId: string; addReque
         <BottomSheetHeader title="Add attendees" onCancel={() => setPickerOpen(false)} />
         <ScrollView style={s.pickerList}>
           {candidates.length === 0 ? (
-            <Text style={s.empty}>Everyone you know is already here. Add people from the People screen.</Text>
+            <Text style={s.empty}>Everyone you know is already here. To add someone new, add them on desktop.</Text>
           ) : (
             candidates.map((p) => (
               <PressableScale

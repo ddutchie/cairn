@@ -25,6 +25,9 @@ function toParams(params: unknown[]): unknown[] {
   return params;
 }
 
+/** Transaction depth per database handle, so every adapter made over one handle nests correctly. */
+const txState = new WeakMap<object, { depth: number; seq: number }>();
+
 export function createExpoSyncDb(db: SQLiteDatabase): SyncDb {
   const prepare = (sql: string): SyncStatement => {
     return {
@@ -64,8 +67,8 @@ export function createExpoSyncDb(db: SQLiteDatabase): SyncDb {
   // better-sqlite3 allows) would fail with "cannot start a transaction within a
   // transaction". Track depth: the outermost call uses the real transaction, inner
   // calls a SAVEPOINT that rolls back alone if its function throws.
-  let depth = 0;
-  let savepointSeq = 0;
+  const state = txState.get(db) ?? { depth: 0, seq: 0 };
+  txState.set(db, state);
 
   return {
     prepare,
@@ -73,10 +76,10 @@ export function createExpoSyncDb(db: SQLiteDatabase): SyncDb {
       // Return a callable wrapper (better-sqlite3 semantics): calling it runs
       // `fn` inside a synchronous transaction.
       return () => {
-        if (depth > 0) {
-          const name = `cairn_sp_${++savepointSeq}`;
+        if (state.depth > 0) {
+          const name = `cairn_sp_${++state.seq}`;
           db.execSync(`SAVEPOINT ${name}`);
-          depth++;
+          state.depth++;
           try {
             const out = fn();
             db.execSync(`RELEASE ${name}`);
@@ -86,17 +89,17 @@ export function createExpoSyncDb(db: SQLiteDatabase): SyncDb {
             db.execSync(`RELEASE ${name}`);
             throw e;
           } finally {
-            depth--;
+            state.depth--;
           }
         }
         let result: T;
-        depth++;
+        state.depth++;
         try {
           db.withTransactionSync(() => {
             result = fn();
           });
         } finally {
-          depth--;
+          state.depth--;
         }
         return result!;
       };

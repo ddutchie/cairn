@@ -351,7 +351,9 @@ const BASE_TOOLS: ToolDef[] = [
         for (const cardId of strArray(a.linkCardIds)) step(`link ${id}→${cardId}`, () => q.linkNoteToTask(id, cardId));
         for (const cardId of strArray(a.unlinkCardIds)) step(`unlink ${id}→${cardId}`, () => q.unlinkNoteFromTask(id, cardId));
       }
-      const meeting = applyNoteMeeting(ids.filter((id) => q.getNote(id)), a, errors);
+      const live = ids.filter((id) => q.getNote(id));
+      if (a.attendees !== undefined || a.date !== undefined) for (const id of ids) if (!live.includes(id)) errors.push(`attendees ${id}: Note not found`);
+      const meeting = applyNoteMeeting(live, a, errors);
       const notes = ids.map((id) => q.getNote(id)).filter((n) => n !== null).map((n) => ({ id: n!.id, title: n!.title }));
       const met = meeting !== undefined ? { meeting } : {};
       return summarize(notes.length === 1 ? { ...notes[0], updated: true, ...met } : { updated: notes, ...met }, errors);
@@ -552,8 +554,14 @@ function guardPrivate(t: ToolDef): ToolDef {
       const result = await t.run(args);
       // Re-read: the call itself may have changed who is private (a person upsert), and a
       // write result can name a private persona note it didn't ask about (`personaNoteId`).
-      hidden = hiddenNoteIds();
-      return scrubHidden(hidden, result, reads ? args : {});
+      // If the re-read fails, the pre-dispatch set still applies (never fail open).
+      let now: ReadonlySet<string> = hidden;
+      try {
+        now = hiddenNoteIds();
+      } catch {
+        // keep the pre-dispatch set
+      }
+      return scrubHidden(new Set([...hidden, ...now]), result, reads ? args : {});
     },
   };
 }

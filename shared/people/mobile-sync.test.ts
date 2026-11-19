@@ -146,6 +146,16 @@ describe("mobile People writes sync like the desktop's", () => {
     }
   });
 
+  it("adding a claim to a legacy row keeps the old source listed when the new claim is removed", () => {
+    const { meetingId } = captureNoteMeeting(mobile.db, { noteId: "n1", attendees: [], source: "manual", provenance: "explicit" });
+    // A row written before claims existed: listed by `source` alone, no explicit claims.
+    mobile.db.prepare("INSERT INTO meeting_attendees (id, meeting_id, person_id, status, source, sources, provenance, created_at, updated_at) VALUES (?, ?, 'ana', 'confirmed', 'calendar', '[]', 'explicit', '2026-11-18T10:00:00.000Z', '2026-11-18T10:00:00.000Z')")
+      .run(attendeeRowId(meetingId, "ana"), meetingId);
+    pq.addAttendee(mobile.db, { meetingId, personId: "ana", source: "manual", provenance: "explicit" });
+    expect(pq.removeAttendeeSource(mobile.db, meetingId, "ana", "manual")).toBe(false);
+    expect(pq.listAttendees(mobile.db, meetingId).map((a) => a.personId)).toEqual(["ana"]);
+  });
+
   it("repeating a write that changes nothing stages nothing (no sync churn)", () => {
     const { meetingId } = captureNoteMeeting(mobile.db, { noteId: "n1", attendees: [], source: "manual", provenance: "explicit" });
     pq.addAttendee(mobile.db, { meetingId, personId: "ana", source: "manual", provenance: "explicit" });

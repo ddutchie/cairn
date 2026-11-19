@@ -337,6 +337,13 @@ describe("People layer: the tools write through the shared code", () => {
     expect(db.prepare("SELECT meeting_id AS m FROM notes WHERE id = 'n1'").get()).toEqual({ m: "cal:future" });
   });
 
+  it("update_notes reports a requested note that no longer exists when setting attendees", async () => {
+    q.getNote.mockImplementation((id: string) => (id === "n1" ? { id: "n1", title: "Weekly sync" } : null));
+    const r = await call("update_notes", { noteIds: ["n1", "gone"], attendees: ["Ana Ruiz"] });
+    expect(String(r.error)).toMatch(/attendees gone: Note not found/);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM meeting_attendees WHERE deleted_at IS NULL").get()).toEqual({ n: 1 });
+  });
+
   it("update_tasks and create_task set the owner; an empty owner clears it", async () => {
     q.getCard.mockImplementation((id: string) => (id === "c1" ? { id: "c1", title: "Card", project_id: "p1", column_id: "col" } : null));
     expect(await call("update_tasks", { cardIds: ["c1"], owner: "Ana Ruiz" })).toMatchObject({ owner: { id: "ana" } });

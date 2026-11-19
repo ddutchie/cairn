@@ -557,7 +557,12 @@ export function addAttendee(db: Db, input: AddAttendeeInput): MeetingAttendee {
     const current = sourcesOf(existing);
     const sources = current.includes(source) ? current : [...current, source];
     const top = strongest(sources);
-    const claims = current.includes(source) ? existing.sources : claimsWith(existing, source, true, now);
+    // A legacy row (no explicit claims) is listed by its `source`: make that an explicit claim before adding
+    // another, so removing the new one later doesn't tombstone a person the old source still lists.
+    const base: Row = activeSources(parseClaims(existing.sources)).length
+      ? existing
+      : { ...existing, sources: serializeClaims({ [existing.source]: { on: true, at: existing.updated_at as string } }) };
+    const claims = current.includes(source) ? existing.sources : claimsWith(base, source, true, now);
     const takeOver = SOURCE_RANK[source] > SOURCE_RANK[existing.source as AttendeeSource];
     const confirm = existing.status !== status && status === "confirmed";
     if (sources.length === current.length && !takeOver && !confirm) return toAttendee(existing);

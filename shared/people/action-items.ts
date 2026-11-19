@@ -38,7 +38,7 @@ export function ownedItemsIn(content: string, candidates: readonly Candidate[]):
   const out: OwnedItem[] = [];
   for (const { item, key } of keyedLines(content)) {
     if (!item.owner) continue;
-    const r = resolveIn(candidates as Candidate[], item.owner);
+    const r = resolveIn(candidates, item.owner);
     out.push({
       lineKey: key,
       ownerText: item.owner.name ?? item.owner.email ?? null,

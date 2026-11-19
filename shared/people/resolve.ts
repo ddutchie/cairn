@@ -31,7 +31,7 @@ export interface Candidate {
 }
 
 /** Resolve one reference against preloaded candidates. */
-export function resolveIn(candidates: Candidate[], ref: PersonLookup): Resolution {
+export function resolveIn(candidates: readonly Candidate[], ref: PersonLookup): Resolution {
   const pick = (hits: Candidate[]): Resolution | null => {
     if (hits.length === 0) return null;
     const live = hits.filter((h) => h.status !== "dismissed");
