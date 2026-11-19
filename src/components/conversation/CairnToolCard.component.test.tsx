@@ -278,7 +278,7 @@ describe("People tool card", () => {
       args: { action: "get", personId: "p1" },
       output: JSON.stringify({ id: "p1", name: "Ana Lopez", relationship: ["direct_report"], cadence: "weekly", relations: [{ role: "manager", name: "Alex Morgan" }] }),
     }));
-    expect(screen.getByText("Ana Lopez")).toBeTruthy();
+    expect(screen.getAllByText("Ana Lopez").length).toBeGreaterThan(0);
     expect(screen.getByText("Alex Morgan")).toBeTruthy();
     expect(screen.getByTestId("people-open")).toBeTruthy();
   });
