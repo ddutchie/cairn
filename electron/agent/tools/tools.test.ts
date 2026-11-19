@@ -154,8 +154,9 @@ describe("cairn tools", () => {
   const deps = { getDb: () => { throw new Error("no db"); }, req: {} as never, workspacePath: "/", llmConfig: {} as never };
   const tools = cairnTools(deps);
 
-  it("exposes every TOOL_SCHEMAS entry, minus exclusions", () => {
-    expect(tools.map((t) => t.name).sort()).toEqual(Object.keys(TOOL_SCHEMAS).sort());
+  it("exposes every TOOL_SCHEMAS entry, minus exclusions (People only when on)", () => {
+    expect(tools.map((t) => t.name).sort()).toEqual(Object.keys(TOOL_SCHEMAS).filter((n) => n !== "people").sort());
+    expect(cairnTools({ ...deps, people: true }).map((t) => t.name).sort()).toEqual(Object.keys(TOOL_SCHEMAS).sort());
     expect(cairnTools(deps, { exclude: new Set(["delete"]) }).some((t) => t.name === "delete")).toBe(false);
   });
 

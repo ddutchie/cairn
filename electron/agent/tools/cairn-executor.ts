@@ -167,7 +167,10 @@ export async function executeTool(
     case "codebase_search_symbols":
     case "codebase_get_symbol_definition":
     case "codebase_get_references":
-    case "codebase_get_file_symbols": {
+    case "codebase_get_file_symbols":
+    case "people":
+    case "set_note_attendees":
+    case "set_card_owner": {
       return executeMcpTool(db, workspacePath, name, args);
     }
     case "ensure_note": {

@@ -25,6 +25,7 @@ import {
 import { getUserStyle, appendUserStyleObservation } from "../../db/queries";
 import { CONSOLIDATED_TOOLS, runConsolidatedTool } from "./consolidated";
 import { get_today } from "./today";
+import { people_tool, set_card_owner, set_note_attendees } from "./people";
 import { lazy } from "../../host-shared/lazy";
 import {
   RELATIONSHIP_AFFECTING_TOOLS,
@@ -262,6 +263,15 @@ function dispatchTool(db: Database.Database, workspacePath: string, toolName: st
       if (!updated) return { ok: true, updated: false, message: reason ?? "No change.", style: row };
       return { ok: true, updated: true, message: section ? `Appended to "${section}".` : "Appended to the guide.", style: row };
     }
+
+    case "people":
+      return people_tool(db, workspacePath, args);
+
+    case "set_note_attendees":
+      return set_note_attendees(db, workspacePath, args);
+
+    case "set_card_owner":
+      return set_card_owner(db, args);
 
     default:
       return { error: `Unknown tool: ${toolName}` };

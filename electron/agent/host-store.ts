@@ -98,7 +98,8 @@ import type { McpResourceRequest } from "../lib/mcp-client";
 
 export { newId } from "../db/utils";
 export { buildSystemPrompt, withPersonality, TOOL_LABELS, TOOLS } from "../lib/chat-prompt";
-export { TOOL_SCHEMAS, CHAT_EXCLUDED_TOOLS, toolParametersJsonSchema } from "../lib/tool-schemas";
+export { TOOL_SCHEMAS, CHAT_EXCLUDED_TOOLS, toolParametersJsonSchema, toolSchemasFor } from "../lib/tool-schemas";
+export { isPeopleEnabled } from "../db/people-queries";
 export { dlog, startPhaseTimer } from "../lib/debug-log";
 export { toolResultError } from "../lib/tool-result";
 export { aiWriteLock } from "../lib/ai-write-lock";

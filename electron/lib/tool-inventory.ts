@@ -9,7 +9,7 @@
  */
 
 import { Type } from "@earendil-works/pi-ai";
-import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, CHAT_EXCLUDED_TOOLS, toolCategory } from "./tool-schemas";
+import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, CHAT_EXCLUDED_TOOLS, toolCategory, toolSchemasFor } from "./tool-schemas";
 import { isCairnReadTool } from "../../shared/agent/tool-names";
 import { type AgentTool, buildToolset, type ToolsetDeps, type ToolSurface } from "../agent/index";
 import type { InventoryCategory, InventorySource, InventorySurface, InventoryTool } from "../../shared/types/runtime";
@@ -45,7 +45,7 @@ function describe(tool: AgentTool, gate?: ReadonlySet<string>): InventoryTool {
 }
 
 /** Dependencies that let every tool construct; none is ever called. */
-function inertDeps(surface: ToolSurface): ToolsetDeps {
+function inertDeps(surface: ToolSurface, people: boolean): ToolsetDeps {
   const unused = (): never => { throw new Error("inventory only"); };
   const stub = <T>(): T => new Proxy({}, { get: () => unused }) as T;
   const subagents = stub<NonNullable<ToolsetDeps["subagents"]>>();
@@ -53,7 +53,7 @@ function inertDeps(surface: ToolSurface): ToolsetDeps {
     surface,
     cairn: surface === "automation-dev" ? undefined : {
       exclude: surface === "chat" ? new Set<string>(CHAT_EXCLUDED_TOOLS) : undefined,
-      getDb: unused, req: { message: "", threadId: "inventory" } as never, workspacePath: "", llmConfig: {} as never,
+      getDb: unused, req: { message: "", threadId: "inventory" } as never, workspacePath: "", llmConfig: {} as never, people,
     },
     fs: { cwd: process.cwd(), rgPath: "rg" },
     subagents: surface === "automation-dev" ? undefined : subagents,
@@ -67,10 +67,11 @@ function inertDeps(surface: ToolSurface): ToolsetDeps {
  * What each surface registers. `exit_plan_mode` (plan mode only) and `workflow`/`ralph`
  * are listed because they appear on coding turns.
  */
-export async function buildInventory(): Promise<Record<InventorySurface, InventoryTool[]>> {
+export async function buildInventory(opts: { people?: boolean } = {}): Promise<Record<InventorySurface, InventoryTool[]>> {
+  const people = opts.people ?? false;
   const forSurface = async (surface: ToolSurface, gate?: ReadonlySet<string>) =>
-    (await buildToolset(inertDeps(surface))).map((t) => describe(t, gate)).sort((a, b) => a.name.localeCompare(b.name));
-  const mcp: InventoryTool[] = Object.entries(TOOL_SCHEMAS)
+    (await buildToolset(inertDeps(surface, people))).map((t) => describe(t, gate)).sort((a, b) => a.name.localeCompare(b.name));
+  const mcp: InventoryTool[] = Object.entries(toolSchemasFor({ people }))
     .filter(([name]) => !(CHAT_ONLY_TOOLS as readonly string[]).includes(name))
     .map(([name, { description }]) => ({ name, description, category: toolCategory(name), source: "cairn" as const }))
     .sort((a, b) => a.name.localeCompare(b.name));

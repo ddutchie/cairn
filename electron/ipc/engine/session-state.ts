@@ -48,6 +48,8 @@ export interface SessionState {
   usage?: UsageMeta;
   /** Files the shell tool has touched, for the watcher. */
   observed?: Set<string>;
+  /** The People flag as first seen, so the session's tool list stays the same if it is switched mid-conversation (prompt cache). */
+  people?: boolean;
   /** Outstanding `ask_questions` cards, by tool call id. */
   questions: Map<string, PendingQuestion>;
   /** What a spawned subagent inherits, kept after the turn. */

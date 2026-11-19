@@ -68,6 +68,20 @@ migration, plus how it's built and released.
    use `attendeeIdsFromSource` instead of querying `source = ?`. Body-line and checklist
    capture passes (writing `note_action_items`) land with W4 indexing, which
    already owns the per-note reindex hook.
+   W3 as built (`feat/people-w3-agent`, stacked on W2): the `people` tool
+   (`query`, `get`, `timeline`, `relationships`, `upsert`, `link`; `inventory`
+   is W9 and `prep` is W6) in `electron/mcp/tools/people.ts`, routed through the
+   consolidated dispatcher so chat, coding and MCP share it; `attendees`/`date`
+   on `ensure_note`/`update_notes` (source `declared`, person ids accepted) and
+   `owner` on `create_task`/`update_tasks`. `toolSchemasFor({ people })` leaves
+   the tool and arguments out while the flag is off, read once per session /
+   MCP server start. Approval: `people` reads are READ per call
+   (`riskForCall`, `PEOPLE_READ_ACTIONS`), writes are Cairn writes. Privacy:
+   every read result passes `scrubAgentPrivate` (one place, the dispatcher), and
+   `people.test.ts` walks every read tool. The prompt line became field
+   descriptions on the new arguments, so prompts don't change with the flag.
+   Not covered: a coding agent's `read`/`grep` on the .md file itself.
+   Cost: about 880 tokens per request with the flag on.
    - **Sync follow-up (any time, not tied to data):** `exportOplog` stamps
      forwarded ops with this device's protocol version, so a v4 device seen
      only through a v5 relay is never flagged "behind". Stamp only own ops.

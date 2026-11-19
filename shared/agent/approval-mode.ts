@@ -12,7 +12,7 @@
  * main, and tests.
  */
 import type { RiskClass } from "./risk";
-import { riskForTool } from "./tool-risk";
+import { riskForCall } from "./tool-risk";
 
 export type ApprovalMode = "discuss" | "plan" | "interactive" | "auto" | "custom";
 
@@ -67,8 +67,7 @@ export function shouldAskForRisk(risk: RiskClass, mode: ApprovalMode): boolean {
  * Mirrors the old `needsApprovalForCall` policy, but MODE-scoped instead of binary.
  */
 export function shouldAskForTool(name: string, mode: ApprovalMode, args: Record<string, unknown> = {}): boolean {
-  void args;
-  const risk = riskForTool(name);
+  const risk = riskForCall(name, args);
   return shouldAskForRisk(risk, mode);
 }
 
