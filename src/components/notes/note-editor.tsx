@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import "katex/dist/katex.min.css";
 import { Pin, PinOff, Calendar, Eye, Pencil, Code, Wand2, CheckCircle2, ChevronLeft, Sparkles, Maximize2, Minimize2 } from "lucide-react";
 import { WikilinkPicker } from "./WikilinkPicker";
+import { useHiddenPersonaIds } from "@/lib/persona-notes";
 import { Spinner } from "@/components/ui/spinner";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
@@ -234,6 +235,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
   const [blockPreview, setBlockPreview] = useState<{ kind: string; text: string } | null>(null);
 
   // ── Wikilink picker state ──────────────────────────────────────────────────
+  const hiddenPersona = useHiddenPersonaIds();
   const [wikilinkPicker, setWikilinkPicker] = useState<{
     query: string;
     triggerFrom: number;
@@ -904,7 +906,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
         {/* Wikilink autocomplete picker — rendered in a portal at fixed viewport coords */}
         {wikilinkPicker && mode !== "read" && (
           <WikilinkPicker
-            notes={notes.filter((n) => n.id !== note.id)}
+            notes={notes.filter((n) => n.id !== note.id && !hiddenPersona.has(n.id))}
             projects={projects}
             query={wikilinkPicker.query}
             onSelect={handleWikilinkSelect}

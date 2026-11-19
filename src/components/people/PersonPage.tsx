@@ -364,20 +364,56 @@ function Timeline({ items }: { items: PersonTimelineItem[] }) {
 
 function Persona({ page }: { page: PersonPageModel }) {
   const reveal = useReveal();
+  const { updateNote, loadPersonPage } = useCairnStore(useShallow((s) => ({ updateNote: s.updateNote, loadPersonPage: s.loadPersonPage })));
   const { persona } = page;
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const save = () => {
+    if (!persona || draft === null) return;
+    if (draft !== persona.content) {
+      updateNote(persona.id, { content: draft });
+      // The page model carries its own copy of the note; reread it.
+      window.setTimeout(() => void loadPersonPage(page.person.id), 300);
+    }
+    setDraft(null);
+  };
+
   return (
     <section className="mb-9" aria-label="Persona">
       <PanelHeading
         title="Persona"
         note={persona ? persona.title : undefined}
         action={persona ? (
-          <Button variant="ghost" size="xs" onClick={() => reveal.note(persona.projectId, persona.id)}>
-            <FileText size={11} /> Open note
-          </Button>
+          <div className="flex items-center gap-1">
+            {draft === null ? (
+              <Button variant="ghost" size="xs" onClick={() => setDraft(persona.content)}>
+                <Pencil size={11} /> Edit
+              </Button>
+            ) : (
+              <Button variant="accent" size="xs" onClick={save}>Done</Button>
+            )}
+            <Button variant="ghost" size="xs" onClick={() => reveal.note(persona.projectId, persona.id)}>
+              <FileText size={11} /> Open in Notes
+            </Button>
+          </div>
         ) : undefined}
       />
       {persona ? (
-        persona.content.trim()
+        draft !== null ? (
+          <textarea
+            aria-label="Persona note"
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={save}
+            rows={12}
+            className={cn(
+              "w-full resize-y rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-primary)]",
+              "placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]",
+            )}
+            placeholder="What they care about, how they like to work, how to help them grow"
+          />
+        ) : persona.content.trim()
           ? <NoteMarkdownPreview content={persona.content} inline className="text-sm" />
           : <p className="text-xs text-[var(--text-tertiary)]">The persona note is empty.</p>
       ) : (

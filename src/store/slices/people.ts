@@ -27,10 +27,16 @@ export interface PeopleSlice {
   selectedPersonId: ID | null;
   /** The selected person's page; null while loading or when none is selected. */
   personPage: PersonPage | null;
+  /** Note ids that are a live person's persona note (all statuses but dismissed), workspace-wide. */
+  personaNoteIds: ID[];
+  /** Notes view toggle: bring persona notes back into the list and pickers. Session-only, default off. */
+  showPersonaNotes: boolean;
 
   fetchPeopleFlag: () => Promise<void>;
   setPeopleEnabled: (on: boolean) => Promise<void>;
   loadPeople: () => Promise<void>;
+  loadPersonaNoteIds: () => Promise<void>;
+  setShowPersonaNotes: (on: boolean) => void;
   selectPerson: (id: ID | null) => void;
   loadPersonPage: (id: ID) => Promise<void>;
   /** Reload the list and the open page (after an external change). */
@@ -66,11 +72,15 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
     peopleLoaded: false,
     selectedPersonId: null,
     personPage: null,
+    personaNoteIds: [],
+    showPersonaNotes: false,
 
     async fetchPeopleFlag() {
       if (!hasElectron("people")) return;
       try {
-        set({ peopleEnabled: await peopleClient.isEnabled() });
+        const enabled = await peopleClient.isEnabled();
+        set({ peopleEnabled: enabled });
+        if (enabled) void get().loadPersonaNoteIds();
       } catch (err) {
         console.warn("[people] flag read failed", err);
       }
@@ -103,6 +113,24 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
       }
     },
 
+    async loadPersonaNoteIds() {
+      const workspaceId = get().activeWorkspaceId;
+      if (!workspaceId || !hasElectron("people")) return;
+      try {
+        const rows = await peopleClient.list({ workspaceId, statuses: ["confirmed", "suggested"], includeArchived: true });
+        if (get().activeWorkspaceId !== workspaceId) return;
+        const ids = rows.flatMap((p) => (p.personaNoteId ? [p.personaNoteId] : []));
+        const prev = get().personaNoteIds;
+        if (ids.length !== prev.length || ids.some((id, i) => id !== prev[i])) set({ personaNoteIds: ids });
+      } catch (err) {
+        console.warn("[people] persona note ids read failed", err);
+      }
+    },
+
+    setShowPersonaNotes(on) {
+      set({ showPersonaNotes: on });
+    },
+
     selectPerson(id) {
       set({ selectedPersonId: id, personPage: null });
       if (id) void get().loadPersonPage(id);
@@ -123,7 +151,7 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
 
     async refreshPeople() {
       const id = get().selectedPersonId;
-      await Promise.all([get().loadPeople(), id ? get().loadPersonPage(id) : Promise.resolve()]);
+      await Promise.all([get().loadPeople(), get().loadPersonaNoteIds(), id ? get().loadPersonPage(id) : Promise.resolve()]);
     },
 
     async createPerson(input) {
