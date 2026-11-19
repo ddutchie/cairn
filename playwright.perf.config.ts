@@ -10,6 +10,9 @@ import { defineConfig, devices } from "@playwright/test";
  * from the desktop app; compare variants against each other. HEADED=1 runs a
  * visible window with the GPU.
  */
+/** A port of its own, so a dev server from another checkout is never reused. */
+const PORT = Number(process.env.BENCH_PORT ?? 3217);
+
 export default defineConfig({
   testDir: "./tests/perf",
   testMatch: "**/*.spec.ts",
@@ -18,7 +21,7 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"]],
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: `http://localhost:${PORT}`,
     ...devices["Desktop Chrome"],
     headless: !process.env.HEADED,
     screenshot: "off",
@@ -29,9 +32,11 @@ export default defineConfig({
   },
   webServer: {
     command:
-      "node scripts/generate-licenses.js && node scripts/generate-features.js && npx next dev --port 3000",
-    url: "http://localhost:3000",
-    reuseExistingServer: !process.env.CI,
+      `node scripts/generate-licenses.js && node scripts/generate-features.js && npx next dev --port ${PORT}`,
+    url: `http://localhost:${PORT}`,
+    // Never attach to a server from another checkout: timings would be
+    // attributed to the wrong build. Opt in with REUSE_SERVER=1.
+    reuseExistingServer: !!process.env.REUSE_SERVER,
     timeout: 120_000,
     stdout: "ignore",
     stderr: "pipe",

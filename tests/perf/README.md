@@ -10,6 +10,10 @@ took, and frame timing in between. Takes the same `GRAPH_JSON`, `HEADED`,
 `DPR` and `CPU_THROTTLE` options as below, plus `NO_DASH=1` to draw dashed
 edges solid. Results go to `test-results/graph-perf/graph-settle-*.json`.
 
+## Architecture graph (`npm run bench:graph-arch`)
+
+Pan, zoom, hover and settle on a synthetic code graph (`FILES`, `EDGES`; default 400/2000) in Agent → Architecture → Graph, at full and 1× resolution.
+
 ## Full: interaction (`npm run bench:graph-ui`, ~5 min)
 
 This one boots the renderer against the Next dev server with
@@ -39,8 +43,11 @@ Results print as tables and are saved to `test-results/graph-perf/*.json`.
 | `VARIANTS="force baseline;radial baseline"` | Named variants only (`;`-separated) |
 
 Headless Chromium rasterises 2D canvas in software, so headless numbers show
-the cost when the canvas has no GPU acceleration. `HEADED=1` shows it with the
-GPU.
+the cost when the canvas has no GPU acceleration. `HEADED=1` runs a visible
+window, which normally uses the GPU; confirm in `chrome://gpu` that canvas
+is hardware accelerated before reading the numbers as GPU numbers.
+The dev server runs on its own port (`BENCH_PORT`, default 3217) and is never
+reused unless `REUSE_SERVER=1`.
 
 ## Benchmarking your own graph
 

@@ -129,6 +129,7 @@ export function buildLargeGraph(shape: GraphShape = WORK_PC_SHAPE, seed = 42): B
     if (!make) throw new Error(`no endpoint rule for edge type ${type}`);
     let made = 0, tries = 0;
     while (made < count && tries++ < count * 50) if (add(type, ...make())) made++;
+    if (made < count) throw new Error(`could not generate ${count} "${type}" edges, only ${made}; the graph shape has too few distinct pairs`);
   }
   return { nodes, edges };
 }

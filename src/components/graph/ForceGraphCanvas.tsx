@@ -282,7 +282,9 @@ function ForceGraphCanvasImpl({
       drawRef.current();
     });
   }, []);
-  useEffect(() => () => cancelAnimationFrame(frameRef.current), []);
+  // Clear the handle too: a cancelled frame leaves it set (React StrictMode
+  // runs this cleanup in dev), and scheduleDraw would then ignore every request.
+  useEffect(() => () => { cancelAnimationFrame(frameRef.current); frameRef.current = 0; }, []);
   const zoomRef = useRef<d3.ZoomBehavior<HTMLCanvasElement, unknown> | null>(null);
 
   // ── fit-to-view (stable; reads live state from refs) ──
@@ -511,15 +513,20 @@ function ForceGraphCanvasImpl({
     // Revisiting the exact graph a remembered layout settled with (reopening
     // the view, leaving a neighbourhood): resume it rather than re-heat it.
     // Any edit changes the fingerprint, so edits still re-heat.
-    const topology = `${nodeFingerprint}|${edgeFingerprint}`;
+    // Spacing is part of the fingerprint: a layout settled at another spacing
+    // is not the one to resume.
+    const spacingNow = propsRef.current.spacing;
+    const topology = `${nodeFingerprint}|${edgeFingerprint}|${spacingNow}`;
+    // Resume only from the remembered snapshot itself, never from positions of
+    // a different graph that is still easing on screen.
     const resume = !!layoutKey && recallTopology(layoutKey) === topology
-      && graph.nodes.every((n) => current.has(n.id) || recalled?.has(n.id));
+      && !!recalled && graph.nodes.every((n) => recalled.has(n.id));
     layoutKeyUsedRef.current = layoutKey;
     topologyRef.current = topology;
     layoutStateRef.current = "seeded";
 
     const nodes: SimNode[] = graph.nodes.map((n) => {
-      const p = current.get(n.id) ?? recalled?.get(n.id);
+      const p = resume ? recalled?.get(n.id) : current.get(n.id) ?? recalled?.get(n.id);
       return {
         id: n.id,
         title: n.title ?? "",
@@ -548,7 +555,6 @@ function ForceGraphCanvasImpl({
     posVersionRef.current++;
     scheduleDraw();
 
-    const spacingNow = propsRef.current.spacing;
     layoutSpacingRef.current = spacingNow;
     layoutRef.current?.init({
       gen: ++genRef.current,
@@ -564,6 +570,11 @@ function ForceGraphCanvasImpl({
   useEffect(() => {
     if (spacing === layoutSpacingRef.current) return;
     layoutSpacingRef.current = spacing;
+    // The reheat un-settles the layout; it settles again (at this spacing) on
+    // the layout's end, so an early close doesn't save a half-moved layout.
+    topologyRef.current = topologyRef.current.replace(/\|[^|]*$/, `|${spacing}`);
+    layoutStateRef.current = "moving";
+    canvasRef.current?.setAttribute("data-layout", "settling");
     layoutRef.current?.setSpacing(spacing);
   }, [spacing]);
 

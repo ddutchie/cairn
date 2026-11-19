@@ -54,7 +54,7 @@ interface Variant {
   profile?: boolean;
 }
 
-const VARIANTS: Variant[] = ([
+const ALL_VARIANTS: Variant[] = ([
   { name: "force baseline", layout: "force", profile: true },
   { name: "force no dashed lines", layout: "force", flags: { noDash: true } },
   { name: "force no hulls", layout: "force", storage: { "kg-hulls": "false" } },
@@ -67,7 +67,11 @@ const VARIANTS: Variant[] = ([
   { name: "radial no text", layout: "radial", flags: { noText: true } },
   { name: "radial no shadow", layout: "radial", flags: { noShadow: true } },
   { name: "radial dpr 1", layout: "radial", dpr: 1 },
-] satisfies Variant[] as Variant[]).filter((v) => (!ONLY || v.layout === ONLY) && (!VARIANT_FILTER || VARIANT_FILTER.includes(v.name)));
+] satisfies Variant[] as Variant[]);
+const ALL_VARIANT_NAMES = ALL_VARIANTS.map((v) => v.name);
+const VARIANTS = ALL_VARIANTS.filter((v) => (!ONLY || v.layout === ONLY) && (!VARIANT_FILTER || VARIANT_FILTER.includes(v.name)));
+
+if (!VARIANTS.length) throw new Error(`no variant matches ONLY/VARIANTS; known: ${ALL_VARIANT_NAMES.join(", ")}`);
 
 // ── stats ────────────────────────────────────────────────────────────────────
 
@@ -167,7 +171,7 @@ function traceBreakdown(buf: Buffer) {
     t.ms += e.dur! / 1000; t.count++;
     totals.set(g, t);
   }
-  const busy = sum(onMain.filter((e) => e.name === "RunTask" || e.name === "ThreadControllerImpl::RunTask").map((e) => e.dur! / 1000));
+  const busy = sum(onMain.filter((e) => e.name === "RunTask").map((e) => e.dur! / 1000));
   return [
     { kind: "main thread busy (all tasks)", ms: Math.round(busy), count: 0 },
     ...[...totals].sort((a, b) => b[1].ms - a[1].ms).map(([kind, t]) => ({ kind, ms: Math.round(t.ms), count: t.count })),

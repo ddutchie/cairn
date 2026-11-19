@@ -36,7 +36,7 @@ export const r1 = (n: number) => Math.round(n * 10) / 10;
 export async function bootApp(
   page: Page,
   graph: BenchGraph,
-  opts: { flags?: PerfFlags; storage?: Record<string, string> } = {},
+  opts: { flags?: PerfFlags; storage?: Record<string, string>; extraInit?: string } = {},
 ) {
   await page.addInitScript({ content: buildScreenshotMock({ graph }) });
   await page.addInitScript({ content: frameProbeScript(opts.flags ?? {}) });
@@ -45,6 +45,8 @@ export async function bootApp(
       ${Object.entries(opts.storage ?? {}).map(([k, val]) => `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(val)});`).join("\n")}
     } catch {}`,
   });
+  // Scripts that run after the IPC mock is installed (e.g. patching one call).
+  if (opts.extraInit) await page.addInitScript({ content: opts.extraInit });
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => !!(window as unknown as StoreWindow).__cairnStoreRef, null, { timeout: 30_000 });
   await page.waitForTimeout(500);

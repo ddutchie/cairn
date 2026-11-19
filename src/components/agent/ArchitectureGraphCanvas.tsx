@@ -59,6 +59,19 @@ function baseName(filePath: string): string {
   const parts = filePath.split(/[/\\]/);
   return parts[parts.length - 1] || filePath;
 }
+/** Above this many files or references the canvas shades at 1x while it moves. */
+const LARGE_NODES = 300;
+const LARGE_EDGES = 1500;
+
+/** Resolution the canvas is drawn at. Fill cost scales with pixels, and every
+ *  frame of a large graph redraws all its edges, so while the view moves (a
+ *  pan/zoom gesture, a zoom transition, or the layout settling) a large graph
+ *  shades at 1x; the frame after the motion stops redraws at full resolution. */
+function dprFor(nodeCount: number, edgeCount: number, moving: boolean): number {
+  const resting = Math.min(2, window.devicePixelRatio || 1);
+  return moving && (nodeCount > LARGE_NODES || edgeCount > LARGE_EDGES) ? 1 : resting;
+}
+
 /** Node radius grows (sub-linearly) with symbol count. */
 function radiusFor(symbolCount: number): number {
   return 5 + Math.sqrt(symbolCount) * 2.2;
@@ -104,12 +117,17 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
       drawRef.current();
     });
   }, []);
-  useEffect(() => () => cancelAnimationFrame(frameRef.current), []);
+  // Clear the handle too: a cancelled frame leaves it set (React StrictMode
+  // runs this cleanup in dev), and scheduleDraw would then ignore every request.
+  useEffect(() => () => { cancelAnimationFrame(frameRef.current); frameRef.current = 0; }, []);
   const zoomRef = useRef<d3.ZoomBehavior<HTMLCanvasElement, unknown> | null>(null);
   const dimsRef = useRef(dims);
   // eslint-disable-next-line react-hooks/refs -- keep latest value for ref-only consumers (render loop / fit)
   dimsRef.current = dims;
   const userInteractedRef = useRef(false);
+  // Motion in progress: zoom gestures/transitions, and the layout settling.
+  const gesturesRef = useRef(0);
+  const simRunningRef = useRef(false);
   const selectedRef = useRef(selectedId);
   // eslint-disable-next-line react-hooks/refs -- keep latest value for ref-only consumers (render loop)
   selectedRef.current = selectedId;
@@ -175,6 +193,7 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
     nodesRef.current = simNodes;
     linksRef.current = simLinks;
 
+    simRunningRef.current = true;
     const sim = d3.forceSimulation<SimNode>(simNodes)
       .force("charge", d3.forceManyBody<SimNode>().strength((n) => -120 - n.degree * 20))
       .force("link", d3.forceLink<SimNode, SimLink>(simLinks).id((d) => d.id).distance(90).strength(0.4))
@@ -188,7 +207,11 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
         scheduleDraw();
       });
     simRef.current = sim;
-    sim.on("end", () => { if (!userInteractedRef.current) zoomFit(true); });
+    sim.on("end", () => {
+      simRunningRef.current = false;
+      if (!userInteractedRef.current) zoomFit(true);
+      scheduleDraw(); // redraw at rest resolution
+    });
     return () => { sim.stop(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeFingerprint, edgeFingerprint]);
@@ -199,13 +222,24 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const ns = nodesRef.current;
+    const ls = linksRef.current;
+    const moving = gesturesRef.current > 0 || simRunningRef.current;
+    const dpr = dprFor(ns.length, ls.length, moving);
+    const { width, height } = dimsRef.current;
+    // Keep the backing store on the DPR this frame draws at (the sizing effect
+    // below only runs on resize and sets the resting DPR).
+    const bw = Math.round(width * dpr), bh = Math.round(height * dpr);
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width = bw;
+      canvas.height = bh;
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+    }
     const t = transformRef.current;
     const sel = selectedRef.current;
     const connected = connectedRef.current;
     const hovered = hoveredRef.current;
-    const ns = nodesRef.current;
-    const ls = linksRef.current;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -293,9 +327,10 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvas.width = dims.width * dpr;
-    canvas.height = dims.height * dpr;
+    // Size at the DPR a frame would draw at right now; draw() keeps it in step.
+    const dpr = dprFor(nodesRef.current.length, linksRef.current.length, gesturesRef.current > 0 || simRunningRef.current);
+    canvas.width = Math.round(dims.width * dpr);
+    canvas.height = Math.round(dims.height * dpr);
     canvas.style.width = dims.width + "px";
     canvas.style.height = dims.height + "px";
     draw();
@@ -312,7 +347,15 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
     const zoom = d3.zoom<HTMLCanvasElement, unknown>()
       .scaleExtent([0.1, 5])
       .on("zoom", (ev) => { transformRef.current = ev.transform; scheduleDraw(); })
-      .on("start", (ev) => { if (ev.sourceEvent) userInteractedRef.current = true; });
+      .on("start", (ev) => {
+        gesturesRef.current++;
+        if (ev.sourceEvent) userInteractedRef.current = true;
+      })
+      .on("end", () => {
+        gesturesRef.current = Math.max(0, gesturesRef.current - 1);
+        // Redraw at rest resolution once the last gesture or transition ends.
+        if (gesturesRef.current === 0) scheduleDraw();
+      });
     zoomRef.current = zoom;
     selection.call(zoom);
     const init = d3.zoomIdentity.translate(dims.width / 2, dims.height / 2).scale(0.85);

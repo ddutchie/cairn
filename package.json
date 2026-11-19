@@ -12,6 +12,7 @@
     "bench:graph": "vitest bench --project 'node*' --run electron/db/bench/graph.bench.ts",
     "bench:graph-ui": "playwright test -c playwright.perf.config.ts graph-perf",
     "bench:graph-settle": "playwright test -c playwright.perf.config.ts graph-settle",
+    "bench:graph-arch": "playwright test -c playwright.perf.config.ts arch-graph",
     "test:component": "vitest run --project component",
     "test:watch": "vitest",
     "test:coverage": "npm run compile && vitest run --coverage",

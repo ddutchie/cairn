@@ -39,7 +39,7 @@ export function frameProbeScript(flags: PerfFlags): string {
   window.__perfFlags = flags;
   const P = CanvasRenderingContext2D.prototype;
   const COUNTED = ["clearRect", "stroke", "fill", "fillText", "strokeText", "arc", "setLineDash", "save", "restore", "createRadialGradient", "measureText"];
-  const state = { on: false, calls: {}, rafMs: [], intervals: [], longTasks: 0, longTaskMs: 0, t0: 0, firstFill: null };
+  const state = { on: false, calls: {}, rafMs: [], intervals: [], longTasks: 0, longTaskMs: 0, t0: 0, firstFill: null, stopAt: 0 };
   window.__perfState = state;
 
   for (const name of COUNTED) {
@@ -67,11 +67,18 @@ export function frameProbeScript(flags: PerfFlags): string {
     try { return cb(ts); } finally { state.rafMs.push(performance.now() - s); }
   });
 
+  // Long tasks count by when they ran (inside the start..stop window), not
+  // by when the observer delivered them; stop drains what is still queued.
+  let longObs = null;
+  const takeLong = (list) => {
+    for (const e of list) {
+      if (e.startTime < state.t0 || e.startTime > state.stopAt) continue;
+      state.longTasks++; state.longTaskMs += e.duration;
+    }
+  };
   try {
-    new PerformanceObserver((list) => {
-      if (!state.on) return;
-      for (const e of list.getEntries()) { state.longTasks++; state.longTaskMs += e.duration; }
-    }).observe({ type: "longtask", buffered: false });
+    longObs = new PerformanceObserver((list) => { if (state.on || state.stopAt) takeLong(list.getEntries()); });
+    longObs.observe({ type: "longtask", buffered: false });
   } catch {}
 
   let last = 0;
@@ -85,10 +92,12 @@ export function frameProbeScript(flags: PerfFlags): string {
 
   window.__perfStart = () => {
     state.on = true; state.calls = {}; state.rafMs = []; state.intervals = [];
-    state.longTasks = 0; state.longTaskMs = 0; state.t0 = performance.now(); state.firstFill = null; last = 0;
+    state.longTasks = 0; state.longTaskMs = 0; state.t0 = performance.now(); state.firstFill = null; state.stopAt = Infinity; last = 0;
   };
   window.__perfStop = () => {
     state.on = false;
+    state.stopAt = performance.now();
+    if (longObs) takeLong(longObs.takeRecords());
     return {
       frames: state.intervals.length,
       durationMs: performance.now() - state.t0,
