@@ -1,5 +1,8 @@
 # People layer — integration plan
 
+> **Update (3.3.0): the `feature.people` flag, the mobile device switch and the preview unlock described below were removed. People ships on by default; the sections that mention them are historical.**
+
+
 **Status:** In progress. W1 (schema release) implemented on
 `feat/people-w1-schema` (2026-11-18). Ships as one launch (all PRD priorities
 P0–P2), preceded by that invisible schema release.

@@ -9,9 +9,7 @@ import { Kanban, CalendarDays, Workflow, GitBranch, BarChart2, Terminal, Message
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { ToggleableView } from "@/store/slices/ui";
-import { showPeopleSwitch } from "../../../shared/people/preview-unlock";
-import { isPreviewUnlocked } from "@/lib/people/preview-unlock";
-import { SettingsGroup, SettingsRow, Toggle } from "./shared";
+import { SettingsGroup, Toggle } from "./shared";
 
 interface ViewOption {
   view: ToggleableView;
@@ -28,21 +26,14 @@ const VIEW_OPTIONS: ViewOption[] = [
   { view: "insights", label: "Insights",         description: "Analytics and progress charts",   icon: <BarChart2 size={13} /> },
   { view: "agent",    label: "Agent",            description: "Embedded coding agent in the sidebar", icon: <Terminal size={13} /> },
   { view: "chat",     label: "AI Chat",          description: "In-app AI chat panel",            icon: <MessageSquare size={13} /> },
+  { view: "people",   label: "People",           description: "People you work with, their meetings and notes", icon: <Users size={13} /> },
 ];
 
-/** Listed only while the People layer flag (`feature.people`) is on. */
-const PEOPLE_OPTION: ViewOption = {
-  view: "people", label: "People", description: "People you work with, their meetings and notes", icon: <Users size={13} />,
-};
-
 export function ViewVisibilitySettings() {
-  const { hiddenViews, toggleViewVisibility, peopleEnabled, setPeopleEnabled } = useCairnStore(useShallow((s) => ({
+  const { hiddenViews, toggleViewVisibility } = useCairnStore(useShallow((s) => ({
     hiddenViews: s.hiddenViews,
     toggleViewVisibility: s.toggleViewVisibility,
-    peopleEnabled: s.peopleEnabled,
-    setPeopleEnabled: s.setPeopleEnabled,
   })));
-  const options = peopleEnabled ? [...VIEW_OPTIONS, PEOPLE_OPTION] : VIEW_OPTIONS;
 
   return (
     <>
@@ -68,7 +59,7 @@ export function ViewVisibilitySettings() {
       ))}
 
       {/* Toggleable rows */}
-      {options.map(({ view, label, description, icon }) => {
+      {VIEW_OPTIONS.map(({ view, label, description, icon }) => {
         const visible = !hiddenViews.has(view);
         return (
           <div
@@ -87,18 +78,6 @@ export function ViewVisibilitySettings() {
         );
       })}
     </SettingsGroup>
-    {showPeopleSwitch({ dev: process.env.NODE_ENV === "development", unlocked: isPreviewUnlocked(), flagOn: peopleEnabled }) && (
-      <div className="mt-8">
-        <SettingsGroup
-          title="People (preview)"
-          description="Unreleased. Turns on the People layer for this workspace; the People view then appears above."
-        >
-          <SettingsRow label="People layer" description="People, meetings and relationships">
-            <Toggle checked={peopleEnabled} onChange={(on) => void setPeopleEnabled(on)} label="Toggle the People layer" />
-          </SettingsRow>
-        </SettingsGroup>
-      </div>
-    )}
     </>
   );
 }

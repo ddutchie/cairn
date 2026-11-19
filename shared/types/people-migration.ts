@@ -136,9 +136,8 @@ export type MeetingOutcome = "captured" | "unchanged" | "skipped";
 
 export interface MigrationResult {
   dryRun: boolean;
-  /** False when nothing ran (the People flag is off). */
+  /** False when nothing was written (a dry run). */
   applied: boolean;
-  reason?: "flag_off";
   personas: Array<{ noteId: ID; outcome: PersonaOutcome; personId?: ID; reason?: MigrationSkipReason }>;
   meetings: Array<{
     noteId: ID;

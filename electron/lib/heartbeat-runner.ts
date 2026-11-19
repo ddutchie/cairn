@@ -87,7 +87,7 @@ import { localDate, TODAY_NOTE_CHARS } from "../../shared/today/brief";
 import { findTodayAutomation } from "./today-files";
 import { syncCalendarMeetings } from "../db/people-oneonone";
 import { stripActivity } from "../../shared/people/oneonone";
-import { getPerson, isPeopleEnabled } from "../db/people-queries";
+import { getPerson } from "../db/people-queries";
 import {
   PREP_SYSTEM_PROMPT, PREP_TOOL_NAME, buildPrepFacts, ensurePrepAutomation, isPrepAutomation, prepPrompt, prepTools, prunePrepFiles,
   markPrepDone, markPrepRunning, savePrepBrief, setPrepRequest, startingBrief, takePrepRequest, type PrepRequest, type PrepSession,
@@ -283,9 +283,8 @@ export function runAutomationNow(ctx: AutomationRunContext, automationId: string
  */
 export function runPrepNow(
   ctx: AutomationRunContext, workspaceId: string, request: PrepRequest,
-): { runId: string } | { skipped: "busy" | "off" | "no-ai" | "unknown-person" } {
+): { runId: string } | { skipped: "busy" | "no-ai" | "unknown-person" } {
   const { db } = ctx;
-  if (!isPeopleEnabled(db)) return { skipped: "off" };
   const cached = getCachedConfig().aiConfig;
   if (!cached?.baseUrl || !cached?.model) return { skipped: "no-ai" };
   // The person must belong to this workspace: the brief lands in its prep folder and reads its connectors.
@@ -366,7 +365,7 @@ export async function runAutomation(
   const prepRequest = prep ? takePrepRequest(run.id) : null;
   const readOnly = today || prep;
   // Nothing to prepare (the person is gone, or the preview was switched off since it was asked): end quietly, with no notification.
-  if (prep && (!prepRequest || !isPeopleEnabled(db) || !buildPrepFacts(db, prepRequest.personId, prepRequest))) {
+  if (prep && (!prepRequest || !buildPrepFacts(db, prepRequest.personId, prepRequest))) {
     updateAutomationRun(db, run.id, { status: "skipped", finishedAt: new Date().toISOString(), error: "Nothing to prepare." });
     return;
   }
@@ -480,9 +479,8 @@ export async function runAutomation(
   // The brief this run starts from: the same day's (a refresh), or the last day's open items (carried over).
   const todayPrevious = today ? loadLatestTodayBrief(workspacePath, automation) : null;
   // The People flag, read once: the brief tools, the prompt and the calendar sync all follow the same answer for the whole run.
-  const peopleOn = isPeopleEnabled(db);
   if (today) {
-    recipe = todayPrompt(projectFacts(db, automation.workspaceId, todayProjects), rebuild ? null : todayLookBackFrom(db, automation.id, run.id), new Date(), rebuild, peopleOn);
+    recipe = todayPrompt(projectFacts(db, automation.workspaceId, todayProjects), rebuild ? null : todayLookBackFrom(db, automation.id, run.id), new Date(), rebuild, true);
   }
   const prepFacts = prep && prepRequest ? buildPrepFacts(db, prepRequest.personId, prepRequest) : null;
   if (prepFacts) recipe = prepPrompt(prepFacts);
@@ -688,7 +686,7 @@ export async function runAutomation(
     }
     if (todaySession) todaySession.saveError = saveError ?? undefined;
     // The calendar's events become meetings with attendees (People preview only). Once per finished brief, not per item.
-    if (brief.status === "ready" && peopleOn) syncTodayCalendar(db, automation.workspaceId, brief);
+    if (brief.status === "ready") syncTodayCalendar(db, automation.workspaceId, brief);
     // While gathering, the brief rides along, so views show it without rebuilding their whole state.
     try { ctx.send?.("today:updated", { workspaceId: automation.workspaceId, status: brief.status, ...(saveError ? { saveError } : {}), ...(brief.status === "gathering" ? { brief } : {}) }); } catch { /* best-effort */ }
     return saveError;
@@ -706,7 +704,7 @@ export async function runAutomation(
     } catch (err) { console.warn("[heartbeat] Today history upkeep failed:", err); }
     todaySession = { brief: startRefresh(todayPrevious, marks, now), finished: false };
     saveToday(todaySession.brief);
-    automationTools.push(...todayBriefTools(todaySession, saveToday, peopleOn));
+    automationTools.push(...todayBriefTools(todaySession, saveToday, true));
   }
 
   // Prep: the brief starts as "preparing" and `prep_save` fills it in. Each save tells the person page.

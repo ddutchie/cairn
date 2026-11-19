@@ -35,7 +35,6 @@ function renderView() {
 beforeEach(() => {
   useCairnStore.setState({
     activeWorkspaceId: "ws1",
-    peopleEnabled: true,
     peopleLoaded: true,
     peopleSuggestions: [],
     selectedPersonId: null,

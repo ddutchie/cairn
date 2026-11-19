@@ -197,9 +197,7 @@ export function MigrationPanel({ onClose }: { onClose: () => void }) {
           {result && (
             <section aria-label={result.applied ? "Applied" : "Preview"} className="rounded-md border border-[var(--border-subtle)] bg-[var(--surface-2)] p-2.5">
               <SectionLabel>{result.applied ? "Done" : "Preview: nothing has changed yet"}</SectionLabel>
-              {result.result.reason === "flag_off"
-                ? <p className="mt-1 text-sm">Turn on People first.</p>
-                : <ul className="mt-1 list-disc pl-4 text-sm">{summarise(result.result).map((l) => <li key={l}>{l}</li>)}</ul>}
+              <ul className="mt-1 list-disc pl-4 text-sm">{summarise(result.result).map((l) => <li key={l}>{l}</li>)}</ul>
             </section>
           )}
           {result?.applied && (

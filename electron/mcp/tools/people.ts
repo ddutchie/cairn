@@ -8,7 +8,6 @@
  * dispatcher (`scrubAgentPrivate`), not here.
  */
 import type Database from "better-sqlite3";
-import { isPeopleEnabled } from "../../db/people-queries";
 import { makeFrontmatterReader, refreshMeetingFrontmatter } from "../../people-files";
 import { buildInventory } from "../../db/people-migration";
 import { peopleTool, setCardOwnerArg, setNoteAttendees, type PeopleToolContext } from "../../../shared/people/tool";
@@ -17,7 +16,7 @@ type Args = Record<string, unknown>;
 type Db = Database.Database;
 
 function context(db: Db, workspacePath: string): PeopleToolContext {
-  return { enabled: isPeopleEnabled(db), meetingsChanged: (noteIds) => refreshMeetingFrontmatter(db, workspacePath, noteIds) };
+  return { meetingsChanged: (noteIds) => refreshMeetingFrontmatter(db, workspacePath, noteIds) };
 }
 
 /** The `people` tool. `workspaceId` is resolved by the dispatcher. */
@@ -34,7 +33,6 @@ export function people_tool(db: Db, workspacePath: string, args: Args): unknown 
  * user applies a migration from the People view.
  */
 function inventoryAction(db: Db, workspacePath: string, args: Args): unknown {
-  if (!isPeopleEnabled(db)) return { error: "People is not turned on in this workspace." };
   const workspaceId = String(args.workspaceId ?? "");
   if (!workspaceId) return { error: "No workspace found" };
   try {
@@ -66,5 +64,5 @@ export function set_note_attendees(db: Db, workspacePath: string, args: Args): u
 
 /** `owner` on `create_task` / `update_tasks`: a person id, email or exact name; empty clears. */
 export function set_card_owner(db: Db, args: Args): unknown {
-  return setCardOwnerArg(db, { enabled: isPeopleEnabled(db) }, args);
+  return setCardOwnerArg(db, {}, args);
 }

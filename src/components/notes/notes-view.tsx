@@ -61,7 +61,7 @@ export function NotesView() {
     toggleNotesFullscreen,
     loadNoteBody,
     noteChangeMarks,
-    peopleEnabled, personaNoteIds, showPersonaNotes, setShowPersonaNotes, loadPersonaNoteIds,
+    personaNoteIds, showPersonaNotes, setShowPersonaNotes, loadPersonaNoteIds,
   } = useCairnStore(useShallow((s) => ({
     activeProjectId:         s.activeProjectId,
     activeWorkspaceId:       s.activeWorkspaceId,
@@ -91,7 +91,6 @@ export function NotesView() {
     notesFullscreen:         s.notesFullscreen,
     toggleNotesFullscreen:   s.toggleNotesFullscreen,
     noteChangeMarks:         s.noteChangeMarks,
-    peopleEnabled:           s.peopleEnabled,
     personaNoteIds:          s.personaNoteIds,
     showPersonaNotes:        s.showPersonaNotes,
     setShowPersonaNotes:     s.setShowPersonaNotes,
@@ -100,8 +99,8 @@ export function NotesView() {
   const hiddenPersona = useHiddenPersonaIds();
   // Refresh the persona-note set on open (the store keeps it current after that).
   useEffect(() => {
-    if (peopleEnabled) void loadPersonaNoteIds();
-  }, [peopleEnabled, activeWorkspaceId, loadPersonaNoteIds]);
+    void loadPersonaNoteIds();
+  }, [activeWorkspaceId, loadPersonaNoteIds]);
   const aiEnabled = aiConfig.aiEnabled ?? true;
 
   const [activeNoteId, setActiveNoteId]         = useState<string | null>(null);
@@ -605,7 +604,7 @@ export function NotesView() {
               </IconButton>
             )}
           </div>
-          {peopleEnabled && personaNoteIds.length > 0 && (
+          {personaNoteIds.length > 0 && (
             <button
               type="button"
               role="switch"

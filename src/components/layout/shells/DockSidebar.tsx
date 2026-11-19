@@ -13,7 +13,7 @@ import { isView } from "@/lib/views";
 import { reportIpcError } from "@/lib/ipc/client";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProjectIcon, WorkspaceIcon } from "@/lib/workspace-icons";
-import { countOpenCardsByProject, modKey, buildViewShortcutMap, gateHiddenViews } from "../sidebar-utils";
+import { countOpenCardsByProject, modKey, buildViewShortcutMap } from "../sidebar-utils";
 import { SessionBrowser } from "@/components/agent/SessionBrowser";
 import { RunningChatPins, usePinnedChatThreads } from "./RunningChatPins";
 import { ProjectCreateForm } from "../sidebar/ProjectCreateForm";
@@ -48,7 +48,6 @@ export function DockSidebar() {
     toggleChat,
     cards,
     hiddenViews,
-    peopleEnabled,
     chatOpen,
     searchOpen,
     createProject,
@@ -74,7 +73,6 @@ export function DockSidebar() {
       toggleChat: s.toggleChat,
       cards: s.cards,
       hiddenViews: s.hiddenViews,
-      peopleEnabled: s.peopleEnabled,
       chatOpen: s.chatOpen,
       searchOpen: s.searchOpen,
       createProject: s.createProject,
@@ -100,11 +98,10 @@ export function DockSidebar() {
   const mod = useMemo(() => modKey(), []);
   // Same ordering as the page.tsx key handler — Overview ⌘1, Notes ⌘2, then ⌘3+.
   const shortcutMap = useMemo(
-    () => buildViewShortcutMap(gateHiddenViews(hiddenViews as { has(view: string): boolean }, { peopleEnabled })),
-    [hiddenViews, peopleEnabled],
+    () => buildViewShortcutMap(hiddenViews as { has(view: string): boolean }),
+    [hiddenViews],
   );
-  // People sits behind the `feature.people` flag as well as the user's own switch.
-  const showPeople = peopleEnabled && !hiddenViews.has("people");
+  const showPeople = !hiddenViews.has("people");
 
   const [creatingProject, setCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");

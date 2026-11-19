@@ -8,7 +8,6 @@
 
 import { localDate } from "../../../shared/today/brief";
 import { duePrepTargets, PREP_LEAD_MS } from "../../db/people-oneonone";
-import { isPeopleEnabled } from "../../db/people-queries";
 import { runPrepNow, type AutomationRunContext } from "../heartbeat-runner";
 import { findPrepAutomation, isPrepRunning, loadPrepBrief } from "./prep";
 
@@ -25,7 +24,6 @@ export interface PrepWatchDeps {
 /** Returns how many briefs were started (at most one per tick). */
 export function tickMeetingPreps(ctx: AutomationRunContext, nowMs: number, deps: PrepWatchDeps = {}): number {
   const { db } = ctx;
-  if (!isPeopleEnabled(db)) return 0;
   const run = deps.run ?? runPrepNow;
   const date = localDate(new Date(nowMs));
   if ((startedByDay.get(date) ?? 0) >= AUTO_PREPS_PER_DAY) return 0;

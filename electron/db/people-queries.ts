@@ -18,33 +18,6 @@ export * from "../../shared/people/queries";
 
 type Db = Database.Database;
 
-// ── Feature flag ──────────────────────────────
-
-/** `app_kv` key for the People layer flag (off until launch). */
-export const PEOPLE_FLAG_KEY = "feature.people";
-
-/** True when the People layer is switched on for this workspace DB. */
-export function isPeopleEnabled(db: Db): boolean {
-  try {
-    const row = db.prepare("SELECT value FROM app_kv WHERE key = ?").get(PEOPLE_FLAG_KEY) as { value: string } | undefined;
-    return row?.value === "1";
-  } catch {
-    return false; // app_kv missing on an odd connection: treat as off
-  }
-}
-
-export function setPeopleEnabled(db: Db, on: boolean): void {
-  if (!on) {
-    db.prepare("DELETE FROM app_kv WHERE key = ?").run(PEOPLE_FLAG_KEY);
-    return;
-  }
-  db.prepare(
-    `INSERT INTO app_kv (key, value, updated_at) VALUES (?, '1', ?)
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-  ).run(PEOPLE_FLAG_KEY, ts());
-}
-
-
 /**
  * Tombstone a person and everything that points at them here: their edges,
  * attendance and mentions. Cards they own lose the owner; the persona note is
@@ -76,7 +49,7 @@ export function deletePerson(db: Db, id: string): void {
  * person, so a rename on any device covers every device.
  */
 export function onNoteRenamed(db: Db, noteId: string, oldTitle: string, newTitle: string): void {
-  if (!isPeopleEnabled(db) || !oldTitle.trim() || oldTitle === newTitle) return;
+  if (!oldTitle.trim() || oldTitle === newTitle) return;
   for (const p of db.prepare("SELECT id FROM people WHERE persona_note_id = ? AND deleted_at IS NULL").all(noteId) as { id: string }[]) {
     const person = getPerson(db, p.id);
     if (!person) continue;

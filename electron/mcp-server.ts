@@ -12,8 +12,7 @@
 import http from "http";
 import Database from "better-sqlite3";
 import * as z from "zod";
-import { CHAT_ONLY_TOOLS, toolParametersJsonSchema, toolSchemasFor } from "./lib/tool-schemas";
-import { isPeopleEnabled } from "./db/people-queries";
+import { CHAT_ONLY_TOOLS, TOOL_SCHEMAS, toolParametersJsonSchema } from "./lib/tool-schemas";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -130,14 +129,9 @@ type WorkspaceBinding = ReturnType<typeof createWorkspaceBinding>;
 export function buildMcpServer(binding: WorkspaceBinding): McpServer {
   const server = new McpServer({ name: "cairn", version: "1.0.0" });
 
-  // Register tools from TOOL_SCHEMAS, excluding chat-only tools. The People
-  // tool and arguments only while that layer is on, read once at startup (a
-  // client keeps the list it was given; the flag flips once, at launch).
+  // Register tools from TOOL_SCHEMAS, excluding chat-only tools.
   const chatOnlySet = new Set<string>(CHAT_ONLY_TOOLS);
-  let people = false;
-  try { people = isPeopleEnabled(binding.getDb()); } catch { /* no workspace yet: off */ }
-  const schemas = toolSchemasFor({ people });
-  for (const [name, { description, schema }] of Object.entries(schemas)) {
+  for (const [name, { description, schema }] of Object.entries(TOOL_SCHEMAS)) {
     if (chatOnlySet.has(name)) continue;
     server.tool(name, description, schema.shape as Record<string, z.ZodTypeAny>,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -157,7 +151,7 @@ export function buildMcpServer(binding: WorkspaceBinding): McpServer {
   // integer bounds, defaults) plus an `execution` block, ~700 tokens of noise an
   // agent pays on every request. Same trimmed schemas the in-app chat sends;
   // argument validation on tools/call still runs against the full zod schema.
-  const listedTools = Object.entries(schemas)
+  const listedTools = Object.entries(TOOL_SCHEMAS)
     .filter(([name]) => !chatOnlySet.has(name))
     .map(([name, { description, schema }]) => ({
       name,

@@ -5,8 +5,6 @@ import { Search, X } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
-import { FRESH_TAPS, registerUnlockTap } from "../../../shared/people/preview-unlock";
-import { isPreviewUnlocked, setPreviewUnlocked } from "@/lib/people/preview-unlock";
 import { FOCUS_RING } from "@/components/ui/button";
 import { GeneralSettings } from "./GeneralSettings";
 import { ViewVisibilitySettings } from "./ViewVisibilitySettings";
@@ -55,18 +53,6 @@ export function SettingsView() {
   const [pendingRow, setPendingRow] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  // Hidden preview-features unlock: seven quick taps on the version line.
-  const unlockTaps = useRef(FRESH_TAPS);
-  const [unlockNote, setUnlockNote] = useState("");
-  const onVersionTap = () => {
-    const r = registerUnlockTap(unlockTaps.current, Date.now());
-    unlockTaps.current = r.state;
-    if (r.unlocked) {
-      setPreviewUnlocked();
-      setUnlockNote(isPreviewUnlocked() ? "Preview features unlocked" : "Preview features unlocked until restart");
-    }
-  };
-
   // Consume a deep-link request, whether it arrived before or after mount.
   useEffect(() => {
     if (!settingsSection) return;
@@ -193,18 +179,7 @@ export function SettingsView() {
           <header>
             <h1 id="settings-title" className="font-display text-xl font-normal tracking-tight text-[var(--text-primary)]">{current.label}</h1>
             {page === "about" ? (
-              <>
-                {/* Hidden: seven quick taps unlock preview features on this device (shared/people/preview-unlock.ts). */}
-                <button
-                  type="button"
-                  onClick={onVersionTap}
-                  aria-label={`Cairn version ${APP_VERSION}`}
-                  className={cn("mt-1 block text-xs text-[var(--text-tertiary)] cursor-default select-none rounded", FOCUS_RING)}
-                >
-                  {`Cairn ${APP_VERSION}`}
-                </button>
-                <p role="status" className="text-xs text-[var(--accent)]">{unlockNote}</p>
-              </>
+              <p className="mt-1 text-xs text-[var(--text-tertiary)]">{`Cairn ${APP_VERSION}`}</p>
             ) : (
               <p className="mt-1 text-xs text-[var(--text-tertiary)]">{current.description}</p>
             )}

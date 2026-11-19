@@ -3,7 +3,7 @@
 /**
  * Shared pieces of the two People canvases in Insights (relationship canvas,
  * org chart): the data hook, link colours, the filter chips and "open person".
- * Only mounted while `feature.people` is on (InsightsView gates the layouts).
+ * Mounted by InsightsView.
  */
 import { useCallback, useEffect, useState } from "react";
 import { useCairnStore } from "@/store";

@@ -3,7 +3,7 @@ import type Database from "better-sqlite3";
 import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
 import { createNote, deleteNote, updateNote } from "./notes-queries";
 import {
-  addAttendee, addMention, createMeeting, createPerson, getMe, getPerson, listAttendees, setNoteMeeting, setPeopleEnabled, updatePerson,
+  addAttendee, addMention, createMeeting, createPerson, getMe, getPerson, listAttendees, setNoteMeeting, updatePerson,
 } from "./people-queries";
 import { captureNoteMeeting, loadCandidates, notesAffectedBy, pinUnreferenced, renderMeetingFrontmatter, resolvePerson } from "./people-capture";
 import { noteMeetingId, stubPersonId } from "../../shared/people/ids";
@@ -277,7 +277,6 @@ describe("review fixes", () => {
 
   it("a renamed persona note's old title isn't kept next to the new one", () => {
     note("n1");
-    setPeopleEnabled(db, true);
     const persona = note("p-ana", "Ana Old");
     const ana = person("Ana Ruiz", { personaNoteId: persona.id });
     captureNoteMeeting(db, { noteId: "n1", attendees: ["[[Ana Old]]"], source: "frontmatter", provenance: "explicit" });
@@ -292,7 +291,6 @@ describe("review fixes", () => {
 
   it("a renamed title that another note also uses still reads back as the person", () => {
     note("n1");
-    setPeopleEnabled(db, true);
     const persona = note("p-ana", "Ana Old");
     const ana = person("Ana Ruiz", { personaNoteId: persona.id });
     captureNoteMeeting(db, { noteId: "n1", attendees: ["[[Ana Old]]"], source: "frontmatter", provenance: "explicit" });

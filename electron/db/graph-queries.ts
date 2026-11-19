@@ -25,7 +25,6 @@ import type { GraphEdge, GraphNode, KnowledgeGraph, NeighbourNode, NeighboursRes
 import type { GraphQueryFilters } from "../../shared/types/graph";
 import type { GraphEdgeType as EdgeType, GraphNodeType } from "../../shared/types/domain";
 import type { PersonEdgeType } from "../../shared/types/people";
-import { isPeopleEnabled } from "./people-queries";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -367,18 +366,16 @@ export function getKnowledgeGraph(
     }
   }
 
-  // ── 7. People layer (flag-gated) ───────────────────────────────────────────
-  if (isPeopleEnabled(db)) {
-    addPeopleGraph(db, workspaceId, {
-      scoped: !!(projectIds && projectIds.length > 0),
-      noteIds: [...liveNoteIds],
-      wantsType,
-      wantsEdge,
-      nodeSet,
-      addNode,
-      addEdge: (e) => edges.push({ ...e, id: edgeId(e.type, e.source, e.target) }),
-    });
-  }
+  // ── 7. People layer ────────────────────────────────────────────────────────
+  addPeopleGraph(db, workspaceId, {
+    scoped: !!(projectIds && projectIds.length > 0),
+    noteIds: [...liveNoteIds],
+    wantsType,
+    wantsEdge,
+    nodeSet,
+    addNode,
+    addEdge: (e) => edges.push({ ...e, id: edgeId(e.type, e.source, e.target) }),
+  });
 
   return { nodes, edges };
 }

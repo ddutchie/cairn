@@ -312,11 +312,7 @@ export interface IpcContract {
   /** OpenGraph title/description for a url node (fetched in main, no CORS). */
   "db:flow:url:fetch": { args: [req: { url: string }]; result: UrlMetadata };
 
-  // ── People layer (behind the `feature.people` flag) ─────────────────────
-  /** The `feature.people` flag (`app_kv`); off until launch. */
-  "people:flag:get": { args: []; result: boolean };
-  /** Switch the flag; returns the new value. Not a workspace-data write. */
-  "people:flag:set": { args: [req: { on: boolean }]; result: boolean };
+  // ── People layer ────────────────────────────────────────────────────────
   "db:people:list": { args: [filter: PeopleListFilter]; result: Person[] };
   /** The list with each person's last and next meeting. */
   "db:people:summaries": { args: [filter: PeopleListFilter]; result: PersonSummary[] };
@@ -364,14 +360,14 @@ export interface IpcContract {
   /** Read a person's persona note and propose title, team, location and time zone, each with the words it came from. Writes nothing; the user applies what they accept. */
   "people:autofill:propose": {
     args: [req: { personId: string }];
-    result: { proposals: { field: "title" | "team" | "location" | "timezone"; value: string; quote: string; current?: string }[] } | { skipped: "off" | "no-ai" | "private" | "no-persona" | "empty" | "failed" };
+    result: { proposals: { field: "title" | "team" | "location" | "timezone"; value: string; quote: string; current?: string }[] } | { skipped: "no-ai" | "private" | "no-persona" | "empty" | "failed" };
   };
   /** The newest prep brief for a person, and whether one is being prepared now. */
   "people:prep:get": { args: [req: { workspaceId: string; personId: string }]; result: { brief: PrepBrief | null; running: boolean } };
   /** Start a prep brief. `skipped` says why nothing started. Not `writes`: that flag is for db:* channels that change synced rows (it broadcasts db:changed); a prep writes a device-local file, like `today:run`. */
   "people:prep:run": {
     args: [req: { workspaceId: string; personId: string; meetingId?: string }];
-    result: { runId: string } | { skipped: "busy" | "off" | "no-ai" | "unknown-person" };
+    result: { runId: string } | { skipped: "busy" | "no-ai" | "unknown-person" };
   };
 
   // ── Heartbeat automations ────────────────────────────────────────────────
@@ -1038,8 +1034,6 @@ const CHANNELS: ChannelRecord = {
   "db:flow:edge:create": "write",
   "db:flow:edge:delete": "write",
   "db:flow:url:fetch": "read",
-  "people:flag:get": "read",
-  "people:flag:set": "read",
   "db:people:list": "read",
   "db:people:summaries": "read",
   "db:people:get": "read",

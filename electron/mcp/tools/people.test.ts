@@ -13,7 +13,7 @@ import matter from "gray-matter";
 import { applySchema } from "../../db/schema";
 import { createWorkspace, createProject, createColumn, createNote, createCard } from "../../db/queries";
 import {
-  createPerson, getPerson, listAttendees, listPeople, setPeopleEnabled, updatePerson,
+  createPerson, getPerson, listAttendees, listPeople, updatePerson,
 } from "../../db/people-queries";
 import { findNoteFilePath } from "../../host-shared/notes-io";
 import { executeTool } from "./index";
@@ -38,23 +38,11 @@ beforeEach(() => {
   createColumn(db, { id: "c-back", projectId: "p", workspaceId: "ws", name: "Backlog", type: "backlog", order: 0 });
   createNote(db, { id: "n1", projectId: "p", workspaceId: "ws", title: "Weekly sync", content: "Notes" });
   createCard(db, { id: "k1", columnId: "c-back", projectId: "p", workspaceId: "ws", title: "Ship it" });
-  setPeopleEnabled(db, true);
 });
 
 afterEach(() => {
   db.close();
   fs.rmSync(wp, { recursive: true, force: true });
-});
-
-describe("flag off", () => {
-  it("the people tool refuses and People arguments are ignored", async () => {
-    setPeopleEnabled(db, false);
-    expect((await run("people", { action: "query" })).error).toMatch(/not turned on/);
-    const r = await run("ensure_note", { projectId: "p", title: "Standup", content: "x", attendees: ["Ana"] });
-    expect(r.error).toBeUndefined();
-    expect(r.meeting).toBeUndefined();
-    expect(meetingOf(r.id)).toBeNull();
-  });
 });
 
 describe("people inventory", () => {
@@ -75,8 +63,6 @@ describe("people inventory", () => {
     updatePerson(db, ana.id, { agentPrivate: true });
     const r = await run("people", { action: "inventory" });
     expect(JSON.stringify(r)).not.toContain("pa");
-    setPeopleEnabled(db, false);
-    expect((await run("people", { action: "inventory" })).error).toMatch(/not turned on/);
   });
 });
 

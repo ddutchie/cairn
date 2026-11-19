@@ -40,7 +40,6 @@ import { listScopedConnectors } from "./external-tools";
 import { factsForPrompt, projectFacts } from "./today-facts";
 import { currentRunActivity } from "./run-activity";
 import { getCadenceNudges } from "../db/people-oneonone";
-import { isPeopleEnabled } from "../db/people-queries";
 import { isTodayBriefTool } from "./today-tools";
 
 // The saved files and the row lookup live in today-files.ts, so the MCP runtime can read them too.
@@ -391,7 +390,6 @@ export function getTodayState(db: Database.Database, workspacePath: string, work
  * carry over a day after the meeting happens; one the user marked done today stays hidden for the day.
  */
 function todayNudges(db: Database.Database, workspacePath: string, automation: Automation, workspaceId: string): TodayNudge[] {
-  if (!isPeopleEnabled(db)) return [];
   try {
     const nudges = getCadenceNudges(db, workspaceId);
     if (nudges.length === 0) return [];

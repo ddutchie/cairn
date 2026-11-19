@@ -9,11 +9,11 @@ import os from "node:os";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
-import { createPerson, getMeeting, setPeopleEnabled } from "../db/people-queries";
+import { createPerson, getMeeting } from "../db/people-queries";
 import { createAutomationRun, getAutomationRunById } from "../db/automation-queries";
 import { calendarMeetingId } from "../../shared/people/ids";
 import { localDate } from "../../shared/today/brief";
-import { enableToday, findTodayAutomation } from "./today";
+import { enableToday } from "./today";
 import { ensurePrepAutomation, loadLatestPrepBrief, PREP_TOOL_NAME } from "./people/prep";
 import { eventExternalId } from "../db/people-oneonone";
 import { runAutomation, runPrepNow } from "./heartbeat-runner";
@@ -37,7 +37,7 @@ type EngineOpts = {
 
 let db: Database.Database;
 let root: string;
-beforeEach(() => { db = makeDb(); seedWorkspace(db); seedProject(db); setPeopleEnabled(db, true); root = fs.mkdtempSync(path.join(os.tmpdir(), "hb-people-")); });
+beforeEach(() => { db = makeDb(); seedWorkspace(db); seedProject(db); root = fs.mkdtempSync(path.join(os.tmpdir(), "hb-people-")); });
 afterEach(() => { vi.clearAllMocks(); db.close(); fs.rmSync(root, { recursive: true, force: true }); });
 
 const notificationCount = () => insertNotificationMock.mock.calls.length;
@@ -127,11 +127,8 @@ describe("prep run", () => {
     expect(loadLatestPrepBrief(root, ensurePrepAutomation(db, "ws1"), ana.id)?.error).toBe("provider down");
   });
 
-  it("refuses to start while off, for a person of another workspace, or while another prep runs", async () => {
+  it("refuses to start for an unknown person, a person of another workspace, or while another prep runs", async () => {
     const ana = setupAna();
-    setPeopleEnabled(db, false);
-    expect(runPrepNow(ctx(), "ws1", { personId: ana.id })).toEqual({ skipped: "off" });
-    setPeopleEnabled(db, true);
     expect(runPrepNow(ctx(), "ws1", { personId: "nobody" })).toEqual({ skipped: "unknown-person" });
     seedWorkspace(db, "ws2", "Other");
     expect(runPrepNow(ctx(), "ws2", { personId: ana.id })).toEqual({ skipped: "unknown-person" });
@@ -145,17 +142,6 @@ describe("prep run", () => {
     await waitForRun((first as { runId: string }).runId);
   });
 
-  it("ends quietly when the preview is switched off after the request", async () => {
-    const ana = setupAna();
-    const automation = ensurePrepAutomation(db, "ws1");
-    const run = createAutomationRun(db, automation.id, "running");
-    setPeopleEnabled(db, false);
-    await runAutomation(ctx(), run, automation);
-    expect(getAutomationRunById(db, run.id)?.status).toBe("skipped");
-    expect(engineMock.runEngineAutomation).not.toHaveBeenCalled();
-    expect(notificationCount()).toBe(0);
-    expect(ana.id).toBeTruthy();
-  });
 });
 
 describe("Today calendar events → meetings", () => {
@@ -181,21 +167,9 @@ describe("Today calendar events → meetings", () => {
     expect(db.prepare("SELECT person_id FROM meeting_attendees WHERE meeting_id = ? AND deleted_at IS NULL").all(m.id)).toEqual([{ person_id: ana.id }]);
   });
 
-  it("asks the model for attendees only while the preview is on", async () => {
+  it("asks the model for attendees", async () => {
     await runToday([]);
     expect((engineMock.runEngineAutomation.mock.calls[0][0] as EngineOpts).prompt).toContain("People on the calendar");
-    setPeopleEnabled(db, false);
-    const today = findTodayAutomation(db, "ws1")!;
-    await runAutomation(ctx(), createAutomationRun(db, today.id, "running"), today);
-    expect((engineMock.runEngineAutomation.mock.calls[1][0] as EngineOpts).prompt).not.toContain("People on the calendar");
-  });
-
-  it("writes no meetings and no people while the preview is off", async () => {
-    setPeopleEnabled(db, false);
-    createPerson(db, { workspaceId: "ws1", name: "Ana Ruiz" });
-    await runToday([event]);
-    expect(db.prepare("SELECT COUNT(*) AS n FROM meetings").get()).toEqual({ n: 0 });
-    expect(db.prepare("SELECT COUNT(*) AS n FROM meeting_attendees").get()).toEqual({ n: 0 });
   });
 
   it("repeat runs leave existing meeting rows untouched", async () => {

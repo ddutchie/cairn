@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildInventory, CHAT_GATED_TOOLS } from "./tool-inventory";
-import { CHAT_ONLY_TOOLS, CHAT_EXCLUDED_TOOLS, PEOPLE_TOOLS, toolSchemasFor } from "./tool-schemas";
-
-const TOOL_SCHEMAS = toolSchemasFor({ people: false });
+import { CHAT_ONLY_TOOLS, CHAT_EXCLUDED_TOOLS, TOOL_SCHEMAS } from "./tool-schemas";
 
 describe("tool-inventory", () => {
   it("chat registers the Cairn data tools except the codebase index, with deletes gated", async () => {
@@ -32,15 +30,9 @@ describe("tool-inventory", () => {
     for (const n of ["bash", "terminal_open"]) expect(names.has(n)).toBe(false);
   });
 
-  it("lists the People tool on every Cairn surface only when the layer is on", async () => {
-    const off = await buildInventory();
-    const on = await buildInventory({ people: true });
-    for (const n of PEOPLE_TOOLS) {
-      for (const surface of ["chat", "coding", "mcp"] as const) {
-        expect(off[surface].some((t) => t.name === n)).toBe(false);
-        expect(on[surface].some((t) => t.name === n)).toBe(true);
-      }
-    }
+  it("lists the People tool on every Cairn surface", async () => {
+    const inv = await buildInventory();
+    for (const surface of ["chat", "coding", "mcp"] as const) expect(inv[surface].some((t) => t.name === "people")).toBe(true);
   });
 
   it("mcp excludes chat-only tools", async () => {

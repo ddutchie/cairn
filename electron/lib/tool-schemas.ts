@@ -14,7 +14,7 @@
 import * as z from "zod";
 
 import { isCairnReadTool } from "../../shared/agent/tool-names";
-import { PEOPLE_TOOLS, PEOPLE_TOOL_ARGS, PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION_DESKTOP, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION } from "../../shared/agent/people-tools";
+import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION_DESKTOP, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION } from "../../shared/agent/people-tools";
 
 // ── Shared field shapes ────────────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ const sDueDate     = z.string().optional().describe("ISO date e.g. 2026-05-01, o
 const sTagMode    = z.enum(["add", "remove", "set"]).optional().describe("How tagNames apply: add (default), remove, or set (replace all)");
 const sIdList     = z.array(z.string());
 
-// People layer args (hidden while the feature is off — see toolSchemasFor).
+// People layer args.
 const sAttendees  = z.array(z.string()).optional().describe(PEOPLE_ARG_DESCRIPTIONS.attendees);
 const sMeetDate   = sStrOpt.describe(PEOPLE_ARG_DESCRIPTIONS.date);
 const sOwner      = sStrOpt.describe(PEOPLE_ARG_DESCRIPTIONS.owner);
@@ -385,29 +385,7 @@ export const CHAT_EXCLUDED_TOOLS: ToolName[] = [
 // Chat-only tools (not exposed via MCP)
 export const CHAT_ONLY_TOOLS: ToolName[] = ["spawn_tasks_from_note", "ask_questions", "suggest_connections"];
 
-// Which tool and arguments the People layer adds: `shared/agent/people-tools.ts`, shared with mobile.
-export { PEOPLE_TOOLS, PEOPLE_TOOL_ARGS };
-
 export type ToolSchemaEntry = { description: string; schema: z.ZodObject<z.ZodRawShape> };
-
-/**
- * The tool schemas a session gets. With `people` off, the `people` tool and the
- * People arguments are left out, so the feature is invisible until launch.
- * Read once when a session (or the MCP server) starts: the tool list never
- * changes mid-session (prompt-cache rule in AGENTS.md).
- */
-export function toolSchemasFor(opts: { people: boolean }): Record<string, ToolSchemaEntry> {
-  const out: Record<string, ToolSchemaEntry> = {};
-  for (const [name, entry] of Object.entries(TOOL_SCHEMAS) as Array<[ToolName, ToolSchemaEntry]>) {
-    if (opts.people) { out[name] = entry; continue; }
-    if (PEOPLE_TOOLS.has(name)) continue;
-    const drop = PEOPLE_TOOL_ARGS[name];
-    out[name] = drop
-      ? { description: entry.description, schema: entry.schema.omit(Object.fromEntries(drop.map((k) => [k, true])) as Record<string, true>) }
-      : entry;
-  }
-  return out;
-}
 
 export type ToolCategory = "read" | "write" | "delete";
 

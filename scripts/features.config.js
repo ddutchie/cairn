@@ -251,6 +251,20 @@ const FEATURES = [
       "Look back: Open items carry over, and 30 days of briefs stay on a timeline you can step through.",
     ],
   },
+  {
+    id: "v3.3.0-people",
+    version: "v3.3.0",
+    title: "People, a place for the people you work with",
+    category: "AI",
+    description:
+      "Cairn now knows who you work with. Each person has a page with a persona note, role and relationship, and meetings, tasks and notes link back to them.",
+    highlights: [
+      "Find people in your notes: Import people from your existing notes and review what Cairn found before anything is saved.",
+      "1:1 prep: Cairn drafts a brief ahead of a meeting and Today nudges you when a 1:1 is due.",
+      "@ a person in chat: The assistant gets what Cairn knows about them; private persona notes stay out.",
+      "Org chart and Relationships: Two new canvases in Insights, and the same people on your phone.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

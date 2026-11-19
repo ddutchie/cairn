@@ -3,7 +3,7 @@ import type Database from "better-sqlite3";
 import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
 import { createNote, deleteNote, updateNote } from "./notes-queries";
 import {
-  addAttendee, addEdge, attendeeIdsFromSource, removeAttendee, removeMention, addMention, createMeeting, createPerson, getPerson, listAttendees, setNoteMeeting, setPeopleEnabled, updatePerson,
+  addAttendee, addEdge, attendeeIdsFromSource, removeAttendee, removeMention, addMention, createMeeting, createPerson, getPerson, listAttendees, setNoteMeeting, updatePerson,
 } from "./people-queries";
 import { computeAutoRelationships } from "./auto-relationships";
 import { indexNotePeople, indexNotesPeople } from "./people-indexing";
@@ -17,7 +17,6 @@ beforeEach(() => {
   db = makeDb();
   seedWorkspace(db);
   seedProject(db);
-  setPeopleEnabled(db, true);
 });
 afterEach(() => db.close());
 
@@ -354,13 +353,9 @@ describe("resilience and entry points", () => {
     err.mockRestore();
   });
 
-  it("indexNotesPeople indexes changed notes by id, and does nothing with the flag off", () => {
+  it("indexNotesPeople indexes changed notes by id", () => {
     const ana = persona("Ana Ruiz");
     note("n1", "One", "[[Ana Ruiz]]\n- [ ] **Ana Ruiz** - x");
-    setPeopleEnabled(db, false);
-    indexNotesPeople(db, ["n1"]);
-    expect(mentions("n1")).toEqual([]);
-    setPeopleEnabled(db, true);
     indexNotesPeople(db, ["n1", "missing"]);
     expect(mentions("n1").map((m) => m.person_id)).toEqual([ana.id]);
     expect(items("n1")).toHaveLength(1);
@@ -379,17 +374,6 @@ describe("indexing as a whole", () => {
     indexNotePeople(db, "ws1");
     computeAutoRelationships(db, "ws1");
     expect(snapshot()).toBe(first);
-  });
-
-  it("does nothing while the flag is off", () => {
-    persona("Ana Ruiz");
-    setPeopleEnabled(db, false);
-    note("n1", "Sync");
-    const before = snapshot();
-    save("n1", body);
-    computeAutoRelationships(db, "ws1");
-    expect(snapshot()).toBe(before);
-    expect(db.prepare("SELECT meeting_id FROM notes WHERE id = 'n1'").get()).toEqual({ meeting_id: null });
   });
 
   it("indexes every note on a full pass", () => {
@@ -459,10 +443,4 @@ describe("knowledge graph people nodes", () => {
     expect(other.nodes.some((n) => n.type === "person" || n.type === "meeting")).toBe(false);
   });
 
-  it("adds nothing while the flag is off", () => {
-    seed();
-    setPeopleEnabled(db, false);
-    const g = getKnowledgeGraph(db, "ws1");
-    expect(g.nodes.some((n) => n.type === "person" || n.type === "meeting")).toBe(false);
-  });
 });

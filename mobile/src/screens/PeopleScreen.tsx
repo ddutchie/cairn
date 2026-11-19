@@ -10,7 +10,6 @@ import { requestSync } from "@/sync/controller";
 import { haptics } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { loadPeople, setPersonStatus } from "@/db/people";
-import { usePeopleEnabled } from "@/people/flag";
 import { groupPeople, RELATIONSHIP_LABELS } from "@cairn/shared/people/model";
 import { formatRelative } from "@cairn/shared/format/date";
 import type { PersonSummary } from "@cairn/shared/types/people-view";
@@ -25,7 +24,6 @@ export function PeopleScreen() {
   const t = useTheme();
   const s = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
-  const on = usePeopleEnabled();
   const [people, setPeople] = useState<PersonSummary[]>([]);
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -62,7 +60,6 @@ export function PeopleScreen() {
     load();
   };
 
-  if (!on) return null;
 
   return (
     <View style={s.root}>

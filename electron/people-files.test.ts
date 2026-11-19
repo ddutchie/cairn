@@ -6,7 +6,7 @@ import matter from "gray-matter";
 import type Database from "better-sqlite3";
 import { makeDb, seedProject, seedWorkspace } from "./test-support/db";
 import { createNote } from "./db/notes-queries";
-import { addAttendee, createPerson, listAttendees, setPeopleEnabled } from "./db/people-queries";
+import { addAttendee, createPerson, listAttendees } from "./db/people-queries";
 import { findNoteFilePath, writeNoteFile } from "./host-shared/notes-io";
 import { FrontmatterRetryQueue, capturePeopleFromFile, meetingNotesForSync, refreshMeetingFrontmatter } from "./people-files";
 
@@ -18,7 +18,6 @@ beforeEach(() => {
   seedWorkspace(db);
   seedProject(db);
   ws = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-people-"));
-  setPeopleEnabled(db, true);
 });
 afterEach(() => {
   db.close();
@@ -39,13 +38,6 @@ const fmOf = (file: string) => matter(fs.readFileSync(file, "utf-8")).data;
 const meetingOf = (noteId: string) => (db.prepare("SELECT meeting_id FROM notes WHERE id = ?").get(noteId) as { meeting_id: string | null }).meeting_id;
 
 describe("capturePeopleFromFile", () => {
-  it("does nothing while the People layer is off", () => {
-    setPeopleEnabled(db, false);
-    const file = noteWithFile("n1", { attendees: ["Ana"] });
-    expect(capturePeopleFromFile(db, file, "n1")).toBeNull();
-    expect(meetingOf("n1")).toBeNull();
-  });
-
   it("ignores a note with a date but no attendees", () => {
     const file = noteWithFile("n1", { date: "2026-11-10" });
     expect(capturePeopleFromFile(db, file, "n1")).toBeNull();
@@ -113,9 +105,7 @@ describe("meetingNotesForSync", () => {
 
 describe("review fixes", () => {
   it("keeps attendees Cairn never captured on a note without a meeting", () => {
-    setPeopleEnabled(db, false);
     const file = noteWithFile("n1", { attendees: ["Ana"] });
-    setPeopleEnabled(db, true);
     expect(refreshMeetingFrontmatter(db, ws, ["n1"]).written).toEqual([]);
     expect(fmOf(file).attendees).toEqual(["Ana"]);
   });

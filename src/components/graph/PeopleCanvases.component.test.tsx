@@ -2,7 +2,7 @@
  * Insights People canvases (W7): the org chart and relationship canvas read
  * the people slice (outside Electron the network fetch is a no-op, so links
  * come from the relationship chips on "me"), open a person on click, and the
- * Insights tabs list them only while the flag is on.
+ * Insights lists them as tabs.
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -21,8 +21,8 @@ const person = (id: string, name: string, types: RelationshipType[], extra: Part
   createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z", ...extra,
 });
 
-const seed = (people: PersonSummary[], peopleEnabled = true) =>
-  useCairnStore.setState({ activeWorkspaceId: "ws1", peopleEnabled, peopleLoaded: true, people, selectedPersonId: null, peoplePanelId: null, activeView: "insights" });
+const seed = (people: PersonSummary[]) =>
+  useCairnStore.setState({ activeWorkspaceId: "ws1", peopleLoaded: true, people, selectedPersonId: null, peoplePanelId: null, activeView: "insights" });
 
 beforeEach(() => seed([]));
 
@@ -87,14 +87,9 @@ describe("RelationshipCanvas", () => {
   });
 });
 
-describe("InsightsView gating", () => {
-  it("has the People canvases only while the flag is on", () => {
-    seed([], false);
-    const { unmount } = render(<InsightsView />, { wrapper: TooltipProvider });
-    expect(screen.queryByRole("tab", { name: /Org chart/ })).toBeNull();
-    expect(screen.queryByRole("tab", { name: /Relationships/ })).toBeNull();
-    unmount();
-    seed([], true);
+describe("InsightsView tabs", () => {
+  it("lists the People canvases", () => {
+    seed([]);
     render(<InsightsView />, { wrapper: TooltipProvider });
     expect(screen.getByRole("tab", { name: /Org chart/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Relationships/ })).toBeInTheDocument();

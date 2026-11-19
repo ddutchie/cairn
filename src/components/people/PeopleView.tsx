@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * People view (People layer, W5; behind the `feature.people` flag).
+ * People view (People layer, W5).
  * A list of the people you work with, grouped by their relationship to you,
  * with a suggestions tray for people capture proposed, and the selected
  * person's page beside it. Plan: docs/plans/people-layer.md ("People view").

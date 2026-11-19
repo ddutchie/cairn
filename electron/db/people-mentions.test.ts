@@ -4,18 +4,17 @@ import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "./schema";
 import { createWorkspace } from "./queries";
-import { agentHiddenNoteIds, createPerson, setPeopleEnabled } from "./people-queries";
+import { agentHiddenNoteIds, createPerson } from "./people-queries";
 import { personMentionContext } from "../../shared/people/mentions";
 
 let db: Database.Database;
-const ctx = { enabled: true };
+const ctx = {};
 const ctxFor = (text: string) => personMentionContext(db, ctx, "ws", text, agentHiddenNoteIds(db));
 
 beforeEach(() => {
   db = new BetterSqlite3(":memory:");
   applySchema(db);
   createWorkspace(db, { id: "ws", name: "WS" });
-  setPeopleEnabled(db, true);
 });
 afterEach(() => db.close());
 
@@ -26,11 +25,10 @@ describe("personMentionContext", () => {
     expect(out).toContain("Ana Lopez");
     expect(out).toContain("direct_report");
   });
-  it("says nothing without a mention, for an unknown name, or when People is off", () => {
+  it("says nothing without a mention, for an unknown name, ", () => {
     createPerson(db, { workspaceId: "ws", name: "Ana Lopez" });
     expect(ctxFor("no mention here")).toBeUndefined();
     expect(ctxFor("hello @Zed")).toBeUndefined();
-    expect(personMentionContext(db, { enabled: false }, "ws", "@Ana Lopez", new Set())).toBeUndefined();
   });
   it("asks which person when a name is shared", () => {
     createPerson(db, { workspaceId: "ws", name: "Chris" });

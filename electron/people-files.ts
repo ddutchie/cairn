@@ -10,9 +10,8 @@
  * are; this module only rewrites them when attendance changes, and reads them
  * back when an external editor changes the file.
  *
- * Everything here is a no-op while the `feature.people` flag is off, so an
- * Obsidian vault that already uses an `attendees` property is left alone until
- * the People layer launches.
+ * Obsidian vaults that already use an `attendees` property are read as meeting
+ * attendees.
  */
 
 import fs from "node:fs";
@@ -21,7 +20,7 @@ import type Database from "better-sqlite3";
 import path from "node:path";
 import { findNoteFilePath, projectNotesDir } from "./host-shared/notes-io";
 import type { NoteFrontmatterHints } from "../shared/people/inventory";
-import { isPeopleEnabled, listAttendees } from "./db/people-queries";
+import { listAttendees } from "./db/people-queries";
 import { captureNoteMeeting, notesAffectedBy, pinUnreferenced, rememberPersonaTitles, renderMeetingFrontmatter, type CaptureResult, type MeetingFrontmatter } from "./db/people-capture";
 import { parseAttendeeList, parseMeetingDate } from "../shared/people/parse";
 
@@ -55,7 +54,6 @@ function readMeetingProps(filePath: string): FileMeetingProps | null {
  * never become meetings. Returns what changed, or null when nothing applied.
  */
 export function capturePeopleFromFile(db: Database.Database, filePath: string, noteId: string): CaptureResult | null {
-  if (!isPeopleEnabled(db)) return null;
   const props = readMeetingProps(filePath);
   if (!props) return null;
   if (!props.hasAttendees) {
@@ -124,7 +122,7 @@ export function refreshMeetingFrontmatter(
   beforeWrite?: (noteId: string) => void,
 ): RefreshResult {
   const result: RefreshResult = { written: [], failed: [] };
-  if (!isPeopleEnabled(db) || noteIds.length === 0) return result;
+  if (noteIds.length === 0) return result;
   const lookup = db.prepare(`
     SELECT n.id, p.name AS project_name, n.meeting_id AS meetingId FROM notes n
     JOIN projects p ON p.id = n.project_id
@@ -168,7 +166,6 @@ export function meetingNotesForSync(
   db: Database.Database,
   applied: readonly { entity: string; entity_id: string }[],
 ): string[] {
-  if (!isPeopleEnabled(db)) return [];
   const noteIds: string[] = [];
   const meetingIds: string[] = [];
   const personIds: string[] = [];

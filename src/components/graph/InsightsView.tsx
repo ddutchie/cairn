@@ -46,7 +46,7 @@ const LAYOUTS: { key: InsightsLayout; icon: React.ReactNode; label: string; tip:
   { key: "semantic-map", icon: <Sparkles size={12} />, label: "Semantic", tip: "Notes plotted by semantic similarity" },
 ];
 
-/** Shown only while `feature.people` is on. */
+/** The People canvases. */
 const PEOPLE_LAYOUTS: typeof LAYOUTS = [
   { key: "relationships", icon: <Network size={12} />, label: "Relationships", tip: "How the people you work with relate to each other" },
   { key: "org-chart",     icon: <Users   size={12} />, label: "Org chart",     tip: "Reporting lines, with you highlighted" },
@@ -64,7 +64,6 @@ export function InsightsView() {
     graphFilters,
     selectedGraphNodeId,
     projects,
-    peopleEnabled,
     loadGraph,
     setGraphFilters,
     setSelectedGraphNode,
@@ -82,7 +81,6 @@ export function InsightsView() {
     graphFilters:        s.graphFilters,
     selectedGraphNodeId: s.selectedGraphNodeId,
     projects:            s.projects,
-    peopleEnabled:       s.peopleEnabled,
     loadGraph:           s.loadGraph,
     setGraphFilters:     s.setGraphFilters,
     setSelectedGraphNode: s.setSelectedGraphNode,
@@ -93,8 +91,7 @@ export function InsightsView() {
   })));
 
   const [chosenLayout, setLayout] = useState<InsightsLayout>("ridgeline");
-  const layouts = useMemo(() => (peopleEnabled ? [...LAYOUTS, ...PEOPLE_LAYOUTS] : LAYOUTS), [peopleEnabled]);
-  // The flag turning off while a People canvas is open falls back to the default.
+  const layouts = useMemo(() => [...LAYOUTS, ...PEOPLE_LAYOUTS], []);
   const layout: InsightsLayout = layouts.some((l) => l.key === chosenLayout) ? chosenLayout : "ridgeline";
   const peopleLayout = layout === "relationships" || layout === "org-chart";
   // The person panel belongs to the People canvases: close it when leaving them or this view.
@@ -301,14 +298,14 @@ export function InsightsView() {
           {layout === "semantic-map" && (
             <SemanticMapCanvas nodes={allNodes} selectedNodeId={selectedGraphNodeId} onNodeClick={handleNodeClick} />
           )}
-          {peopleEnabled && layout === "relationships" && <RelationshipCanvas />}
-          {peopleEnabled && layout === "org-chart" && <OrgChartCanvas />}
+          {layout === "relationships" && <RelationshipCanvas />}
+          {layout === "org-chart" && <OrgChartCanvas />}
         </div>
 
         {selectedNode && (
           <GraphDetailPanel node={selectedNode} onClose={() => setSelectedGraphNode(null)} />
         )}
-        {peopleEnabled && peopleLayout && peoplePanelId && (
+        {peopleLayout && peoplePanelId && (
           <aside aria-label="Person" className="w-[26rem] max-w-[45%] flex-shrink-0 border-l border-[var(--border)] bg-[var(--surface)] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-3 h-10 border-b border-[var(--border)] flex-shrink-0">
               <span className="text-xs font-medium text-[var(--text-secondary)]">Person</span>

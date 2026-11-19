@@ -35,7 +35,7 @@ import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 // ── Slice imports ─────────────────────────────────────────────────────────────
 import { createUISlice } from "./slices/ui";
 import type { UISlice, AIConfig, AgentConfig, Theme, ToggleableView } from "./slices/ui";
-import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, FIRST_RUN_HIDDEN_APPLIED_KEY, applyFirstRunHiddenViews, SEEN_FEATURES_KEY, FAVORITE_MODELS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY, applyFontFamily, FONT_FAMILY_KEY, applyChatTheme, CHAT_THEME_KEY } from "./slices/ui";
+import { applyTheme, THEME_KEY, applyFontScale, FONT_SCALE_KEY, DEFAULT_FONT_SCALE, HIDDEN_VIEWS_KEY, FIRST_RUN_HIDDEN_APPLIED_KEY, applyFirstRunHiddenViews, PEOPLE_SHOWN_KEY, showPeopleOnce, SEEN_FEATURES_KEY, FAVORITE_MODELS_KEY, MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH, migrateLlmKeysToKeychain, applyAccent, ACCENT_KEY, applyFontFamily, FONT_FAMILY_KEY, applyChatTheme, CHAT_THEME_KEY } from "./slices/ui";
 import type { FontScale, FontFamilyId } from "./slices/ui";
 import { DEFAULT_ACCENT_ID } from "../../shared/ui/accents";
 import { DEFAULT_FONT_ID } from "../../shared/ui/fonts";
@@ -244,12 +244,9 @@ async function runChangeFeedRefresh(
   }
   if (!cs || cs.reset) return fullRefresh();
   setChangeFeedCursor(cs.feedId, cs.head);
-  // The People flag lives in settings, outside the change feed: re-read it on
-  // every event so a flip in another window lands here too.
-  void get().fetchPeopleFlag();
   if (cs.touched.length === 0) return;
   // Persona notes are hidden from Notes by id; keep the set current whichever view is open.
-  if (get().peopleEnabled) void get().loadPersonaNoteIds();
+  void get().loadPersonaNoteIds();
 
   // A change this window didn't make (MCP, AI, sync, another window, file
   // watcher) invalidates the undo stack — same rule as the full refresh, but no
@@ -457,7 +454,12 @@ function restorePersistedUiPrefs(set: PartialSetter): void {
     storage.set(HIDDEN_VIEWS_KEY, firstRun.hidden);
     storage.set(FIRST_RUN_HIDDEN_APPLIED_KEY, firstRun.applied);
   }
-  set({ hiddenViews: new Set(firstRun.hidden) });
+  const people = showPeopleOnce(firstRun.hidden, storage.get<boolean>(PEOPLE_SHOWN_KEY));
+  if (people.changed) {
+    storage.set(HIDDEN_VIEWS_KEY, people.hidden);
+    storage.set(PEOPLE_SHOWN_KEY, true);
+  }
+  set({ hiddenViews: new Set(people.hidden) });
 
   const savedSeenFeatures = storage.get<string[]>(SEEN_FEATURES_KEY);
   if (savedSeenFeatures) {
@@ -838,9 +840,7 @@ export const useCairnStore = create<CairnStore>()(
         }
       }
 
-      // The People layer flag lives in the workspace DB (app_kv), so a
-      // workspace switch can change it. One cheap read per hydrate.
-      void get().fetchPeopleFlag();
+      void get().loadPersonaNoteIds();
     },
 
     persist() {

@@ -12,7 +12,7 @@ import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
 import { createAutomation, createAutomationRun, listAutomations, updateAutomationRun } from "../db/automation-queries";
 import { createCard, createColumn } from "../db/board-queries";
 import { TODAY_COMMUNITY_ID } from "../../shared/today/brief";
-import { addAttendee, createMeeting, createPerson, setPeopleEnabled } from "../db/people-queries";
+import { addAttendee, createMeeting, createPerson } from "../db/people-queries";
 import { PREP_COMMUNITY_ID } from "../../shared/people/oneonone";
 import { ensurePrepAutomation } from "./people/prep";
 import { emptyBrief, finishBrief, upsertItems } from "../../shared/today/brief-edit";
@@ -261,7 +261,7 @@ describe("Today and the People preview", () => {
     const db = makeDb();
     seedWorkspace(db);
     seedProject(db, "ws1", "p1", "Alpha");
-    if (on) setPeopleEnabled(db, true);
+    if (on)
     enableToday(db, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
     const ana = createPerson(db, { workspaceId: "ws1", name: "Ana Ruiz", cadence: "weekly" });
     const m = createMeeting(db, { workspaceId: "ws1", title: "1:1", startsAt: new Date(Date.now() - 25 * 86_400_000).toISOString() });
@@ -288,7 +288,6 @@ describe("Today and the People preview", () => {
   it("has no nudges before Today is set up", () => {
     const db = makeDb();
     seedWorkspace(db);
-    setPeopleEnabled(db, true);
     expect(getTodayState(db, dir(), "ws1").nudges).toEqual([]);
   });
 
