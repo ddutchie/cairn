@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  foldName, formatMeetingDate, parseAttendeeList, parseAttendeeValue, parseBodyMeetingLines, parseChecklist, parseMeetingDate, splitAttendeeValues,
+  cleanRelationshipLabel, foldName, formatMeetingDate, parseAttendeeList, parseAttendeeValue, parseBodyMeetingLines, parseChecklist, parseMeetingDate, splitAttendeeValues,
 } from "./parse";
 
 describe("foldName", () => {
@@ -131,5 +131,22 @@ describe("review fixes", () => {
     expect(parseMeetingDate("0001-01-01")).toBe("0001-01-01T00:00:00.000Z");
     expect(parseMeetingDate("0099-12-31")).toBe("0099-12-31T00:00:00.000Z");
     expect(parseMeetingDate("0001-02-29")).toBeNull();
+  });
+});
+
+describe("cleanRelationshipLabel", () => {
+  it("keeps one short phrase, collapsing whitespace", () => {
+    expect(cleanRelationshipLabel("  executive   sponsor ")).toEqual({ label: "executive sponsor" });
+  });
+  it("treats empty as no label", () => {
+    expect(cleanRelationshipLabel("  ")).toEqual({});
+    expect(cleanRelationshipLabel(undefined)).toEqual({});
+  });
+  it("refuses a list, which belongs in separate entries", () => {
+    expect(cleanRelationshipLabel("manager, tech lead").error).toMatch(/one short phrase/);
+    expect(cleanRelationshipLabel("a; b").error).toBeTruthy();
+  });
+  it("refuses a long label", () => {
+    expect(cleanRelationshipLabel("x".repeat(41)).error).toMatch(/at most 40/);
   });
 });

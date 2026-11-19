@@ -14,7 +14,7 @@
 import * as z from "zod";
 
 import { isCairnReadTool } from "../../shared/agent/tool-names";
-import { PEOPLE_TOOLS, PEOPLE_TOOL_ARGS, PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION_DESKTOP } from "../../shared/agent/people-tools";
+import { PEOPLE_TOOLS, PEOPLE_TOOL_ARGS, PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION_DESKTOP, RELATIONSHIP_LABEL_DESCRIPTION } from "../../shared/agent/people-tools";
 
 // ── Shared field shapes ────────────────────────────────────────────────────────
 
@@ -238,7 +238,7 @@ export const TOOL_SCHEMAS = {
       emails:       z.array(z.string()).optional().describe("upsert: email addresses (added to existing)"),
       relationships: z.array(z.object({
         type:  z.enum(["direct_report", "manager", "peer", "stakeholder", "mentor", "buddy", "recruiter", "candidate", "other"]),
-        label: sStrOpt,
+        label: sStrOpt.describe(RELATIONSHIP_LABEL_DESCRIPTION),
       })).optional().describe("upsert: relationship(s) to the user (replaces the list)"),
       cadence:      z.enum(["weekly", "biweekly", "monthly", ""]).optional().describe("upsert: 1:1 cadence, empty to clear"),
       personaNoteId: sIdOpt.describe("upsert: the note about this person"),

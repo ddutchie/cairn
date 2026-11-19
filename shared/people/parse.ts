@@ -4,6 +4,22 @@
  * runtime and mobile share one copy. Plan: docs/plans/people-layer.md.
  */
 
+export const MAX_RELATIONSHIP_LABEL = 40;
+
+/**
+ * A relationship label is one short phrase that qualifies its type ("executive
+ * sponsor" on a stakeholder), never a list and never another type. Returns the
+ * cleaned label (undefined when empty) or an error the writer can act on.
+ */
+export function cleanRelationshipLabel(raw: unknown): { label?: string; error?: string } {
+  if (typeof raw !== "string") return {};
+  const label = raw.replace(/\s+/g, " ").trim();
+  if (!label) return {};
+  if (/[,;\n]/.test(raw)) return { error: "A relationship label is one short phrase. For several relationships, pass one entry each, every one with its own type." };
+  if (label.length > MAX_RELATIONSHIP_LABEL) return { error: `A relationship label is at most ${MAX_RELATIONSHIP_LABEL} characters.` };
+  return { label };
+}
+
 /** A person reference as written somewhere: a name, an email, or both. */
 export interface AttendeeRef {
   name?: string;

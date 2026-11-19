@@ -28,6 +28,7 @@ import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { revealCard, revealNote } from "@/lib/events";
 import { formatDate, formatRelative } from "../../../shared/format/date";
 import { cn } from "@/lib/utils";
+import { cleanRelationshipLabel } from "../../../shared/people/parse";
 import { CADENCES, RELATIONSHIP_TYPES, type Cadence, type RelationshipType } from "../../../shared/types/people";
 import type { PersonPage as PersonPageModel, PersonTimelineItem } from "../../../shared/types/people-view";
 import {
@@ -91,7 +92,7 @@ function PersonHeader({ page, editing, onToggleEdit }: { page: PersonPageModel; 
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         {person.relationship.map((r) => (
           <Chip key={`${r.type}|${r.label ?? ""}`}>
-            {r.label ? `${RELATIONSHIP_LABELS[r.type]}, ${r.label}` : RELATIONSHIP_LABELS[r.type]}
+            {r.label ? `${RELATIONSHIP_LABELS[r.type]} · ${r.label}` : RELATIONSHIP_LABELS[r.type]}
           </Chip>
         ))}
         {person.stage && <Chip>Stage: {person.stage}</Chip>}
@@ -214,6 +215,21 @@ function PersonSettings({ page }: { page: PersonPageModel }) {
             </button>
           ))}
         </div>
+        {person.relationship.map((r) => (
+          <div key={r.type} className="mt-2 flex items-center gap-2">
+            <span className="w-24 shrink-0 text-xs text-[var(--text-tertiary)]">{RELATIONSHIP_LABELS[r.type]}</span>
+            <BlurInput
+              ariaLabel={`Label for ${RELATIONSHIP_LABELS[r.type]}`}
+              placeholder="Optional, e.g. Executive sponsor"
+              value={r.label ?? ""}
+              onSave={(v) => {
+                const { label } = cleanRelationshipLabel(v.replace(/[,;]+/g, " "));
+                if ((label ?? "") === (r.label ?? "")) return;
+                void updatePerson(person.id, { relationship: person.relationship.map((x) => (x.type === r.type ? { ...x, label } : x)) });
+              }}
+            />
+          </div>
+        ))}
       </Field>
       {has("candidate") && (
         <Field label="Stage">

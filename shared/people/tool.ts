@@ -19,7 +19,7 @@ import {
 import { captureNoteMeeting, loadCandidates, meetingLinkPending, resolvePerson } from "./capture";
 import { ownedItemsIn } from "./action-items";
 import { edgeRowId } from "./ids";
-import { parseMeetingDate } from "./parse";
+import { cleanRelationshipLabel, parseMeetingDate } from "./parse";
 import {
   PEOPLE_STATUSES, PERSON_EDGE_TYPES, PROVENANCES, RELATIONSHIP_TYPES,
   type Person, type PeopleStatus, type PersonPatch, type Provenance, type Relationship,
@@ -241,7 +241,9 @@ function relationshipList(x: unknown, provenance: Provenance): Relationship[] | 
   for (const r of x) {
     const type = oneOf(RELATIONSHIP_TYPES, r?.type);
     if (!type) throw new Error(`Unknown relationship "${r?.type}". Use one of: ${RELATIONSHIP_TYPES.join(", ")}`);
-    out.push({ type, ...(typeof r.label === "string" && r.label ? { label: r.label } : {}), provenance });
+    const { label, error } = cleanRelationshipLabel(r?.label);
+    if (error) throw new Error(error);
+    out.push({ type, ...(label ? { label } : {}), provenance });
   }
   return out;
 }
