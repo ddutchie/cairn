@@ -17,6 +17,7 @@ import type { SyncDb } from "./db-adapter";
 import { Hlc, compareHlc, decodeHlc, encodeHlc } from "./hlc";
 import { SYNCABLE_TABLES, type SyncableTable } from "./schema";
 import { inspectConflict } from "./conflict";
+import { claimsDifferFrom, mergeClaims } from "../people/claims";
 
 export type Op = "put" | "delete";
 export type ObservationFrontier = Record<string, string>;
@@ -149,11 +150,18 @@ const RESTORABLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  * data; stamping it `behind` tells the user to update before the People layer
  * launches (docs/plans/people-layer.md, "Release shape").
  *
+ * Protocol 6 (attendee sources): `meeting_attendees.sources`, per-source claims
+ * ({ on, at }) merged source by source, so removing a person from one source
+ * (the note's frontmatter) can't drop attendance another source (a calendar
+ * event, the user) still asserts, and a removal survives a sync with a device
+ * that hasn't seen it. An older peer ignores the column; nothing wrote attendee rows before this, so it loses no data, but it
+ * is stamped `behind` like protocol 5 so the update hint appears before launch.
+ *
  * The point of stamping it now, while only two historical shapes exist, is that
  * a peer can be *told* it is behind instead of us inferring capability from
  * which optional fields happen to be present.
  */
-export const SYNC_PROTOCOL_VERSION = 5;
+export const SYNC_PROTOCOL_VERSION = 6;
 
 /** sync_state key prefix for the highest protocol version seen from a peer. */
 const PEER_PROTOCOL_PREFIX = "peer_protocol:";
@@ -211,6 +219,15 @@ const ARRAY_MERGE_COLUMNS: Record<string, string[]> = {
   people: ["aliases", "emails"],
 };
 
+/**
+ * Columns holding per-key claims (`shared/people/claims.ts`): merged key by key,
+ * the later claim wins, so a removal on one device isn't undone by a device that
+ * still has the older claim. Protocol 6.
+ */
+const CLAIM_MERGE_COLUMNS: Record<string, string[]> = {
+  meeting_attendees: ["sources"],
+};
+
 /** Column carrying free-text body that gets conflict-copy treatment. */
 const BODY_COLUMN: Partial<Record<SyncableTable, string>> = {
   notes: "content",
@@ -241,6 +258,16 @@ const NOOP_ROLLBACK = new Error("sync: no-op reconcile (rolled back)");
 function totalChanges(db: SyncDb): number {
   const row = db.prepare("SELECT total_changes() AS n").get() as { n?: number } | undefined;
   return Number(row?.n ?? 0);
+}
+
+/**
+ * A conflicted copy is a side copy for the user to resolve, not a second
+ * meeting record: drop its meeting link (and a card copy's owner) so the
+ * People timeline doesn't list the meeting's notes twice.
+ */
+function stripCopyLinks(entity: string, clone: Record<string, unknown>): void {
+  if (entity === "notes" && "meeting_id" in clone) clone.meeting_id = null;
+  if (entity === "task_cards" && "owner_person_id" in clone) clone.owner_person_id = null;
 }
 
 function tableColumns(db: SyncDb, table: string): string[] {
@@ -1145,6 +1172,9 @@ export class SyncEngine {
       const mergedArr = parseArray(merged[arrCol]);
       if (mergedArr.some((v) => !remoteSet.has(v))) return true;
     }
+    for (const col of CLAIM_MERGE_COLUMNS[entity] ?? []) {
+      if (claimsDifferFrom(merged[col], remote[col])) return true;
+    }
     return false;
   }
 
@@ -1162,6 +1192,9 @@ export class SyncEngine {
     if (local) {
       for (const arrCol of ARRAY_MERGE_COLUMNS[entity] ?? []) {
         if (cols.includes(arrCol)) merged[arrCol] = unionArrays(local[arrCol], remote[arrCol]);
+      }
+      for (const col of CLAIM_MERGE_COLUMNS[entity] ?? []) {
+        if (cols.includes(col)) merged[col] = mergeClaims(local[col], remote[col]);
       }
     }
     merged.hlc = hlc;
@@ -1216,6 +1249,7 @@ export class SyncEngine {
     if (entity === "notes") {
       clone.title = `${local.title ?? "Untitled"} (conflicted copy — ${this.deviceId})`;
     }
+    stripCopyLinks(entity, clone);
     clone.hlc = stamp;
     clone.deleted_at = null;
     this.writeRow(entity, clone);
@@ -1247,6 +1281,7 @@ export class SyncEngine {
     const observed = this.observationSnapshot(entity, copyId);
     const clone: Record<string, unknown> = { ...row, id: copyId, hlc: stamp, deleted_at: null };
     clone.title = `${row.title ?? "Untitled"} (conflicted copy — ${losingOrigin})`;
+    stripCopyLinks(entity, clone);
     this.writeRow(entity, clone);
     this.setPutVersion(entity, copyId, stamp, observed);
     this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: copyId, op: "put", payload: readRow(this.db, entity, copyId) ?? null, observed });

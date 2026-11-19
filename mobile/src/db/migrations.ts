@@ -208,6 +208,17 @@ const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
       if (!cols.includes(column)) db.execSync(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
     }
   },
+  // v11: meeting_attendees.sources (sync protocol 6): every source that lists a
+  // person at a meeting. Fresh installs have it from the base schema; v10
+  // installs get it here. Mobile doesn't write attendee rows yet, so there is
+  // nothing to seed beyond the default.
+  (db) => {
+    const cols = db.getAllSync<{ name: string }>("PRAGMA table_info(meeting_attendees)").map((c) => c.name);
+    if (!cols.includes("sources")) {
+      db.execSync("ALTER TABLE meeting_attendees ADD COLUMN sources TEXT NOT NULL DEFAULT '{}'");
+    }
+    db.execSync("UPDATE meeting_attendees SET sources = json_object(source, json_object('on', json('true'), 'at', updated_at)) WHERE sources = '{}' OR sources = '[]'");
+  },
 ];
 
 /** The schema version this build expects (base schema = 1, plus each migration). */

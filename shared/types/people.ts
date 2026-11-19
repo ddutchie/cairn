@@ -119,7 +119,10 @@ export type MeetingAttendee = {
   personId: ID;
   /** Suggested when the name match was ambiguous or inferred. */
   status: PeopleStatus;
+  /** The strongest source that lists this person. */
   source: AttendeeSource;
+  /** Every source that lists this person; they stay at the meeting until the last one drops them. */
+  sources: AttendeeSource[];
   provenance: Provenance;
   createdAt: string;
   updatedAt: string;

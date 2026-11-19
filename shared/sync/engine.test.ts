@@ -178,6 +178,30 @@ describe("sync engine — Phase 0 convergence spike", () => {
     expect(copiesB.map((c) => c.content)).toEqual(["A edited this"]);
   });
 
+  it("doesn't carry a note's meeting link onto its conflict copy", () => {
+    // The copy would otherwise become a second note of the same meeting.
+    const clkA = clockFrom(3_500_000);
+    const clkB = clockFrom(3_500_000);
+    const A = makeDevice("A", clkA.now);
+    const B = makeDevice("B", clkB.now);
+    seedBase(A.engine);
+    A.engine.put("notes", { id: "n1", project_id: "p1", workspace_id: "ws1", title: "Sync", content: "common", meeting_id: "m1", created_at: "t", updated_at: "t", content_text: "" });
+    syncFolder(dir, A.engine, B.engine);
+
+    clkA.advance(1);
+    A.engine.put("notes", { id: "n1", content: "A edited this" });
+    clkB.advance(50);
+    B.engine.put("notes", { id: "n1", content: "B edited this" });
+    syncFolder(dir, A.engine, B.engine);
+
+    for (const dev of [A, B]) {
+      const rows = dev.db.prepare("SELECT id, meeting_id FROM notes WHERE deleted_at IS NULL ORDER BY id = 'n1' DESC").all() as { id: string; meeting_id: string | null }[];
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toEqual({ id: "n1", meeting_id: "m1" });
+      expect(rows[1].meeting_id).toBeNull();
+    }
+  });
+
   it("never makes a conflict copy OF a conflict copy (no _conflict_…_conflict_ nesting)", () => {
     // Regression for the "31 pending" storm: a conflict-copy row whose body then
     // diverged across devices used to spawn ANOTHER conflict copy, nesting
@@ -332,6 +356,37 @@ describe("sync engine — Phase 0 convergence spike", () => {
     syncFolder(dir, A.engine, B.engine);
     const live = B.db.prepare("SELECT COUNT(*) c FROM notes WHERE id='n1' AND deleted_at IS NULL").get() as { c: number };
     expect(live.c).toBe(0);
+  });
+
+  it("merges attendee source claims per source: a removal survives, concurrent adds both stay", () => {
+    const clkA = clockFrom(6_500_000);
+    const clkB = clockFrom(6_500_000);
+    const A = makeDevice("A", clkA.now);
+    const B = makeDevice("B", clkB.now);
+    seedBase(A.engine);
+    A.engine.put("people", { id: "pe1", workspace_id: "ws1", name: "Ana", created_at: "t", updated_at: "t" });
+    A.engine.put("meetings", { id: "m1", workspace_id: "ws1", title: "Sync", starts_at: "2026-11-11T00:00:00.000Z", source: "note", created_at: "t", updated_at: "t" });
+    const claims = (o: Record<string, [boolean, string]>) =>
+      JSON.stringify(Object.fromEntries(Object.entries(o).map(([k, [on, at]]) => [k, { on, at }])));
+    A.engine.put("meeting_attendees", { id: "att1", meeting_id: "m1", person_id: "pe1", status: "confirmed", source: "calendar", sources: claims({ frontmatter: [true, "2026-11-11T09:00:00.000Z"], calendar: [true, "2026-11-11T09:00:00.000Z"] }), provenance: "explicit", created_at: "t", updated_at: "t" });
+    syncFolder(dir, A.engine, B.engine);
+
+    // A drops the calendar claim; B concurrently adds a manual one.
+    clkA.advance(1);
+    A.engine.put("meeting_attendees", { id: "att1", sources: claims({ frontmatter: [true, "2026-11-11T09:00:00.000Z"], calendar: [false, "2026-11-11T10:00:00.000Z"] }) });
+    clkB.advance(2);
+    B.engine.put("meeting_attendees", { id: "att1", sources: claims({ frontmatter: [true, "2026-11-11T09:00:00.000Z"], calendar: [true, "2026-11-11T09:00:00.000Z"], manual: [true, "2026-11-11T10:30:00.000Z"] }) });
+    syncFolder(dir, A.engine, B.engine);
+    syncFolder(dir, A.engine, B.engine);
+
+    for (const d of [A, B]) {
+      const row = d.db.prepare("SELECT sources FROM meeting_attendees WHERE id='att1'").get() as { sources: string };
+      const c = JSON.parse(row.sources) as Record<string, { on: boolean }>;
+      expect(c.calendar.on).toBe(false);
+      expect(c.frontmatter.on).toBe(true);
+      expect(c.manual.on).toBe(true);
+    }
+    expect(liveState(A.db)).toEqual(liveState(B.db));
   });
 
   it("merges JSON-array fields by set-union (concurrent tag additions both survive)", () => {

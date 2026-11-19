@@ -31,6 +31,7 @@ import { registerSessionRuntimeHandlers } from "./ipc/session-runtime-handlers";
 import { setDebugLogRoot, dlog } from "./lib/debug-log";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
+import { FrontmatterRetryQueue, meetingNotesForSync, refreshMeetingFrontmatter } from "./people-files";
 import { syncNotesFromDisk, writeNoteFile, deleteNoteFile, setPathRemover } from "./notes-files";
 import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies, reconcileInterruptedCodingSessions, changeFeedHead, recordOwnWrite, pruneChangeFeed, noteChangeBaseHead, discardNoteChangeBasesSince, pruneNoteChangeBases } from "./db/queries";
 import { recoverInterruptedRuns } from "./db/automation-queries";
@@ -540,6 +541,17 @@ app.whenReady().then(async () => {
   // re-emit .md files for inbound note changes.
   desktopSync.setNoteFileProjector(projectNoteToDisk);
   desktopSync.setAttachmentWorkspaceProvider(() => ctx.workspacePath);
+  // People layer: keep meeting notes' attendees/date frontmatter in line with
+  // attendee rows that arrived from other devices (no-op while the flag is off).
+  // Notes whose write failed (or whose file wasn't there yet) are retried on
+  // later ticks with growing gaps and never dropped (FrontmatterRetryQueue).
+  const frontmatterRetries = new FrontmatterRetryQueue();
+  desktopSync.setAppliedRowsHook((applied: readonly { entity: string; entity_id: string }[]) => {
+    const noteIds = frontmatterRetries.next(meetingNotesForSync(ctx.db, applied));
+    if (noteIds.length === 0) return;
+    const { failed } = refreshMeetingFrontmatter(ctx.db, ctx.workspacePath, noteIds, suppressNextChange);
+    frontmatterRetries.report(noteIds, failed);
+  });
 
   // Clean up NESTED conflict-copy junk (`…_conflict_…_conflict_…`) left by the
   // old "conflict copy of a conflict copy" bug — an exploding pile that churned

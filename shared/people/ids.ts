@@ -34,3 +34,21 @@ export function edgeRowId(type: PersonEdgeType, sourceId: string, targetId: stri
 export function calendarMeetingId(workspaceId: string, externalId: string): string {
   return `cal:${workspaceId}:${externalId}`;
 }
+
+/**
+ * A stub person created for a name or email nobody matched: one per workspace
+ * per folded name (or email), so the same unknown attendee seen on two devices
+ * becomes one suggestion, not two. `fold` is `foldName` for names.
+ */
+export function stubPersonId(workspaceId: string, key: string): string {
+  return `stub:${workspaceId}:${key}`;
+}
+
+/**
+ * The meeting a note became (attendees added to a plain note): one per note per
+ * workspace, on every device. The workspace is part of the id because a note
+ * can move to another workspace (`mergeProject`), and its meeting can't follow.
+ */
+export function noteMeetingId(workspaceId: string, noteId: string): string {
+  return `nmt:${workspaceId}:${noteId}`;
+}

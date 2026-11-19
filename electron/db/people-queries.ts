@@ -22,6 +22,7 @@ import {
   type PersonEdge, type PersonEdgeRole, type PersonEdgeType, type PersonPatch, type PersonRelation,
   type Provenance, type Relationship, type RelationshipType,
 } from "../../shared/types/people";
+import { activeSources, parseClaims, serializeClaims } from "../../shared/people/claims";
 import { attendeeRowId, calendarMeetingId, edgeRowId, mentionRowId } from "../../shared/people/ids";
 
 type Db = Database.Database;
@@ -116,7 +117,8 @@ function toPerson(r: Row): Person {
     status: r.status as PeopleStatus,
     provenance: r.provenance as Provenance,
     stage: opt(r.stage),
-    isMe: r.is_me === 1,
+    // Two devices can each mark a different person as "me" before they sync; only the canonical one counts.
+    isMe: r.is_me === 1 && (r.canonical_me === undefined || r.canonical_me === r.id),
     agentPrivate: r.agent_private === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -163,10 +165,23 @@ function toAttendee(r: Row): MeetingAttendee {
     personId: r.person_id,
     status: r.status as PeopleStatus,
     source: r.source as AttendeeSource,
+    sources: sourcesOf(r),
     provenance: r.provenance as Provenance,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
+}
+
+/** Every source currently listing this attendee; rows from before `sources` existed fall back to `source`. */
+function sourcesOf(r: Row): AttendeeSource[] {
+  const active = activeSources(parseClaims(r.sources)).filter((x): x is AttendeeSource => x in SOURCE_RANK);
+  return active.length ? active : [r.source as AttendeeSource];
+}
+
+function claimsWith(r: Row | undefined, source: AttendeeSource, on: boolean, at: string): string {
+  const claims = r ? parseClaims(r.sources) : {};
+  claims[source] = { on, at };
+  return serializeClaims(claims);
 }
 
 function toMention(r: Row): NoteMention {
@@ -182,8 +197,16 @@ function toMention(r: Row): NoteMention {
 
 // ── People ────────────────────────────────────
 
+/**
+ * Person columns plus the workspace's canonical "me": the oldest live `is_me`
+ * row (then lowest id). `is_me` is only kept unique per device (clearOtherMe),
+ * so after a sync two rows can carry it; readers treat only this one as me.
+ */
+const PERSON_COLS = `*, (SELECT m.id FROM people m WHERE m.workspace_id = people.workspace_id AND m.is_me = 1
+  AND m.deleted_at IS NULL ORDER BY m.created_at, m.id LIMIT 1) AS canonical_me`;
+
 export function getPerson(db: Db, id: string): Person | null {
-  const row = db.prepare("SELECT * FROM people WHERE id = ? AND deleted_at IS NULL").get(id) as Row | undefined;
+  const row = db.prepare(`SELECT ${PERSON_COLS} FROM people WHERE id = ? AND deleted_at IS NULL`).get(id) as Row | undefined;
   return row ? toPerson(row) : null;
 }
 
@@ -204,14 +227,14 @@ export function listPeople(db: Db, workspaceId: string, opts: ListPeopleOptions 
     where.push("EXISTS (SELECT 1 FROM json_each(people.relationship) j WHERE json_extract(j.value, '$.type') = ?)");
     params.push(oneOf(RELATIONSHIP_TYPES, opts.relationship, "relationship type"));
   }
-  const rows = db.prepare(`SELECT * FROM people WHERE ${where.join(" AND ")} ORDER BY name COLLATE NOCASE`).all(...params) as Row[];
+  const rows = db.prepare(`SELECT ${PERSON_COLS} FROM people WHERE ${where.join(" AND ")} ORDER BY name COLLATE NOCASE`).all(...params) as Row[];
   return rows.map(toPerson);
 }
 
 /** The person row for the user themself, if one exists. */
 export function getMe(db: Db, workspaceId: string): Person | null {
   const row = db
-    .prepare("SELECT * FROM people WHERE workspace_id = ? AND is_me = 1 AND deleted_at IS NULL ORDER BY created_at LIMIT 1")
+    .prepare("SELECT *, id AS canonical_me FROM people WHERE workspace_id = ? AND is_me = 1 AND deleted_at IS NULL ORDER BY created_at, id LIMIT 1")
     .get(workspaceId) as Row | undefined;
   return row ? toPerson(row) : null;
 }
@@ -542,31 +565,72 @@ export interface AddAttendeeInput {
  * a second call returns the existing row, upgrading `suggested` to `confirmed`
  * if asked, and re-adding someone who was removed revives their row.
  */
+/** Ranks sources: the strongest listed source is the row's `source` (the user's own actions win). */
+const SOURCE_RANK: Record<AttendeeSource, number> = { body_line: 0, frontmatter: 1, calendar: 2, declared: 3, manual: 4 };
+
+function strongest(sources: readonly AttendeeSource[]): AttendeeSource {
+  return sources.reduce((a, b) => (SOURCE_RANK[b] > SOURCE_RANK[a] ? b : a));
+}
+
 export function addAttendee(db: Db, input: AddAttendeeInput): MeetingAttendee {
   if (!getMeeting(db, input.meetingId)) throw new Error(`Meeting not found: ${input.meetingId}`);
   if (!getPerson(db, input.personId)) throw new Error(`Person not found: ${input.personId}`);
   const status = oneOf(PEOPLE_STATUSES, input.status ?? "confirmed", "status");
   const now = ts();
   const id = attendeeRowId(input.meetingId, input.personId);
+  const source = input.source ?? "manual";
   const existing = db.prepare("SELECT * FROM meeting_attendees WHERE id = ?").get(id) as Row | undefined;
   if (existing && !existing.deleted_at) {
-    if (existing.status !== status && status === "confirmed") {
-      db.prepare("UPDATE meeting_attendees SET status = 'confirmed', updated_at = ? WHERE id = ?").run(now, id);
-      return toAttendee({ ...existing, status: "confirmed", updated_at: now });
-    }
-    return toAttendee(existing);
+    // One row per meeting/person, remembering every source that lists them: a
+    // source dropping the person only removes attendance when it was the last.
+    const current = sourcesOf(existing);
+    const sources = current.includes(source) ? current : [...current, source];
+    const top = strongest(sources);
+    const claims = current.includes(source) ? existing.sources : claimsWith(existing, source, true, now);
+    const takeOver = SOURCE_RANK[source] > SOURCE_RANK[existing.source as AttendeeSource];
+    const confirm = existing.status !== status && status === "confirmed";
+    if (sources.length === current.length && !takeOver && !confirm) return toAttendee(existing);
+    db.prepare("UPDATE meeting_attendees SET status = ?, source = ?, sources = ?, provenance = ?, updated_at = ? WHERE id = ?")
+      .run(confirm ? "confirmed" : existing.status, top, claims,
+        takeOver ? (input.provenance ?? "explicit") : existing.provenance, now, id);
+    return toAttendee(db.prepare("SELECT * FROM meeting_attendees WHERE id = ?").get(id) as Row);
   }
   if (existing) {
     db.prepare(`
-      UPDATE meeting_attendees SET deleted_at = NULL, status = ?, source = ?, provenance = ?, updated_at = ? WHERE id = ?
-    `).run(status, input.source ?? "manual", input.provenance ?? "explicit", now, id);
+      UPDATE meeting_attendees SET deleted_at = NULL, status = ?, source = ?, sources = ?, provenance = ?, updated_at = ? WHERE id = ?
+    `).run(status, source, claimsWith(undefined, source, true, now), input.provenance ?? "explicit", now, id);
     return toAttendee(db.prepare("SELECT * FROM meeting_attendees WHERE id = ?").get(id) as Row);
   }
   db.prepare(`
-    INSERT INTO meeting_attendees (id, meeting_id, person_id, status, source, provenance, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, input.meetingId, input.personId, status, input.source ?? "manual", input.provenance ?? "explicit", now, now);
+    INSERT INTO meeting_attendees (id, meeting_id, person_id, status, source, sources, provenance, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, input.meetingId, input.personId, status, source, claimsWith(undefined, source, true, now), input.provenance ?? "explicit", now, now);
   return toAttendee(db.prepare("SELECT * FROM meeting_attendees WHERE id = ?").get(id) as Row);
+}
+
+/** People currently listed at a meeting by this source. */
+export function attendeeIdsFromSource(db: Db, meetingId: string, source: AttendeeSource): string[] {
+  const rows = db.prepare("SELECT * FROM meeting_attendees WHERE meeting_id = ? AND deleted_at IS NULL").all(meetingId) as Row[];
+  return rows.filter((r) => sourcesOf(r).includes(source)).map((r) => r.person_id as string);
+}
+
+/**
+ * One source stops listing a person. They leave the meeting only when no other
+ * source lists them; otherwise the row stays with the remaining sources.
+ * Returns true when the attendee was removed.
+ */
+export function removeAttendeeSource(db: Db, meetingId: string, personId: string, source: AttendeeSource): boolean {
+  const row = db.prepare(
+    "SELECT * FROM meeting_attendees WHERE meeting_id = ? AND person_id = ? AND deleted_at IS NULL",
+  ).get(meetingId, personId) as Row | undefined;
+  if (!row) return false;
+  const rest = sourcesOf(row).filter((x) => x !== source);
+  if (rest.length === 0) { removeAttendee(db, meetingId, personId); return true; }
+  // Keep the dropped claim (off, dated) so the removal wins over an older claim on another device.
+  const now = ts();
+  db.prepare("UPDATE meeting_attendees SET source = ?, sources = ?, updated_at = ? WHERE id = ?")
+    .run(strongest(rest), claimsWith(row, source, false, now), now, row.id);
+  return false;
 }
 
 export function removeAttendee(db: Db, meetingId: string, personId: string): void {
@@ -665,4 +729,63 @@ export function setCardOwner(db: Db, cardId: string, personId: string | null): v
 export function listOwnedCardIds(db: Db, personId: string): string[] {
   return (db.prepare("SELECT id FROM task_cards WHERE owner_person_id = ? AND deleted_at IS NULL AND archived_at IS NULL ORDER BY updated_at DESC")
     .all(personId) as { id: string }[]).map((r) => r.id);
+}
+
+// ── Note lifecycle ────────────────────────────
+
+/**
+ * A persona note was renamed: keep its old title as an alias of the person, so
+ * `[[Old title]]` in existing files and other notes still names them (and a
+ * later read of such a file never makes a stub for it). Aliases sync with the
+ * person, so a rename on any device covers every device.
+ */
+export function onNoteRenamed(db: Db, noteId: string, oldTitle: string, newTitle: string): void {
+  if (!isPeopleEnabled(db) || !oldTitle.trim() || oldTitle === newTitle) return;
+  for (const p of db.prepare("SELECT id FROM people WHERE persona_note_id = ? AND deleted_at IS NULL").all(noteId) as { id: string }[]) {
+    const person = getPerson(db, p.id);
+    if (!person) continue;
+    const known = [person.name, ...person.aliases].map((x) => x.toLowerCase());
+    if (!known.includes(oldTitle.toLowerCase())) updatePerson(db, p.id, { aliases: [...person.aliases, oldTitle] });
+  }
+}
+
+/**
+ * Clean up after a note is deleted: people whose persona it was lose the link,
+ * its mentions are tombstoned, and its checklist index rows go. The meeting it
+ * belonged to stays (other notes or the calendar may still point at it).
+ */
+export function onNoteDeleted(db: Db, noteId: string): void {
+  const now = ts();
+  db.prepare("UPDATE people SET persona_note_id = NULL, updated_at = ? WHERE persona_note_id = ? AND deleted_at IS NULL").run(now, noteId);
+  db.prepare("UPDATE note_mentions SET deleted_at = ?, updated_at = ? WHERE note_id = ? AND deleted_at IS NULL").run(now, now, noteId);
+  db.prepare("DELETE FROM note_action_items WHERE note_id = ?").run(noteId);
+}
+
+/**
+ * Drop People links that point across workspaces after a project's notes and
+ * cards moved (`mergeProject` into a project of another workspace): a note's
+ * meeting, its mentions, a persona link and a card owner must all live in the
+ * project's own workspace. Within one workspace this changes nothing.
+ */
+export function detachForeignPeopleLinks(db: Db, projectId: string): void {
+  const now = ts();
+  db.prepare(`
+    UPDATE notes SET meeting_id = NULL, updated_at = ?
+    WHERE project_id = ? AND meeting_id IS NOT NULL
+      AND meeting_id NOT IN (SELECT id FROM meetings WHERE workspace_id = notes.workspace_id)
+  `).run(now, projectId);
+  db.prepare(`
+    UPDATE note_mentions SET deleted_at = ?, updated_at = ?
+    WHERE deleted_at IS NULL AND note_id IN (SELECT id FROM notes WHERE project_id = ?)
+      AND person_id NOT IN (SELECT p.id FROM people p JOIN notes n ON n.id = note_mentions.note_id WHERE p.workspace_id = n.workspace_id)
+  `).run(now, now, projectId);
+  db.prepare(`
+    UPDATE people SET persona_note_id = NULL, updated_at = ?
+    WHERE deleted_at IS NULL AND persona_note_id IN (SELECT id FROM notes WHERE project_id = ? AND workspace_id != people.workspace_id)
+  `).run(now, projectId);
+  db.prepare(`
+    UPDATE task_cards SET owner_person_id = NULL, updated_at = ?
+    WHERE project_id = ? AND owner_person_id IS NOT NULL
+      AND owner_person_id NOT IN (SELECT id FROM people WHERE workspace_id = task_cards.workspace_id)
+  `).run(now, projectId);
 }
