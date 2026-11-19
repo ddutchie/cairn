@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@cairn/shared/*": ["./shared/*"]
     }
   },
   "include": [
