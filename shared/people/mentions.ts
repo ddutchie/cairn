@@ -21,8 +21,8 @@ import { peopleTool, type PeopleToolContext } from "./tool";
 /** People named in one message, at most this many get a detail block. */
 export const MAX_MENTIONED_PEOPLE = 5;
 
-const LONGEST_NAME = 60;
-const isWordChar = (ch: string | undefined): boolean => !!ch && /[\p{L}\p{N}_]/u.test(ch);
+/** Letters, digits and combining accents continue a word: "@Jose" is not "@José" or "@Joseph". */
+const isWordChar = (ch: string | undefined): boolean => !!ch && /[\p{L}\p{M}\p{N}_]/u.test(ch);
 
 export interface FoundMentions {
   matched: Person[];
@@ -30,10 +30,16 @@ export interface FoundMentions {
   ambiguous: { text: string; people: Person[] }[];
 }
 
-/** The people `@`-mentioned in `text`, each once, in order of appearance. */
-export function findMentions(text: string, people: readonly Person[]): FoundMentions {
+/**
+ * The people `@`-mentioned in `text`, each once, in order of appearance.
+ * `chosen` maps a folded name to the person id the user picked from the
+ * suggestions, which settles a name two people share.
+ */
+export function findMentions(text: string, people: readonly Person[], chosen?: ReadonlyMap<string, string>): FoundMentions {
   const byKey = new Map<string, Person[]>();
+  let longest = 0; // the scan never cuts a tracked name short (x3: decomposed accents add characters)
   for (const p of people) {
+    for (const raw of [p.name, ...p.aliases]) longest = Math.max(longest, raw.length);
     for (const key of new Set([p.name, ...p.aliases].map(foldName).filter(Boolean))) {
       const list = byKey.get(key) ?? [];
       list.push(p);
@@ -44,14 +50,16 @@ export function findMentions(text: string, people: readonly Person[]): FoundMent
   const ambiguous: FoundMentions["ambiguous"] = [];
   for (let i = text.indexOf("@"); i !== -1; i = text.indexOf("@", i + 1)) {
     if (i > 0 && !/[\s([{,;:"']/.test(text[i - 1])) continue; // an email address, not a mention
-    const rest = text.slice(i + 1, i + 1 + LONGEST_NAME);
+    const rest = text.slice(i + 1, i + 1 + longest * 3);
     for (let len = rest.length; len > 0; len--) {
       // A name ends at a word edge: "@Ana" must not match inside "@Anabel".
       if (isWordChar(rest[len - 1]) && isWordChar(text[i + 1 + len])) continue;
       const hit = byKey.get(foldName(rest.slice(0, len)));
       if (!hit) continue;
-      if (hit.length > 1) ambiguous.push({ text: rest.slice(0, len), people: hit });
-      else if (!matched.some((m) => m.id === hit[0].id)) matched.push(hit[0]);
+      const picked = hit.length > 1 ? hit.find((h) => h.id === chosen?.get(foldName(rest.slice(0, len)))) : undefined;
+      const one = picked ?? (hit.length === 1 ? hit[0] : undefined);
+      if (!one) ambiguous.push({ text: rest.slice(0, len), people: hit });
+      else if (!matched.some((m) => m.id === one.id)) matched.push(one);
       break;
     }
   }
@@ -69,9 +77,10 @@ export function personMentionContext(
   workspaceId: string,
   text: string,
   hidden: ReadonlySet<string>,
+  chosen?: ReadonlyMap<string, string>,
 ): string | undefined {
   if (!ctx.enabled || !workspaceId || !text.includes("@")) return undefined;
-  const { matched, ambiguous } = findMentions(text, listPeople(db, workspaceId));
+  const { matched, ambiguous } = findMentions(text, listPeople(db, workspaceId), chosen);
   if (matched.length === 0 && ambiguous.length === 0) return undefined;
 
   const lines = ["The user @-mentioned people in this message. What Cairn knows about them (use the `people` tool for more):"];

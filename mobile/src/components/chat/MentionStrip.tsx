@@ -2,7 +2,7 @@ import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
 import { User } from "lucide-react-native";
 import type { PersonSummary } from "@cairn/shared/types/people-view";
 import { GlassBar } from "@/components/GlassBar";
-import { KEYBOARD_OPEN_GAP, useTheme } from "@/theme";
+import { KEYBOARD_OPEN_GAP, type, useTheme } from "@/theme";
 import { RestingStickyView } from "./RestingStickyView";
 
 const COMPOSER_GAP = 10;
@@ -17,11 +17,14 @@ export function MentionStrip({
   people,
   composerHeight,
   closedLift,
+  leftInset = 0,
   onPick,
 }: {
   people: readonly PersonSummary[];
   composerHeight: number;
   closedLift: number;
+  /** The composer's left offset on a folded screen, so the chips stay in the composer's pane. */
+  leftInset?: number;
   onPick: (person: PersonSummary) => void;
 }) {
   const t = useTheme();
@@ -29,7 +32,7 @@ export function MentionStrip({
   return (
     <RestingStickyView
       offset={{ closed: -closedLift, opened: -KEYBOARD_OPEN_GAP }}
-      style={[styles.root, { bottom: composerHeight + COMPOSER_GAP }]}
+      style={[styles.root, { bottom: composerHeight + COMPOSER_GAP, left: 14 + leftInset }]}
       pointerEvents="box-none"
     >
       <GlassBar style={styles.bar}>
@@ -57,5 +60,5 @@ const styles = StyleSheet.create({
   bar: { borderRadius: 22, overflow: "hidden", borderCurve: "continuous" },
   row: { padding: 6, gap: 6 },
   chip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth },
-  name: { fontSize: 14, fontWeight: "500", maxWidth: 180 },
+  name: { ...type.control, maxWidth: 180 },
 });

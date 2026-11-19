@@ -12,6 +12,7 @@ import { ForkSessionMenu } from "@/components/agent/ForkSessionMenu";
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
 import { Trash2, FileText, Map as MapIcon } from "lucide-react";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
+import { foldName } from "../../../shared/people/parse";
 import { usePersonSuggestions } from "@/components/chat/usePersonSuggestions";
 import { agentClient } from "@/lib/ipc/agent";
 import { registryClient } from "@/lib/ipc/registry";
@@ -657,8 +658,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const personSuggestions = usePersonSuggestions();
   const handleSearchFiles = useCallback(async (query: string): Promise<SuggestionItem[]> => {
     if (!hasElectron() || !session.cwd) return [];
-    const q = query.trim().toLowerCase();
-    const matchingPeople = personSuggestions.filter((p) => !q || p.title.toLowerCase().includes(q)).slice(0, 5);
+    // Only default sessions have the People tools, so only they attach a mentioned person.
+    const q = foldName(query);
+    const matchingPeople = session.role === "default" || session.role === undefined
+      ? personSuggestions.filter((p) => !q || foldName(p.title).includes(q)).slice(0, 5)
+      : [];
     try {
       const files = await agentClient.searchFiles(session.cwd, query);
       return [...matchingPeople, ...files.map((f): SuggestionItem => ({
@@ -671,7 +675,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       console.error("[session:autocomplete] searchFiles failed:", err);
       return matchingPeople;
     }
-  }, [session.cwd, personSuggestions]);
+  }, [session.cwd, session.role, personSuggestions]);
 
   function handleStop() {
     sessionConversation.stop();

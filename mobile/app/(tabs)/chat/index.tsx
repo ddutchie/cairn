@@ -46,7 +46,8 @@ import { ScrollToBottomButton } from "@/components/chat/ScrollToBottomButton";
 import { MentionStrip } from "@/components/chat/MentionStrip";
 import { mentionContext } from "@/chat/mentions";
 import { matchPeople, trailingMention } from "@cairn/shared/people/mentions";
-import { loadPeople } from "@/db/people";
+import { loadPeople, peopleWorkspaceId } from "@/db/people";
+import { foldName } from "@cairn/shared/people/parse";
 import { usePeopleEnabled } from "@/people/flag";
 import { streamingPhase } from "@cairn/shared/conversation/work-phase";
 import { createStreamingStore, StreamingStoreContext } from "@/chat/streaming-store";
@@ -316,14 +317,22 @@ export default function ChatScreen() {
   const peopleOn = usePeopleEnabled();
   const mentionQuery = peopleOn ? trailingMention(input)?.query : undefined;
   const mentioning = mentionQuery !== undefined;
+  // Reloaded when the active workspace changes, so a draft left open across a switch never offers the old workspace's people.
+  const mentionWorkspace = mentioning ? peopleWorkspaceId() : null;
   const mentionable = useMemo(() => {
     if (!mentioning) return [];
     try { return loadPeople(); } catch { return []; }
-  }, [mentioning]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mentionWorkspace is the cache key
+  }, [mentioning, mentionWorkspace]);
+  // Who the user picked from the chips, by folded name: settles two people with the same name.
+  const pickedMentions = useRef(new Map<string, string>());
   const mentionMatches = useMemo(() => (mentionQuery === undefined ? [] : matchPeople(mentionable, mentionQuery)), [mentionable, mentionQuery]);
-  const pickMention = useCallback((p: { name: string }) => {
+  const pickMention = useCallback((p: { id: string; name: string }) => {
     const m = trailingMention(input);
-    if (m) setInput(`${input.slice(0, m.start)}@${p.name} `);
+    if (m) {
+      pickedMentions.current.set(foldName(p.name), p.id);
+      setInput(`${input.slice(0, m.start)}@${p.name} `);
+    }
   }, [input]);
 
   const send = useCallback(async () => {
@@ -362,7 +371,8 @@ export default function ChatScreen() {
       { id: nextMessageId(), role: "assistant", content: "", tools: [], streaming: true },
     ]);
 
-    conversation.current.push(userMessage(text, atts, mentionContext(text)));
+    conversation.current.push(userMessage(text, atts, mentionContext(text, pickedMentions.current)));
+    if (!queuedSend) pickedMentions.current = new Map();
     // Persist the user turn locally (on-device only — chat never syncs).
     saveChatMessage({ role: "user", content: text, images: atts.map((a) => a.url) });
     let acc = "";
@@ -910,7 +920,7 @@ export default function ChatScreen() {
           allowImages={allowImages}
           queuedCount={queued.length}
         />
-        <MentionStrip people={mentionMatches} composerHeight={composerHeight} closedLift={closedLift} onPick={pickMention} />
+        <MentionStrip people={mentionMatches} composerHeight={composerHeight} closedLift={closedLift} leftInset={composerLeftInset} onPick={pickMention} />
         <ScrollToBottomButton
           visible={showScrollButton && !hideComposer}
           composerHeight={composerHeight}

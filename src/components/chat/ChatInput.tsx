@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useState, useMemo } from "react";
 import { Send, Square, Sparkles, FileText, CheckSquare, FileCode, Image, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { foldName } from "../../../shared/people/parse";
 import type { SlashCommand } from "@/lib/slash-commands";
 import { Tooltip } from "@/components/ui/tooltip";
 import { CountBadge } from "@/components/ui/count-badge";
@@ -163,8 +164,9 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       }
       if (!suggestions) return [];
       const q = trigger.query.toLowerCase();
+      const fq = foldName(trigger.query);
       return suggestions.filter((item) =>
-        item.title.toLowerCase().includes(q)
+        item.type === "person" ? foldName(item.title).includes(fq) : item.title.toLowerCase().includes(q)
       );
     }, [suggestions, trigger, onSearchSuggestions, asyncSuggestions]);
 

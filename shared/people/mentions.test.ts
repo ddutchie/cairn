@@ -29,6 +29,26 @@ describe("findMentions", () => {
   });
 });
 
+describe("findMentions boundaries and identity", () => {
+  const jose = person("p9", "Jose");
+  it("treats combining accents as part of the word", () => {
+    expect(findMentions("@Jose\u0301ph", [jose]).matched).toEqual([]);
+    expect(findMentions("@Joséph", [jose]).matched).toEqual([]);
+    expect(findMentions("@Jose\u0301 hi", [jose]).matched).toHaveLength(1);
+    expect(findMentions("@Jose hi", [jose]).matched).toHaveLength(1);
+  });
+  it("resolves names longer than 60 characters", () => {
+    const name = "Alexandria ".repeat(6).trim();
+    expect(name.length).toBeGreaterThan(60);
+    expect(findMentions(`@${name} hi`, [person("p8", name)]).matched).toHaveLength(1);
+  });
+  it("uses the picked person for a shared name", () => {
+    const r = findMentions("@Chris said", [chris1, chris2], new Map([["chris", "p4"]]));
+    expect(r.matched.map((p) => p.id)).toEqual(["p4"]);
+    expect(r.ambiguous).toEqual([]);
+  });
+});
+
 describe("trailingMention", () => {
   it("finds the @query at the end of the draft", () => {
     expect(trailingMention("hi @An")).toEqual({ query: "An", start: 3 });
