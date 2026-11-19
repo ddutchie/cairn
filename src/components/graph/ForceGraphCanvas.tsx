@@ -365,6 +365,7 @@ function ForceGraphCanvasImpl({
       },
       onEnd: (gen) => {
         if (gen !== genRef.current) return;
+        canvasRef.current?.setAttribute("data-layout", "settled");
         // final animated fit once settled
         if (!userInteractedRef.current) zoomFit(true);
         didInitialFitRef.current = true;
@@ -413,6 +414,9 @@ function ForceGraphCanvasImpl({
     nodesRef.current = nodes;
     linksRef.current = links;
     hullCacheRef.current = null;
+    // Layout state for tests and benchmarks (tests/perf): "settling" until the
+    // layout's end message, then "settled".
+    canvasRef.current?.setAttribute("data-layout", "settling");
     posVersionRef.current++;
     scheduleDraw();
 

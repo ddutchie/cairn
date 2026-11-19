@@ -28,6 +28,8 @@ export interface ProbeResult {
   calls: Record<string, number>;
   longTasks: number;
   longTaskMs: number;
+  /** ms from start to the first node fill (first graph pixels), or null. */
+  firstFillMs: number | null;
 }
 
 export function frameProbeScript(flags: PerfFlags): string {
@@ -36,14 +38,17 @@ export function frameProbeScript(flags: PerfFlags): string {
   const flags = ${JSON.stringify(flags)};
   window.__perfFlags = flags;
   const P = CanvasRenderingContext2D.prototype;
-  const COUNTED = ["stroke", "fill", "fillText", "strokeText", "arc", "setLineDash", "save", "restore", "createRadialGradient", "measureText"];
-  const state = { on: false, calls: {}, rafMs: [], intervals: [], longTasks: 0, longTaskMs: 0, t0: 0 };
+  const COUNTED = ["clearRect", "stroke", "fill", "fillText", "strokeText", "arc", "setLineDash", "save", "restore", "createRadialGradient", "measureText"];
+  const state = { on: false, calls: {}, rafMs: [], intervals: [], longTasks: 0, longTaskMs: 0, t0: 0, firstFill: null };
   window.__perfState = state;
 
   for (const name of COUNTED) {
     const orig = P[name];
     P[name] = function (...args) {
-      if (state.on) state.calls[name] = (state.calls[name] || 0) + 1;
+      if (state.on) {
+        state.calls[name] = (state.calls[name] || 0) + 1;
+        if (name === "fill" && state.firstFill == null) state.firstFill = performance.now() - state.t0;
+      }
       if (flags.noText && (name === "fillText" || name === "strokeText")) return;
       if (flags.noDash && name === "setLineDash") return orig.call(this, []);
       return orig.apply(this, args);
@@ -80,7 +85,7 @@ export function frameProbeScript(flags: PerfFlags): string {
 
   window.__perfStart = () => {
     state.on = true; state.calls = {}; state.rafMs = []; state.intervals = [];
-    state.longTasks = 0; state.longTaskMs = 0; state.t0 = performance.now(); last = 0;
+    state.longTasks = 0; state.longTaskMs = 0; state.t0 = performance.now(); state.firstFill = null; last = 0;
   };
   window.__perfStop = () => {
     state.on = false;
@@ -92,6 +97,7 @@ export function frameProbeScript(flags: PerfFlags): string {
       calls: state.calls,
       longTasks: state.longTasks,
       longTaskMs: state.longTaskMs,
+      firstFillMs: state.firstFill,
     };
   };
 })();

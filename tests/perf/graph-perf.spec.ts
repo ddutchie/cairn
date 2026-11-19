@@ -26,27 +26,20 @@
 import { test, type Page, type CDPSession } from "@playwright/test";
 import * as fs from "fs";
 import * as path from "path";
-import { buildScreenshotMock, PROJ_A } from "../fixtures/screenshot-fixture";
 import { loadBenchGraph } from "./large-graph";
-import { frameProbeScript, type PerfFlags, type ProbeResult } from "./frame-probe";
+import type { PerfFlags, ProbeResult } from "./frame-probe";
+import {
+  OUT_DIR, pct, sum, r1, bootApp, showGraph, waitForGraphData, canvasBox, assertCanvasReachable,
+  type StoreWindow,
+} from "./harness";
 
 const { graph, source } = loadBenchGraph();
-/** Every What's New id, so the modal never opens over the canvas. */
-const FEATURE_IDS: string[] = (() => {
-  try {
-    const file = path.resolve(__dirname, "..", "..", "src", "generated", "new-features.json");
-    return (JSON.parse(fs.readFileSync(file, "utf8")).registry as { id: string }[]).map((f) => f.id);
-  } catch {
-    return [];
-  }
-})();
 const DPR = Number(process.env.DPR ?? 2);
 const ONLY = process.env.ONLY;
 /** Slow the renderer's CPU N× (CDP throttling) to approximate a slower machine. */
 const CPU_THROTTLE = Number(process.env.CPU_THROTTLE ?? 1);
 /** Semicolon-separated variant names to run (default: all). */
 const VARIANT_FILTER = process.env.VARIANTS?.split(";").map((s) => s.trim());
-const OUT_DIR = path.resolve(__dirname, "..", "..", "test-results", "graph-perf");
 
 type Layout = "force" | "radial";
 
@@ -77,14 +70,6 @@ const VARIANTS: Variant[] = ([
 ] satisfies Variant[] as Variant[]).filter((v) => (!ONLY || v.layout === ONLY) && (!VARIANT_FILTER || VARIANT_FILTER.includes(v.name)));
 
 // ── stats ────────────────────────────────────────────────────────────────────
-
-const pct = (xs: number[], p: number) => {
-  if (!xs.length) return 0;
-  const s = [...xs].sort((a, b) => a - b);
-  return s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))];
-};
-const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
-const r1 = (n: number) => Math.round(n * 10) / 10;
 
 interface Row {
   variant: string;
@@ -148,54 +133,12 @@ function topFunctions(profile: { nodes: ProfileNode[]; startTime: number; endTim
 
 // ── page helpers ─────────────────────────────────────────────────────────────
 
-type StoreWindow = { __cairnStoreRef?: { getState: () => Record<string, unknown> } };
-
 async function openGraph(page: Page, v: Variant) {
-  await page.addInitScript({ content: buildScreenshotMock({ graph }) });
-  await page.addInitScript({ content: frameProbeScript(v.flags ?? {}) });
-  await page.addInitScript({
-    content: `try { localStorage.setItem("cairn:v1:seenFeatures", ${JSON.stringify(JSON.stringify(FEATURE_IDS))}); localStorage.setItem("kg-spacing", "1.2");
-      ${Object.entries(v.storage ?? {}).map(([k, val]) => `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(val)});`).join("\n")}
-    } catch {}`,
-  });
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => !!(window as unknown as StoreWindow).__cairnStoreRef, null, { timeout: 30_000 });
-  await page.waitForTimeout(500);
-  // Hide the tutorial / What's New overlays so they don't eat clicks.
-  await page.addStyleTag({ content: `.fixed.inset-0.z-\\[9999\\], [role="dialog"], nextjs-portal { display: none !important; }` });
-  await page.evaluate(({ layout, projId, ids }) => {
-    const s = (window as unknown as StoreWindow).__cairnStoreRef!.getState();
-    try { (s.setTutorialActive as (v: boolean) => void)?.(false); } catch {}
-    for (const id of ids) try { (s.markFeatureAsSeen as (id: string) => void)?.(id); } catch {}
-    if (s.chatOpen) (s.toggleChat as () => void)();
-    if (!s.sidebarCollapsed) (s.toggleSidebar as () => void)();
-    (s.setActiveProject as (id: string) => void)(projId);
-    (s.setGraphLayout as (l: string) => void)(layout);
-    (s.setView as (v: string) => void)("graph");
-  }, { layout: v.layout, projId: PROJ_A, ids: FEATURE_IDS });
-  await page.waitForFunction((n) => {
-    const s = (window as unknown as StoreWindow).__cairnStoreRef!.getState();
-    return ((s.graphData as { nodes: unknown[] })?.nodes?.length ?? 0) >= n;
-  }, Math.min(graph.nodes.length, 1), { timeout: 15_000 });
+  await bootApp(page, graph, { flags: v.flags, storage: v.storage });
+  await showGraph(page, v.layout);
+  await waitForGraphData(page);
   await page.waitForTimeout(400);
-  // Pointer input must land on the canvas, not on a modal or overlay.
-  const b = await canvasBox(page);
-  const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName ?? null, { x: b.x + b.width / 2, y: b.y + b.height / 2 });
-  if (hit !== "CANVAS") throw new Error(`something covers the graph canvas (hit ${hit}); pointer scenarios would not reach it`);
-}
-
-/** The graph canvas (the largest canvas on screen). */
-async function canvasBox(page: Page) {
-  const box = await page.evaluate(() => {
-    let best: DOMRect | null = null;
-    for (const c of document.querySelectorAll("canvas")) {
-      const r = c.getBoundingClientRect();
-      if (!best || r.width * r.height > best.width * best.height) best = r;
-    }
-    return best ? { x: best.x, y: best.y, width: best.width, height: best.height } : null;
-  });
-  if (!box) throw new Error("graph canvas not found");
-  return box;
+  await assertCanvasReachable(page);
 }
 
 // ── Chrome trace → where main-thread time goes (JS vs style/layout/paint) ─────

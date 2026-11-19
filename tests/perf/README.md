@@ -1,6 +1,18 @@
-# Graph canvas benchmark
+# Graph canvas benchmarks
 
-`npm run bench:graph-ui` boots the renderer against the Next dev server with
+## Quick: layout settle (`npm run bench:graph-settle`, ~20 s)
+
+Times the Force layout settling, which is where large graphs felt slowest:
+a cold open of the Knowledge Graph, reopening it, and three "Show
+neighbourhood" drill-ins and Esc back out. For each it reports how long until
+the layout settled, when the graph first appeared, how many full redraws it
+took, and frame timing in between. Takes the same `GRAPH_JSON`, `HEADED`,
+`DPR` and `CPU_THROTTLE` options as below, plus `NO_DASH=1` to draw dashed
+edges solid. Results go to `test-results/graph-perf/graph-settle-*.json`.
+
+## Full: interaction (`npm run bench:graph-ui`, ~5 min)
+
+This one boots the renderer against the Next dev server with
 mocked IPC, loads a large knowledge graph, and drives the Force and Radial
 views. For each scenario it reports:
 
