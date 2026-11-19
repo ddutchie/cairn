@@ -91,6 +91,7 @@ export function PeopleScreen() {
               <Text style={s.name} numberOfLines={1}>{item.name}</Text>
               <Text style={s.meta} numberOfLines={1}>
                 {[
+                  item.title ?? "",
                   item.relationship.map((r) => r.label ?? RELATIONSHIP_LABELS[r.type]).join(", "),
                   item.lastMetAt ? `met ${formatRelative(item.lastMetAt)}` : "",
                 ].filter(Boolean).join(" · ") || (section.key === "suggested" ? "Suggested" : " ")}
