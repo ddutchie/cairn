@@ -151,24 +151,29 @@ export function getPeopleNetwork(db: Db, workspaceId: string): PeopleNetwork {
   `).all(workspaceId) as Record<string, unknown>[];
 
   const rows = db.prepare(`
-    SELECT a.meeting_id AS meetingId, a.person_id AS personId
+    SELECT a.meeting_id AS meetingId, a.person_id AS personId,
+      CASE WHEN p.status = 'confirmed' AND p.archived_at IS NULL THEN 1 ELSE 0 END AS shown
     FROM meeting_attendees a
     JOIN meetings m ON m.id = a.meeting_id AND m.deleted_at IS NULL
-    JOIN people p ON p.id = a.person_id AND p.deleted_at IS NULL AND p.status = 'confirmed' AND p.archived_at IS NULL
+    JOIN people p ON p.id = a.person_id AND p.deleted_at IS NULL
     WHERE m.workspace_id = ? AND a.deleted_at IS NULL AND a.status = 'confirmed'
-  `).all(workspaceId) as { meetingId: string; personId: string }[];
-  const byMeeting = new Map<string, string[]>();
+  `).all(workspaceId) as { meetingId: string; personId: string; shown: number }[];
+  // The size limit counts everyone confirmed at the meeting (archived people too);
+  // only shown people become pair members.
+  const byMeeting = new Map<string, { size: number; ids: string[] }>();
   for (const r of rows) {
-    const list = byMeeting.get(r.meetingId);
-    if (list) list.push(r.personId); else byMeeting.set(r.meetingId, [r.personId]);
+    const m = byMeeting.get(r.meetingId) ?? { size: 0, ids: [] };
+    m.size++;
+    if (r.shown) m.ids.push(r.personId);
+    byMeeting.set(r.meetingId, m);
   }
   const pairs = new Map<string, { a: string; b: string; meetings: number }>();
-  for (const ids of byMeeting.values()) {
-    if (ids.length < 2 || ids.length > NETWORK_MAX_MEETING_SIZE) continue;
+  for (const { size, ids } of byMeeting.values()) {
+    if (ids.length < 2 || size > NETWORK_MAX_MEETING_SIZE) continue;
     const sorted = [...new Set(ids)].sort();
     for (let i = 0; i < sorted.length; i++) {
       for (let j = i + 1; j < sorted.length; j++) {
-        const key = `${sorted[i]}|${sorted[j]}`;
+        const key = JSON.stringify([sorted[i], sorted[j]]);
         const cur = pairs.get(key);
         if (cur) cur.meetings++; else pairs.set(key, { a: sorted[i], b: sorted[j], meetings: 1 });
       }

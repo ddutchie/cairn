@@ -34,13 +34,10 @@ export function OrgChartCanvas() {
   useEffect(() => {
     const el = scrollRef.current;
     if (el && meX !== undefined) el.scrollLeft = Math.max(0, meX + ORG_CARD_W / 2 - el.clientWidth / 2);
-  }, [meX]);
+  }, [meX, loading]);
 
   if (loading) return null;
   if (people.length === 0) return <CanvasEmptyState message="No people yet. Add people in the People view and the reporting line shows up here." />;
-  if (chart.roots.length === 0) {
-    return <CanvasEmptyState message="No reporting lines yet. Set who manages whom on a person's page, or mark yourself and give people the Manager or Direct report relationship." />;
-  }
 
   const nameFont = 11 * fs;
   const subFont = 9 * fs;
@@ -50,7 +47,7 @@ export function OrgChartCanvas() {
   const onlyMe = chart.roots.length === 1 && chart.roots[0].children.length === 0 && chart.roots[0].alsoReportsTo.length === 0;
   return (
     <div className="flex flex-col flex-1 min-w-0 min-h-0">
-      {onlyMe && (
+      {(onlyMe || chart.roots.length === 0) && (
         <p role="status" className="px-3 py-1.5 text-xs text-[var(--text-tertiary)] border-b border-[var(--border-subtle)]">
           No reporting lines yet. Set who manages whom on a person&apos;s page, or give people the Manager or Direct report relationship.
         </p>
@@ -61,7 +58,7 @@ export function OrgChartCanvas() {
         </p>
       )}
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto" tabIndex={-1}>
-        <svg
+        {chart.roots.length > 0 && <svg
           width={layout.width} height={layout.height} role="group"
           aria-label={`Org chart of ${layout.nodes.length} people in ${chart.roots.length} ${chart.roots.length === 1 ? "tree" : "trees"}`}
           className="block"
@@ -85,12 +82,13 @@ export function OrgChartCanvas() {
             const isMe = me?.id === id;
             const rel = p.relationship[0] ? (p.relationship[0].label || RELATIONSHIP_LABELS[p.relationship[0].type]) : "";
             const extra = node.alsoReportsTo.map((m) => byId.get(m)?.name).filter(Boolean);
-            const sub = isMe ? "You" : extra.length ? `Also reports to ${extra.join(", ")}` : rel;
+            const alsoText = extra.length ? `Also reports to ${extra.join(", ")}` : "";
+            const sub = isMe ? ["You", alsoText].filter(Boolean).join(" · ") : alsoText || rel;
             const reports = node.children.length;
             return (
               <g
                 key={id} transform={`translate(${x},${y})`} role="button" tabIndex={0}
-                aria-label={`${p.name}${isMe ? " (you)" : ""}${sub && !isMe ? `, ${sub}` : ""}${reports ? `, ${reports} direct ${reports === 1 ? "report" : "reports"}` : ""}${node.cycleBroken ? ", manager link cut to break a loop" : ""}. Open person`}
+                aria-label={`${p.name}${isMe ? " (you)" : ""}${isMe ? (alsoText ? `, ${alsoText}` : "") : sub ? `, ${sub}` : ""}${reports ? `, ${reports} direct ${reports === 1 ? "report" : "reports"}` : ""}${node.cycleBroken ? ", manager link cut to break a loop" : ""}. Open person`}
                 className="cursor-pointer outline-none [&:focus-visible>rect]:stroke-[var(--accent)] [&:focus-visible>rect]:stroke-[2.5]"
                 onClick={() => open(id)}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(id); } }}
@@ -112,7 +110,7 @@ export function OrgChartCanvas() {
               </g>
             );
           })}
-        </svg>
+        </svg>}
 
         {chart.unplaced.length > 0 && (
           <div className="px-3 pb-3 pt-1 border-t border-[var(--border-subtle)]">

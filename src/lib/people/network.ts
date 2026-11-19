@@ -186,11 +186,13 @@ export function buildOrgChart(people: readonly PersonSummary[], links: readonly 
   const reporting = links.filter((l) => l.kind === "reporting" && !l.ended && byId.has(l.source) && byId.has(l.target));
   const ordered = [...reporting.filter((l) => !l.derived), ...reporting.filter((l) => l.derived)];
   const parent = new Map<string, string>();
+  const parentDerived = new Map<string, boolean>();
   const also = new Map<string, string[]>();
   for (const l of ordered) {
     const cur = parent.get(l.target);
-    if (cur === undefined) parent.set(l.target, l.source);
-    else if (cur !== l.source && !l.derived) also.set(l.target, [...(also.get(l.target) ?? []), l.source]);
+    if (cur === undefined) { parent.set(l.target, l.source); parentDerived.set(l.target, l.derived); }
+    // A stored manager outranks chip-derived ones; among chips (or stored edges) the rest are additional.
+    else if (cur !== l.source && (!l.derived || parentDerived.get(l.target))) also.set(l.target, [...(also.get(l.target) ?? []), l.source]);
   }
 
   // Break cycles: follow parents; any member reached twice in one walk is in a cycle.

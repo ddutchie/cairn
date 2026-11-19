@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type Database from "better-sqlite3";
 import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
 import {
-  addAttendee, addEdge, addMention, createMeeting, createPerson, deletePerson, setCardOwner, setNoteMeeting, updateEdge,
+  addAttendee, addEdge, addMention, createMeeting, createPerson, deletePerson, setCardOwner, setNoteMeeting, updateEdge, updatePerson,
 } from "./people-queries";
 import { getPeopleNetwork, getPersonPage, getPersonTimeline, listPersonSummaries, listRelationViews } from "./people-view-queries";
 import { NETWORK_MAX_MEETING_SIZE } from "../../shared/types/people-view";
@@ -186,5 +186,21 @@ describe("getPeopleNetwork", () => {
     addAttendee(db, { meetingId: m.id, personId: people[0].id });
     addAttendee(db, { meetingId: m.id, personId: people[1].id, status: "suggested" });
     expect(getPeopleNetwork(db, "ws1").coAttendance).toEqual([]);
+  });
+
+  it("counts archived attendees toward the size limit, and keeps pair keys unambiguous", () => {
+    const people = Array.from({ length: NETWORK_MAX_MEETING_SIZE + 1 }, (_, i) => person(`Q${i}`));
+    updatePerson(db, people[0].id, { archivedAt: "2026-11-01T00:00:00.000Z" });
+    meeting("Big", "2026-11-01T10:00:00.000Z", ...people.map((p) => p.id));
+    expect(getPeopleNetwork(db, "ws1").coAttendance).toEqual([]);
+
+    const x1 = createPerson(db, { id: "a", workspaceId: "ws1", name: "X1" });
+    const x2 = createPerson(db, { id: "b|c", workspaceId: "ws1", name: "X2" });
+    const y1 = createPerson(db, { id: "a|b", workspaceId: "ws1", name: "Y1" });
+    const y2 = createPerson(db, { id: "c", workspaceId: "ws1", name: "Y2" });
+    meeting("M1", "2026-11-02T10:00:00.000Z", x1.id, x2.id);
+    meeting("M2", "2026-11-02T11:00:00.000Z", y1.id, y2.id);
+    const pairs = getPeopleNetwork(db, "ws1").coAttendance;
+    expect(pairs.map((p) => p.meetings)).toEqual([1, 1]);
   });
 });

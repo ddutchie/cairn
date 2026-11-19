@@ -90,7 +90,7 @@ export function RelationshipCanvas() {
     sel.call(behaviour.transform, d3.zoomIdentity.translate(zoomRef.current.x, zoomRef.current.y).scale(zoomRef.current.k));
     return () => { sel.on(".zoom", null); };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- extent follows the size; re-binding per pixel isn't wanted
-  }, [positions, links.length]);
+  }, [positions, links.length, loading]);
 
   if (loading) return null;
   if (people.length === 0) return <CanvasEmptyState message="No people yet. Add people in the People view and their relationships show up here." />;

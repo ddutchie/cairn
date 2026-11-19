@@ -34,6 +34,7 @@ describe("OrgChartCanvas", () => {
     seed([person("a", "Ann", ["peer"])]);
     render(<OrgChartCanvas />);
     expect(screen.getByText(/No reporting lines yet/)).toBeInTheDocument();
+    expect(screen.getByText("Not in a reporting line (1)")).toBeInTheDocument();
   });
 
   it("draws me with their manager and reports, lists the rest, and opens a person on click", () => {

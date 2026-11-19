@@ -124,6 +124,22 @@ describe("buildOrgChart", () => {
     expect(names(org.roots)).toEqual(["A", "B"]);
   });
 
+  it("keeps every chip-derived manager of me, and lists extra managers on me", () => {
+    const me = person("Me", { isMe: true });
+    const org = chart([me, person("Ann", { rel: ["manager"] }), person("Bob", { rel: ["manager"] })], []);
+    expect(names(org.roots)).toEqual(["Ann", "Bob"]);
+    const meNode = org.roots[0].children[0];
+    expect(meNode.person.name).toBe("Me");
+    expect(meNode.alsoReportsTo).toEqual(["bob"]);
+  });
+
+  it("a stored manager outranks chip-derived ones", () => {
+    const me = person("Me", { isMe: true });
+    const people = [me, person("Ann"), person("Bob", { rel: ["manager"] })];
+    const org = chart(people, [edge("ann", "me")]);
+    expect(names(org.roots)).toEqual(["Ann"]);
+  });
+
   it("cuts a cycle at its first member by name and keeps everyone in the chart", () => {
     const people = ["Bo", "Al", "Cy"].map((x) => person(x));
     const org = chart(people, [edge("bo", "al"), edge("al", "cy"), edge("cy", "bo")]);
