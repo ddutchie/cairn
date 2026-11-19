@@ -309,6 +309,8 @@ export function updatePerson(db: Db, id: string, patch: PersonPatch): Person {
   db.transaction(() => {
     db.prepare(`UPDATE people SET ${sets.join(", ")} WHERE id = ?`).run(...params, id);
     if (patch.isMe) clearOtherMe(db, current.workspaceId, id, now);
+    // The Slack profile cache belongs to one Slack id.
+    if (patch.slackId !== undefined && (patch.slackId?.trim() || null) !== current.slackId) db.prepare("DELETE FROM person_profile_cache WHERE person_id = ?").run(id);
   })();
   return getPerson(db, id)!;
 }
@@ -511,6 +513,11 @@ export function upsertMeetingByExternalId(db: Db, input: Omit<CreateMeetingInput
   const row = db.prepare("SELECT deleted_at FROM meetings WHERE id = ?").get(id) as { deleted_at: string | null } | undefined;
   if (!row) return createMeeting(db, { ...input, id, source: input.source ?? "calendar" });
   if (row.deleted_at) return null;
+  // Every Today run repeats the same events: a write only when something changed, so sync stays quiet.
+  const current = getMeeting(db, id)!;
+  const same = current.title === input.title.trim() && current.startsAt === input.startsAt
+    && (current.endsAt ?? null) === (input.endsAt ?? null) && (input.seriesKey === undefined || current.seriesKey === input.seriesKey);
+  if (same) return current;
   db.prepare(`
     UPDATE meetings SET title = ?, starts_at = ?, ends_at = ?, series_key = COALESCE(?, series_key), updated_at = ?
     WHERE id = ?

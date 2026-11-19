@@ -1183,6 +1183,8 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
       ownedCardIds:   () => Promise.resolve([]),
       attendees: () => Promise.resolve([]),
       attendee:  { add: noop, remove: noop },
+      profile:   { get: () => Promise.resolve({ fields: {}, stale: false }), refresh: () => Promise.resolve({ fields: {}, stale: false }) },
+      prep:      { get: () => Promise.resolve({ brief: null, running: false }), run: () => Promise.resolve({ skipped: "off" }), onUpdated: () => () => {} },
       migration: {
         inventory: () => Promise.resolve({
           workspaceId: "", personas: [], meetings: [], owners: [], ambiguousShortNames: [],

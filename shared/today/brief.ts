@@ -26,6 +26,18 @@ export interface TodayEvent {
   url?: string;
   /** Free text, e.g. "moved by organiser", "no agenda". */
   note?: string;
+  /** Who is on the invite, as the calendar lists them (the People layer links them to people). Absent when the calendar gave none. */
+  attendees?: TodayAttendee[];
+  /** Stable id of the recurring series this meeting belongs to (the calendar's series id, or the series title). Absent for one-offs. */
+  seriesId?: string;
+}
+
+/** One person on a calendar invite. */
+export interface TodayAttendee {
+  name?: string;
+  email?: string;
+  /** True for the user themself, so they aren't recorded as someone they met. */
+  self?: boolean;
 }
 
 /** One answer to a decision. `draftId` points at the `prepared` reply that carries it out. */
@@ -198,16 +210,52 @@ export function normalizeFyi(x: Record<string, unknown>, fallbackId: string): To
 }
 
 /** A meeting. Null without a title and an "HH:MM" start. */
-export function normalizeEvent(x: Record<string, unknown>): TodayEvent | null {
+/** The id an event gets when the run gave none: its start and title. Letters and digits in any script, so "会議" and "面接" at the same time stay two events. */
+export function fallbackEventId(start: string, title: string): string {
+  return `${start}-${title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 40)}`;
+}
+
+/** True when the event carries the calendar's own id, which survives a reschedule or a retitle (the fallback id doesn't). */
+export function hasRealEventId(event: Pick<TodayEvent, "id" | "start" | "title">): boolean {
+  return event.id !== fallbackEventId(event.start, event.title);
+}
+
+/** `people`: keep the invite (attendees, series). Off, they are dropped, so a workspace without People has none of it in its briefs. */
+export function normalizeEvent(x: Record<string, unknown>, people: boolean): TodayEvent | null {
   const title = str(x.title);
   const start = str(x.start);
   if (!title || !start || !HHMM.test(start)) return null;
   const end = str(x.end);
+  const attendees = people ? normalizeAttendees(x.attendees) : [];
   return {
-    // Letters and digits in any script, so "会議" and "面接" at the same time stay two events.
-    id: str(x.id) ?? `${start}-${title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 40)}`,
+    id: str(x.id) ?? fallbackEventId(start, title),
     title, start, end: end && HHMM.test(end) ? end : undefined, location: str(x.location), url: str(x.url), note: str(x.note),
+    ...(attendees.length ? { attendees } : {}), ...(people && str(x.seriesId) ? { seriesId: str(x.seriesId)!.slice(0, 200) } : {}),
   };
+}
+
+/** "With Ana, Ben and 3 more": the other people on an invite, or undefined when it lists none. */
+export function attendeeLabel(event: Pick<TodayEvent, "attendees">, shown = 3): string | undefined {
+  const others = (event.attendees ?? []).filter((a) => !a.self).map((a) => a.name ?? a.email ?? "").filter(Boolean);
+  if (others.length === 0) return undefined;
+  const head = others.slice(0, shown);
+  const more = others.length - head.length;
+  return `With ${head.join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
+}
+
+/** At most 50 invitees with a name or an email; the rest of the invite isn't kept. */
+export function normalizeAttendees(v: unknown): TodayAttendee[] {
+  const out: TodayAttendee[] = [];
+  for (const raw of Array.isArray(v) ? v : []) {
+    // A plain string is a name ("Chris Sponagle") or an email.
+    const o: Record<string, unknown> = typeof raw === "string" ? (raw.includes("@") ? { email: raw } : { name: raw }) : raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+    const name = str(o.name)?.slice(0, 120);
+    const email = str(o.email)?.slice(0, 200).toLowerCase();
+    if (!name && !email) continue;
+    out.push({ ...(name ? { name } : {}), ...(email ? { email } : {}), ...(o.self === true ? { self: true } : {}) });
+    if (out.length >= 50) break;
+  }
+  return out;
 }
 
 export function normalizeSource(x: Record<string, unknown>): TodaySourceStatus | null {
@@ -258,7 +306,7 @@ export function parseTodayBrief(text: string, now: Date = new Date()): TodayBrie
   const needYou = arr(o.needYou).flatMap((x, i) => normalizeNeed(x, `need-${i + 1}`) ?? []);
   const prepared = arr(o.prepared).flatMap((x, i) => normalizePrepared(x, `draft-${i + 1}`) ?? []);
   const fyi = arr(o.fyi).flatMap((x, i) => normalizeFyi(x, `fyi-${i + 1}`) ?? []);
-  const events = arr(o.events).flatMap((x) => normalizeEvent(x) ?? []).sort(byEventStart);
+  const events = arr(o.events).flatMap((x) => normalizeEvent(x, true) ?? []).sort(byEventStart);
   const sources = arr(o.sources).flatMap((x) => normalizeSource(x) ?? []);
   pruneDraftLinks({ needYou, prepared });
   const focus = str(o.focusId);
@@ -502,6 +550,19 @@ export interface TodayState {
   facts: TodayProjectFacts[];
   /** Connectors in scope for the included projects. */
   apps: TodayApp[];
+  /** "No 1:1 with X in 3 weeks": computed when read, only while the People preview is on. */
+  nudges: TodayNudge[];
+}
+
+/** A cadence nudge: someone with a 1:1 cadence whose last meeting is further back than it allows. */
+export interface TodayNudge {
+  /** `nudge-<personId>`, also the key the user's "done" mark is saved under. */
+  id: string;
+  personId: string;
+  name: string;
+  title: string;
+  /** Whole days since their last 1:1. */
+  days: number;
 }
 
 /** Cron expression for a refresh time ("HH:MM"). */

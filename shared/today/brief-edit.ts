@@ -96,7 +96,7 @@ function withoutIdElsewhere(brief: TodayBrief, keep: keyof Lists, id: string): v
 }
 
 /** One line per item: what happened to it, so the model can fix a rejected one. */
-export function upsertItems(brief: TodayBrief, items: ReadonlyArray<Record<string, unknown>>, now: Date): string[] {
+export function upsertItems(brief: TodayBrief, items: ReadonlyArray<Record<string, unknown>>, now: Date, people = false): string[] {
   const results = items.map((raw, i) => {
     const lane = typeof raw.lane === "string" ? raw.lane : "";
     const id = typeof raw.id === "string" && raw.id.trim() ? raw.id.trim() : "";
@@ -132,7 +132,7 @@ export function upsertItems(brief: TodayBrief, items: ReadonlyArray<Record<strin
         break;
       }
       case "event": {
-        const e = normalizeEvent(raw);
+        const e = normalizeEvent(raw, people);
         if (!e) return `${label}: skipped, an event needs a "title" and a "start" as HH:MM.`;
         const day = typeof raw.date === "string" ? raw.date.trim() : "";
         if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day !== brief.date) return `${label}: skipped, it's on ${day}, not today (${brief.date}). Only today's meetings are events.`;

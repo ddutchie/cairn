@@ -264,6 +264,41 @@ migration, plus how it's built and released.
    - **Sync follow-up (any time, not tied to data):** `exportOplog` stamps
      forwarded ops with this device's protocol version, so a v4 device seen
      only through a v5 relay is never flagged "behind". Stamp only own ops.
+   W6 as built (`feat/people-w6-one-on-one`): `shared/people/oneonone.ts`
+   (cadence maths, `PrepBrief`, Slack profile parsing; pure),
+   `electron/db/people-oneonone.ts` (calendar events → meetings, last/next 1:1,
+   nudges, prep targets) and `electron/lib/people/{prep,prep-watch,profile}.ts`.
+   Today: `TodayEvent` gains `attendees` and `seriesId` (asked for only while
+   the flag is on, via `TODAY_PEOPLE_RECIPE`); when a brief finishes,
+   `syncCalendarMeetings` upserts one meeting per event with invitees (id from
+   event id + day), linked by the shared resolver with source `calendar`.
+   Unknown invitees become stubs only in meetings of 6 or fewer; someone the user
+   removed stays removed while the calendar still lists them; unchanged rows are
+   not rewritten (`upsertMeetingByExternalId` now skips no-op updates). A
+   1:1 is a meeting whose only other confirmed attendee (not the user) is the
+   person. Nudges are computed when Today state is read (`TodayState.nudges`,
+   never saved in the brief), after 10/18/40 days for weekly/biweekly/monthly,
+   held back when a 1:1 is booked within 3 days; "done" is a Today mark.
+   Prep: a hidden, never-scheduled automation row (`cairn:prep`, per workspace)
+   runs through the Today runner branch (`prep` in `heartbeat-runner.ts`), with
+   Today's read-only filter and app settings plus one tool, `prep_save`;
+   `runPrepNow` is the entry (button: `people:prep:run`; automatic: a
+   scheduler `onTick` hook, `tickMeetingPreps`, 2 hours ahead of a calendar
+   meeting with a person who has a cadence, once per person per day). Facts come
+   from Cairn (last meeting + notes, open items both ways, persona "current
+   focus" section) and exclude persona notes of private people; lines that read
+   as activity metrics are dropped on save. Briefs: `out/prep/<hash of personId>/<date>.json` (a stub id holds `@`).
+   Profile: `people:profile:get` (cache) and `:refresh` (24h TTL, 10 minute
+   retry back-off, last good value kept and marked stale); the Slack lookup tool
+   is picked by name and schema from the user's Slack connector. Review fixes:
+   automatic prep only for meetings with at most two other people, five a day;
+   a later brief that no longer lists a future calendar meeting tombstones it
+   (one with notes only loses its calendar attendees); events without the
+   calendar's own id make no meeting; every saved prep field passes the activity
+   filter; the Slack cache is keyed by Slack id; the brief tool schema carries
+   no attendees with the flag off. Known gaps: a meeting that is past its time
+   is assumed held; the Slack tool
+   pick is a name heuristic that needs trying against real connectors.
 2. **Launch** (desktop 3.3.0 + mobile minor): everything below, flag on.
 
 Between the two, workstream PRs merge to `main` continuously behind the flag,

@@ -11,6 +11,9 @@ import { registerContractHandle, broadcastEvent } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as pq from "../db/people-queries";
 import * as pv from "../db/people-view-queries";
+import { getCachedProfile, refreshProfile } from "../lib/people/profile";
+import { findPrepAutomation, isPrepRunning, loadLatestPrepBrief, settleBrief } from "../lib/people/prep";
+import { runPrepNow } from "../lib/heartbeat-runner";
 import { applyMigration, buildInventory } from "../db/people-migration";
 import { makeFrontmatterReader, refreshMeetingFrontmatter } from "../people-files";
 import { suppressNextChange } from "../file-watcher";
@@ -34,7 +37,9 @@ export function registerPeopleHandlers(ctx: DbContext): void {
   registerContractHandle("db:people:get", (_e, { id }) => handle(() => pq.getPerson(ctx.db, id)));
   registerContractHandle("db:people:page", (_e, { id }) => handle(() => pv.getPersonPage(ctx.db, id)));
   registerContractHandle("db:people:create", (_e, input) => handle(() => pq.createPerson(ctx.db, input)));
-  registerContractHandle("db:people:update", (_e, { id, patch }) => handle(() => pq.updatePerson(ctx.db, id, patch)));
+  registerContractHandle("db:people:update", (_e, { id, patch }) =>
+    handle(() => pq.updatePerson(ctx.db, id, patch)),
+  );
   registerContractHandle("db:people:delete", (_e, { id }) => handle(() => pq.deletePerson(ctx.db, id)));
 
   registerContractHandle("db:people:relations", (_e, { personId, ...opts }) => handle(() => pq.getRelations(ctx.db, personId, opts)));
@@ -49,6 +54,30 @@ export function registerPeopleHandlers(ctx: DbContext): void {
   registerContractHandle("db:people:attendee:add", (_e, input) => handle(() => pq.addAttendee(ctx.db, input)));
   registerContractHandle("db:people:attendee:remove", (_e, { meetingId, personId }) =>
     handle(() => pq.removeAttendee(ctx.db, meetingId, personId)),
+  );
+
+  // ── 1:1 loop ─────────────────────────────────
+  // Profile fields and prep briefs are read-time and device-local: the flag gates them like the rest.
+  registerContractHandle("people:profile:get", (_e, { personId }) =>
+    handle(() => (pq.isPeopleEnabled(ctx.db) ? getCachedProfile(ctx.db, personId) : { fields: {}, stale: false })),
+  );
+  registerContractHandle("people:profile:refresh", (_e, { personId }) =>
+    handle(() => (pq.isPeopleEnabled(ctx.db) ? refreshProfile(ctx.db, personId) : { fields: {}, stale: false })),
+  );
+  registerContractHandle("people:prep:get", (_e, { workspaceId, personId }) =>
+    handle(() => {
+      if (!pq.isPeopleEnabled(ctx.db)) return { brief: null, running: false };
+      const automation = findPrepAutomation(ctx.db, workspaceId);
+      if (!automation) return { brief: null, running: false };
+      const brief = loadLatestPrepBrief(ctx.workspacePath, automation, personId);
+      // "Preparing" is for this person only, and only while their run is alive; a placeholder left by a crash reads as failed.
+      return { brief: settleBrief(brief), running: isPrepRunning(personId) };
+    }),
+  );
+  registerContractHandle("people:prep:run", (_e, { workspaceId, personId, meetingId }) =>
+    handle(() => {
+      return runPrepNow({ db: ctx.db, workspacePath: ctx.workspacePath, send: (channel, payload) => broadcastEvent(channel, payload) }, workspaceId, { personId, meetingId });
+    }),
   );
 
   // Migration gate (W9): the inventory only reads; apply writes what the user approved, and never in a dry run.

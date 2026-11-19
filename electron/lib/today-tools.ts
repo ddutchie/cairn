@@ -24,11 +24,12 @@ export interface TodayBriefSession {
   saveError?: string;
 }
 
-const ITEM_SCHEMA = {
+function itemSchema(people: boolean) {
+  const schema = {
   type: "object",
   properties: {
     lane: { type: "string", enum: [...TODAY_LANES], description: "decision: the user has to choose (give choices). todo: an action to take, no choice. draft: text you wrote for the user to send. fyi: progress worth knowing, no action. event: a meeting today." },
-    id: { type: "string", description: "Stable id built from where the item came from, e.g. \"slack-C08AB-1712345.67\", \"jira-CAIRN-212\", \"card-<cardId>\", \"mail-<messageId>\". Reuse it to update an item; a refresh later today keeps the user's done and dismissed state by id. Optional for events." },
+    id: { type: "string", description: "Stable id built from where the item came from, e.g. \"slack-C08AB-1712345.67\", \"jira-CAIRN-212\", \"card-<cardId>\", \"mail-<messageId>\". Reuse it to update an item; a refresh later today keeps the user's done and dismissed state by id. Optional for events." + (people ? " An event with attendees needs the calendar's own event id here, or it is not linked to people." : "") },
     projectId: { type: "string", description: "The Cairn project this belongs to (ids are in the project facts), when it clearly belongs to one." },
     question: { type: "string", description: "decision/todo: the question (yes/no or either/or) or the action, verb first." },
     body: { type: "string", description: "decision/todo: at most 30 words of context." },
@@ -52,17 +53,31 @@ const ITEM_SCHEMA = {
     end: { type: "string", description: "event: end as local HH:MM." },
     location: { type: "string", description: "event: room or call." },
     note: { type: "string", description: "event: only for a clash or something to prepare." },
+    attendees: {
+      type: "array", maxItems: 50,
+      items: { type: "object", properties: { name: { type: "string" }, email: { type: "string" }, self: { type: "boolean", description: "true for the user themself" } } },
+      description: "event: who is on the invite, when the calendar says (name and/or email each). Leave it out when the calendar gave no list.",
+    },
+    seriesId: { type: "string", description: "event: the calendar's id for the recurring series this meeting repeats in, or the series title. Leave it out for one-off meetings." },
     source: { type: "string", description: "The app it came from, e.g. \"Slack\", \"Outlook\", \"Jira\", \"Board\"." },
     url: { type: "string", description: "Link to the original, when the tool result gave one." },
   },
   required: ["lane"],
-};
+  };
+  // Without People the tool is what it always was: the schema is part of the cached prompt prefix.
+  if (!people) {
+    delete (schema.properties as Record<string, unknown>).attendees;
+    delete (schema.properties as Record<string, unknown>).seriesId;
+  }
+  return schema;
+}
 
 /**
  * `onChange` saves the brief and returns why it couldn't, or null. A failed save fails the tool call,
  * so the model hears about it; the brief in memory keeps the change, and the next save writes it all.
  */
-export function todayBriefTools(session: TodayBriefSession, onChange: (brief: TodayBrief) => string | null): AgentTool[] {
+export function todayBriefTools(session: TodayBriefSession, onChange: (brief: TodayBrief) => string | null, people: boolean): AgentTool[] {
+  const ITEM_SCHEMA = itemSchema(people);
   const tool = (name: string, description: string, parameters: Record<string, unknown>, run: (args: Record<string, unknown>) => string) =>
     defineTool({
       name, description, parameters: fromJsonSchema(parameters),
@@ -82,7 +97,7 @@ export function todayBriefTools(session: TodayBriefSession, onChange: (brief: To
     tool("today_upsert",
       "Add or update items on the Today brief, several per call. An id that already exists is replaced, even in another lane. The user sees each item as soon as you add it, so add items as you find them rather than all at the end. Items that fail a check come back with the reason; fix and resend them.",
       { type: "object", properties: { items: { type: "array", items: ITEM_SCHEMA, minItems: 1, maxItems: 12 } }, required: ["items"] },
-      (a) => changed(upsertItems(session.brief, Array.isArray(a.items) ? a.items as Record<string, unknown>[] : [], new Date()))),
+      (a) => changed(upsertItems(session.brief, Array.isArray(a.items) ? a.items as Record<string, unknown>[] : [], new Date(), people))),
     tool("today_remove",
       "Remove items from the Today brief by id, only when they were handled or are no longer true (answered, merged, closed, cancelled). Never remove an open item to make room: a removed item is gone from the next day's brief too. An item carried from an earlier day needs a reason.",
       {

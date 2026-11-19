@@ -22,6 +22,7 @@ import type {
 import type {
   AttendeeInput, PeopleListFilter, PeopleNetwork, PersonEdgeInput, PersonEdgePatch, PersonPage, PersonSummary,
 } from "../types/people-view";
+import type { PersonProfile, PrepBrief } from "../people/oneonone";
 import type { MigrationApprovals, MigrationInventory, MigrationResult } from "../types/people-migration";
 import type { TodayBrief, TodayHistoryEntry, TodayMarks, TodaySettings, TodayState } from "../today/brief";
 import type { TodayRoute } from "../today/route";
@@ -353,6 +354,19 @@ export interface IpcContract {
     writes: true;
     args: [req: { workspaceId: string; approvals: MigrationApprovals; dryRun?: boolean }];
     result: MigrationResult;
+  };
+
+  // ── 1:1 loop (W6) ───────────────────────────────────────────────────────
+  /** A person's Slack profile fields from the device cache. Never calls out. */
+  "people:profile:get": { args: [req: { personId: string }]; result: PersonProfile };
+  /** Re-read the profile from the Slack connector when the cache is older than 24h. Resolves with what the page should show. */
+  "people:profile:refresh": { args: [req: { personId: string }]; result: PersonProfile };
+  /** The newest prep brief for a person, and whether one is being prepared now. */
+  "people:prep:get": { args: [req: { workspaceId: string; personId: string }]; result: { brief: PrepBrief | null; running: boolean } };
+  /** Start a prep brief. `skipped` says why nothing started. Not `writes`: that flag is for db:* channels that change synced rows (it broadcasts db:changed); a prep writes a device-local file, like `today:run`. */
+  "people:prep:run": {
+    args: [req: { workspaceId: string; personId: string; meetingId?: string }];
+    result: { runId: string } | { skipped: "busy" | "off" | "no-ai" | "unknown-person" };
   };
 
   // ── Heartbeat automations ────────────────────────────────────────────────
@@ -808,6 +822,8 @@ export interface IpcEvents {
   /** `saveError` is set when the brief couldn't be written to disk (cleared by the next save that works). */
   /** `brief` comes with gathering saves, so a view shows them without rebuilding its whole state. */
   "today:updated": { workspaceId: string; status: "gathering" | "ready"; saveError?: string; brief?: TodayBrief };
+  /** A prep run saved a brief for a person (placeholder, result or failure), so their page reloads it. */
+  "people:prep:updated": { workspaceId: string; personId: string; status: "gathering" | "ready" };
   /** Unread notification count changed (bell + badge). */
   "mcp:unread-count": number;
   /** An MCP server / service OAuth sign-in finished (loopback or deep link). */
@@ -1037,6 +1053,10 @@ const CHANNELS: ChannelRecord = {
   "db:people:attendees": "read",
   "db:people:attendee:add": "write",
   "db:people:attendee:remove": "write",
+  "people:profile:get": "read",
+  "people:profile:refresh": "read",
+  "people:prep:get": "read",
+  "people:prep:run": "read",
   "db:people:migration:inventory": "read",
   "db:people:migration:apply": "write",
   "db:automation:list": "read",

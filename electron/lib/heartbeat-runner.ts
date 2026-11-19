@@ -84,6 +84,23 @@ import { todayBriefTools, type TodayBriefSession } from "./today-tools";
 import { finishBrief, startRefresh } from "../../shared/today/brief-edit";
 import { noteRunActivity } from "./run-activity";
 import { localDate, TODAY_NOTE_CHARS } from "../../shared/today/brief";
+import { findTodayAutomation } from "./today-files";
+import { syncCalendarMeetings } from "../db/people-oneonone";
+import { stripActivity } from "../../shared/people/oneonone";
+import { getPerson, isPeopleEnabled } from "../db/people-queries";
+import {
+  PREP_SYSTEM_PROMPT, PREP_TOOL_NAME, buildPrepFacts, ensurePrepAutomation, isPrepAutomation, prepPrompt, prepTools, prunePrepFiles,
+  markPrepDone, markPrepRunning, savePrepBrief, setPrepRequest, startingBrief, takePrepRequest, type PrepRequest, type PrepSession,
+} from "./people/prep";
+
+/** Link a finished brief's events to people. Never throws: the brief is saved either way. */
+function syncTodayCalendar(db: Database.Database, workspaceId: string, brief: { date: string; events: Parameters<typeof syncCalendarMeetings>[3] }): void {
+  try {
+    syncCalendarMeetings(db, workspaceId, brief.date, brief.events);
+  } catch (err) {
+    console.warn("[heartbeat] calendar → meetings failed:", err);
+  }
+}
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -183,6 +200,8 @@ function shouldAutoAllowAutomationTool(automation: Automation, name: string, arg
 const DEFAULT_MAX_STEPS = 10;
 /** Today reads several connectors before it writes; give it room. */
 const TODAY_MIN_STEPS = 30;
+/** A prep brief reads a few apps for one person. */
+const PREP_MIN_STEPS = 20;
 const APPROVAL_NOTICE_COOLDOWN_MS = 30_000;
 
 /** Project display name from the DB, or null for workspace-scoped automations. */
@@ -257,6 +276,39 @@ export function runAutomationNow(ctx: AutomationRunContext, automationId: string
 }
 
 /**
+ * Start a prep brief for one person. The prep row never runs on a schedule, so
+ * this skips the `enabled` check; it still refuses to overlap with itself.
+ * `skipped` says why nothing started: another prep is running, the People
+ * preview is off, or there is no AI connection.
+ */
+export function runPrepNow(
+  ctx: AutomationRunContext, workspaceId: string, request: PrepRequest,
+): { runId: string } | { skipped: "busy" | "off" | "no-ai" | "unknown-person" } {
+  const { db } = ctx;
+  if (!isPeopleEnabled(db)) return { skipped: "off" };
+  const cached = getCachedConfig().aiConfig;
+  if (!cached?.baseUrl || !cached?.model) return { skipped: "no-ai" };
+  // The person must belong to this workspace: the brief lands in its prep folder and reads its connectors.
+  if (getPerson(db, request.personId)?.workspaceId !== workspaceId || !buildPrepFacts(db, request.personId, request)) return { skipped: "unknown-person" };
+  const automation = ensurePrepAutomation(db, workspaceId);
+  if (hasInFlightRun(db, automation.id)) return { skipped: "busy" };
+  bumpAutomationRunCount(db, automation.id);
+  const run = createAutomationRun(db, automation.id, "running");
+  setPrepRequest(run.id, request);
+  markPrepRunning(run.id, request.personId);
+  void (async () => {
+    try {
+      await runAutomation(ctx, run, automation);
+    } catch (err) {
+      failRun(ctx, run, errMsg(err));
+    } finally {
+      markPrepDone(run.id);
+    }
+  })().catch(() => {});
+  return { runId: run.id };
+}
+
+/**
  * Run one automation. Sets the run's final status (done / error / skipped) and
  * raises a completion notification. Never throws — the scheduler treats an
  * exception as a run error and records it.
@@ -309,7 +361,16 @@ export async function runAutomation(
   const apiKey = resolveLlmApiKey(cached.apiKey);
   const provider = (cached.provider ?? "openai") as "openai";
   const today = isTodayAutomation(automation);
-  const maxSteps = today ? Math.max(cached.maxSteps ?? DEFAULT_MAX_STEPS, TODAY_MIN_STEPS) : (cached.maxSteps ?? DEFAULT_MAX_STEPS);
+  // A prep run reads like Today does (read-only, the user's connectors) but writes `prep_save` instead of a brief.
+  const prep = isPrepAutomation(automation);
+  const prepRequest = prep ? takePrepRequest(run.id) : null;
+  const readOnly = today || prep;
+  // Nothing to prepare (the person is gone, or the preview was switched off since it was asked): end quietly, with no notification.
+  if (prep && (!prepRequest || !isPeopleEnabled(db) || !buildPrepFacts(db, prepRequest.personId, prepRequest))) {
+    updateAutomationRun(db, run.id, { status: "skipped", finishedAt: new Date().toISOString(), error: "Nothing to prepare." });
+    return;
+  }
+  const maxSteps = today ? Math.max(cached.maxSteps ?? DEFAULT_MAX_STEPS, TODAY_MIN_STEPS) : prep ? Math.max(cached.maxSteps ?? DEFAULT_MAX_STEPS, PREP_MIN_STEPS) : (cached.maxSteps ?? DEFAULT_MAX_STEPS);
 
   // ── Folder plumbing (phase 1/2) ───────────────────────────────────────────
   // Every run gets a working directory under <project>/.automations/<id>/runs/
@@ -400,14 +461,17 @@ export async function runAutomation(
   // Today's recipe belongs to the app, not the row: a row saved by an older
   // build keeps its old text, so the current one is used on every run, with
   // today's date and Cairn's facts for every included project.
-  const todaySettings = today ? readTodaySettings(workspacePath, automation) : null;
+  // Prep reads under the user's Today choices (apps turned off, web search apps): the same connectors, the same limits.
+  const todaySettings = readOnly ? readTodaySettings(workspacePath, today ? automation : findTodayAutomation(db, automation.workspaceId)) : null;
   const todayProjects = todaySettings ? includedProjects(db, automation.workspaceId, todaySettings) : [];
   // One filter for the toolset and the approval check: read-only, apps that are off left out, web apps
   // only when the user turned them on, and custom service operations that don't use GET left out.
   const todayFacts = todaySettings
     ? todayConnectorFacts(db, automation.workspaceId, { projects: todayProjects.map((p) => p.id), exclude: todaySettings.excludedApps })
     : null;
-  const todayFilter = todaySettings ? todayToolFilter(todaySettings, todayFacts!) : null;
+  const baseFilter = todaySettings ? todayToolFilter(todaySettings, todayFacts!) : null;
+  // A prep run's one writing tool passes the read-only filter; a Today run's own brief tools already do.
+  const todayFilter = baseFilter && prep ? (name: string) => name === PREP_TOOL_NAME || baseFilter(name) : baseFilter;
   // Left out of the run's connector scope entirely: apps that are off, and web search apps the user
   // hasn't turned on. Out of scope, they aren't connected, so no tool or resource read can reach them.
   const todayExclude = todaySettings
@@ -415,9 +479,13 @@ export async function runAutomation(
     : undefined;
   // The brief this run starts from: the same day's (a refresh), or the last day's open items (carried over).
   const todayPrevious = today ? loadLatestTodayBrief(workspacePath, automation) : null;
+  // The People flag, read once: the brief tools, the prompt and the calendar sync all follow the same answer for the whole run.
+  const peopleOn = isPeopleEnabled(db);
   if (today) {
-    recipe = todayPrompt(projectFacts(db, automation.workspaceId, todayProjects), rebuild ? null : todayLookBackFrom(db, automation.id, run.id), new Date(), rebuild);
+    recipe = todayPrompt(projectFacts(db, automation.workspaceId, todayProjects), rebuild ? null : todayLookBackFrom(db, automation.id, run.id), new Date(), rebuild, peopleOn);
   }
+  const prepFacts = prep && prepRequest ? buildPrepFacts(db, prepRequest.personId, prepRequest) : null;
+  if (prepFacts) recipe = prepPrompt(prepFacts);
 
   const req: ChatRequest = {
     message: recipe,
@@ -619,6 +687,8 @@ export async function runAutomation(
       console.warn("[heartbeat] failed to save Today brief:", err);
     }
     if (todaySession) todaySession.saveError = saveError ?? undefined;
+    // The calendar's events become meetings with attendees (People preview only). Once per finished brief, not per item.
+    if (brief.status === "ready" && peopleOn) syncTodayCalendar(db, automation.workspaceId, brief);
     // While gathering, the brief rides along, so views show it without rebuilding their whole state.
     try { ctx.send?.("today:updated", { workspaceId: automation.workspaceId, status: brief.status, ...(saveError ? { saveError } : {}), ...(brief.status === "gathering" ? { brief } : {}) }); } catch { /* best-effort */ }
     return saveError;
@@ -636,7 +706,26 @@ export async function runAutomation(
     } catch (err) { console.warn("[heartbeat] Today history upkeep failed:", err); }
     todaySession = { brief: startRefresh(todayPrevious, marks, now), finished: false };
     saveToday(todaySession.brief);
-    automationTools.push(...todayBriefTools(todaySession, saveToday));
+    automationTools.push(...todayBriefTools(todaySession, saveToday, peopleOn));
+  }
+
+  // Prep: the brief starts as "preparing" and `prep_save` fills it in. Each save tells the person page.
+  let prepSession: PrepSession | null = null;
+  const savePrep = (brief: PrepSession["brief"]): string | null => {
+    let saveError: string | null = null;
+    try { savePrepBrief(workspacePath, automation, brief); } catch (err) {
+      saveError = errMsg(err);
+      console.warn("[heartbeat] failed to save prep brief:", err);
+    }
+    if (prepSession) prepSession.saveError = saveError ?? undefined;
+    try { ctx.send?.("people:prep:updated", { workspaceId: automation.workspaceId, personId: brief.personId, status: brief.status }); } catch { /* best-effort */ }
+    return saveError;
+  };
+  if (prep && prepFacts) {
+    try { prunePrepFiles(workspacePath, automation); } catch (err) { console.warn("[heartbeat] prep history upkeep failed:", err); }
+    prepSession = { brief: startingBrief(prepFacts), saved: false };
+    savePrep(prepSession.brief);
+    automationTools.push(...prepTools(prepSession, savePrep));
   }
 
   // Aborted by session:abort (which stops the engine run) or by the run_script handler's own signal.
@@ -682,7 +771,7 @@ export async function runAutomation(
     // Today is read-only and unattended: decide every ask here, never wait on the user. Anything but a
     // routine ask is denied (nobody is there to review it), and so is a resource read from an app left
     // out of scope (turned off, or a web search app the user has not turned on).
-    if (today) {
+    if (readOnly) {
       const server = typeof trusted.server === "string" ? trusted.server : null;
       const appOff = !!server && todayExclude!.includes(server);
       const allowed = routine && !appOff && todayFilter!(toolName);
@@ -733,15 +822,15 @@ export async function runAutomation(
       projectId: automation.projectId ?? undefined,
       workspaceId: automation.workspaceId,
       // Today reads the connectors of every project it covers.
-      externalProjectIds: today ? todayProjects.map((p) => p.id) : undefined,
+      externalProjectIds: readOnly ? todayProjects.map((p) => p.id) : undefined,
       externalExclude: todayExclude,
-      externalResultChars: today ? TODAY_RESULT_CHARS : undefined,
+      externalResultChars: readOnly ? TODAY_RESULT_CHARS : undefined,
       // Today's searches go out in one round; run them at once, so the round takes as long as the slowest app.
-      externalParallel: today,
-      externalGetOnly: today,
-      usageSource: today ? "today" : undefined,
+      externalParallel: readOnly,
+      externalGetOnly: readOnly,
+      usageSource: readOnly ? "today" : undefined,
       // Today has its own: the chat assistant's tells the model to write without asking and reply in markdown.
-      systemPrompt: today ? TODAY_SYSTEM_PROMPT : buildSystemPrompt(req),
+      systemPrompt: prep ? PREP_SYSTEM_PROMPT : today ? TODAY_SYSTEM_PROMPT : buildSystemPrompt(req),
       llmConfig: {
         baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai",
         maxSteps, temperature: req.config?.temperature,
@@ -750,13 +839,13 @@ export async function runAutomation(
         contextWindow: cached.contextLimit, maxTokens: cachedMaxOutputTokens(cached),
         // The active connection's wire protocol and reasoning effort, as chat sends them.
         apiMode: (cached.savedProviders?.find((p) => p.id === cached.activeProviderId)?.apiMode ?? cached.apiMode) as "responses" | "completions" | "anthropic-messages" | undefined,
-        reasoningEffort: today ? todayReasoningEffort(cached.reasoningEffort) : cached.reasoningEffort as "off" | "low" | "medium" | "high" | undefined,
+        reasoningEffort: readOnly ? todayReasoningEffort(cached.reasoningEffort) : cached.reasoningEffort as "off" | "low" | "medium" | "high" | undefined,
       } as never,
       extraTools: automationTools,
       // Today never sees a tool that writes, so no saved "always allow" grant can let one run.
       toolFilter: todayFilter ?? undefined,
       // Today keeps the tool schemas too, for its export (scripts/today-replay.mjs replays a run from it).
-      onSetup: (setup) => { log.setup = today ? setup : { ...setup, toolDefs: undefined }; },
+      onSetup: (setup) => { log.setup = readOnly ? setup : { ...setup, toolDefs: undefined }; },
       autoApprove: automation.approvalMode !== "ask",
       signal: abortCtrl.signal,
       tap: tapWithErrors,
@@ -776,6 +865,8 @@ export async function runAutomation(
   if (!codingResult.ok) {
     // Today: close what the run found so far, so the file isn't left "gathering" and the view hears the run ended.
     if (todaySession && !todaySession.finished) saveToday(finishBrief(todaySession.brief, {}, new Date()));
+    // Prep: the page stops saying "preparing" and shows why.
+    if (prepSession && !prepSession.saved) savePrep({ ...prepSession.brief, status: "ready", error: (result.error ?? "Agent turn failed.").slice(0, 400) });
     finaliseLog("error", result.error ?? "Agent turn failed.");
     updateAutomationRun(db, run.id, {
       status: "error",
@@ -783,7 +874,8 @@ export async function runAutomation(
       error: result.error ?? "Agent turn failed.",
       scratch: finalScratch(),
     });
-    insertNotification(db, "automation_run", `Automation failed: "${automation.name}"`, summarize(automation, result.content, "failed"), completionTarget());
+    // A prep run is background upkeep for a person's page, which says what went wrong: no notification.
+    if (!prep) insertNotification(db, "automation_run", `Automation failed: "${automation.name}"`, summarize(automation, result.content, "failed"), completionTarget());
     cleanupRuns();
     return;
   }
@@ -816,6 +908,21 @@ export async function runAutomation(
     }
   }
 
+  // Prep: a run that never called prep_save leaves no brief, so the page shows why instead of "preparing" forever.
+  if (prepSession) {
+    if (!prepSession.saved) {
+      const error = "The run ended without saving a brief. Try again, or pick a more capable model.";
+      savePrep({ ...prepSession.brief, status: "ready", error });
+      finaliseLog("error", error);
+      updateAutomationRun(db, run.id, { status: "error", resultNoteId: null, error, scratch: finalScratch() });
+      cleanupRuns();
+      return;
+    }
+    // The closing note describes what was read; a line of activity counts in it is dropped like any other.
+    const note = stripActivity(lastMessage?.slice(0, TODAY_NOTE_CHARS));
+    if (note) savePrep({ ...prepSession.brief, note });
+  }
+
   updateAutomationRun(db, run.id, {
     status: "done",
     resultNoteId: null,
@@ -823,7 +930,7 @@ export async function runAutomation(
     scratch: finalScratch(),
   });
   finaliseLog("done");
-  insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content), completionTarget());
+  if (!prep) insertNotification(db, "automation_run", `Automation finished: "${automation.name}"`, summarize(automation, result.content), completionTarget());
   cleanupRuns();
 }
 
