@@ -164,10 +164,19 @@ function toAttendee(r: Row): MeetingAttendee {
     personId: r.person_id,
     status: r.status as PeopleStatus,
     source: r.source as AttendeeSource,
+    sources: sourcesOf(r),
     provenance: r.provenance as Provenance,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
+}
+
+/** Every source listing this attendee; rows from before `sources` existed fall back to `source`. */
+function sourcesOf(r: Row): AttendeeSource[] {
+  let list: unknown = [];
+  try { list = JSON.parse(r.sources ?? "[]"); } catch { /* treat as empty */ }
+  const out = Array.isArray(list) ? list.filter((x): x is AttendeeSource => typeof x === "string" && x in SOURCE_RANK) : [];
+  return out.length ? out : [r.source as AttendeeSource];
 }
 
 function toMention(r: Row): NoteMention {
@@ -551,8 +560,12 @@ export interface AddAttendeeInput {
  * a second call returns the existing row, upgrading `suggested` to `confirmed`
  * if asked, and re-adding someone who was removed revives their row.
  */
-/** Which source owns an attendee row when several add the same person: the user's own actions win. */
+/** Ranks sources: the strongest listed source is the row's `source` (the user's own actions win). */
 const SOURCE_RANK: Record<AttendeeSource, number> = { body_line: 0, frontmatter: 1, calendar: 2, declared: 3, manual: 4 };
+
+function strongest(sources: readonly AttendeeSource[]): AttendeeSource {
+  return sources.reduce((a, b) => (SOURCE_RANK[b] > SOURCE_RANK[a] ? b : a));
+}
 
 export function addAttendee(db: Db, input: AddAttendeeInput): MeetingAttendee {
   if (!getMeeting(db, input.meetingId)) throw new Error(`Meeting not found: ${input.meetingId}`);
@@ -560,36 +573,56 @@ export function addAttendee(db: Db, input: AddAttendeeInput): MeetingAttendee {
   const status = oneOf(PEOPLE_STATUSES, input.status ?? "confirmed", "status");
   const now = ts();
   const id = attendeeRowId(input.meetingId, input.personId);
+  const source = input.source ?? "manual";
   const existing = db.prepare("SELECT * FROM meeting_attendees WHERE id = ?").get(id) as Row | undefined;
   if (existing && !existing.deleted_at) {
-    // One row per meeting/person. A stronger source takes it over, so a person
-    // you add by hand stays when the frontmatter or a body line drops them
-    // (each source only removes rows it owns).
-    const source = input.source ?? "manual";
+    // One row per meeting/person, remembering every source that lists them: a
+    // source dropping the person only removes attendance when it was the last.
+    const current = sourcesOf(existing);
+    const sources = current.includes(source) ? current : [...current, source];
+    const top = strongest(sources);
     const takeOver = SOURCE_RANK[source] > SOURCE_RANK[existing.source as AttendeeSource];
     const confirm = existing.status !== status && status === "confirmed";
-    if (!takeOver && !confirm) return toAttendee(existing);
-    const next = {
-      ...existing,
-      ...(confirm ? { status: "confirmed" } : {}),
-      ...(takeOver ? { source, provenance: input.provenance ?? "explicit" } : {}),
-      updated_at: now,
-    };
-    db.prepare("UPDATE meeting_attendees SET status = ?, source = ?, provenance = ?, updated_at = ? WHERE id = ?")
-      .run(next.status, next.source, next.provenance, now, id);
-    return toAttendee(next);
+    if (sources.length === current.length && !takeOver && !confirm) return toAttendee(existing);
+    db.prepare("UPDATE meeting_attendees SET status = ?, source = ?, sources = ?, provenance = ?, updated_at = ? WHERE id = ?")
+      .run(confirm ? "confirmed" : existing.status, top, JSON.stringify(sources),
+        takeOver ? (input.provenance ?? "explicit") : existing.provenance, now, id);
+    return toAttendee(db.prepare("SELECT * FROM meeting_attendees WHERE id = ?").get(id) as Row);
   }
   if (existing) {
     db.prepare(`
-      UPDATE meeting_attendees SET deleted_at = NULL, status = ?, source = ?, provenance = ?, updated_at = ? WHERE id = ?
-    `).run(status, input.source ?? "manual", input.provenance ?? "explicit", now, id);
+      UPDATE meeting_attendees SET deleted_at = NULL, status = ?, source = ?, sources = ?, provenance = ?, updated_at = ? WHERE id = ?
+    `).run(status, source, JSON.stringify([source]), input.provenance ?? "explicit", now, id);
     return toAttendee(db.prepare("SELECT * FROM meeting_attendees WHERE id = ?").get(id) as Row);
   }
   db.prepare(`
-    INSERT INTO meeting_attendees (id, meeting_id, person_id, status, source, provenance, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, input.meetingId, input.personId, status, input.source ?? "manual", input.provenance ?? "explicit", now, now);
+    INSERT INTO meeting_attendees (id, meeting_id, person_id, status, source, sources, provenance, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, input.meetingId, input.personId, status, source, JSON.stringify([source]), input.provenance ?? "explicit", now, now);
   return toAttendee(db.prepare("SELECT * FROM meeting_attendees WHERE id = ?").get(id) as Row);
+}
+
+/** People currently listed at a meeting by this source. */
+export function attendeeIdsFromSource(db: Db, meetingId: string, source: AttendeeSource): string[] {
+  const rows = db.prepare("SELECT * FROM meeting_attendees WHERE meeting_id = ? AND deleted_at IS NULL").all(meetingId) as Row[];
+  return rows.filter((r) => sourcesOf(r).includes(source)).map((r) => r.person_id as string);
+}
+
+/**
+ * One source stops listing a person. They leave the meeting only when no other
+ * source lists them; otherwise the row stays with the remaining sources.
+ * Returns true when the attendee was removed.
+ */
+export function removeAttendeeSource(db: Db, meetingId: string, personId: string, source: AttendeeSource): boolean {
+  const row = db.prepare(
+    "SELECT * FROM meeting_attendees WHERE meeting_id = ? AND person_id = ? AND deleted_at IS NULL",
+  ).get(meetingId, personId) as Row | undefined;
+  if (!row) return false;
+  const rest = sourcesOf(row).filter((x) => x !== source);
+  if (rest.length === 0) { removeAttendee(db, meetingId, personId); return true; }
+  db.prepare("UPDATE meeting_attendees SET source = ?, sources = ?, updated_at = ? WHERE id = ?")
+    .run(strongest(rest), JSON.stringify(rest), ts(), row.id);
+  return false;
 }
 
 export function removeAttendee(db: Db, meetingId: string, personId: string): void {

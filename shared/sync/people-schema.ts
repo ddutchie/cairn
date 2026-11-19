@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS meeting_attendees (
   person_id  TEXT NOT NULL,
   status     TEXT NOT NULL DEFAULT 'confirmed',
   source     TEXT NOT NULL DEFAULT 'manual',
+  sources    TEXT NOT NULL DEFAULT '[]',
   provenance TEXT NOT NULL DEFAULT 'explicit',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -121,4 +122,10 @@ CREATE INDEX IF NOT EXISTS idx_note_mentions_person ON note_mentions(person_id);
 export const PEOPLE_ADDED_COLUMNS = [
   { table: "notes", column: "meeting_id", ddl: "meeting_id TEXT" },
   { table: "task_cards", column: "owner_person_id", ddl: "owner_person_id TEXT" },
+  // Every source that currently lists the person (JSON array; `source` is the
+  // strongest of them). Union-merged by the sync engine, so concurrent adds
+  // from two devices both survive, and a person is only removed from a meeting
+  // when the last source drops them. Added in v67, before any attendee row
+  // existed outside development databases.
+  { table: "meeting_attendees", column: "sources", ddl: "sources TEXT NOT NULL DEFAULT '[]'" },
 ] as const;

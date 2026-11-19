@@ -1803,6 +1803,19 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_action_items_owner ON note_action_items(owner_person_id);
     `);
   },
+
+  // v67: meeting_attendees.sources (sync protocol 6). Every source that lists a
+  // person at a meeting, so one source dropping them can't remove attendance
+  // another still asserts. Fresh databases get the column from the v66 DDL;
+  // this adds it to v66 databases and seeds it from `source`. No attendee rows
+  // exist outside development databases (nothing writes them until launch).
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(meeting_attendees)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "sources")) {
+      db.exec("ALTER TABLE meeting_attendees ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'");
+    }
+    db.exec("UPDATE meeting_attendees SET sources = json_array(source) WHERE sources = '[]'");
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

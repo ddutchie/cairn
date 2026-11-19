@@ -149,11 +149,18 @@ const RESTORABLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  * data; stamping it `behind` tells the user to update before the People layer
  * launches (docs/plans/people-layer.md, "Release shape").
  *
+ * Protocol 6 (attendee sources): `meeting_attendees.sources`, the set of
+ * sources that list a person, union-merged like tag ids so that removing a
+ * person from one source (the note's frontmatter) can't drop attendance another
+ * source (a calendar event, the user) still asserts. An older peer ignores the
+ * column; nothing wrote attendee rows before this, so it loses no data, but it
+ * is stamped `behind` like protocol 5 so the update hint appears before launch.
+ *
  * The point of stamping it now, while only two historical shapes exist, is that
  * a peer can be *told* it is behind instead of us inferring capability from
  * which optional fields happen to be present.
  */
-export const SYNC_PROTOCOL_VERSION = 5;
+export const SYNC_PROTOCOL_VERSION = 6;
 
 /** sync_state key prefix for the highest protocol version seen from a peer. */
 const PEER_PROTOCOL_PREFIX = "peer_protocol:";
@@ -209,6 +216,9 @@ const ARRAY_MERGE_COLUMNS: Record<string, string[]> = {
   // on the desktop both survive. Shipped with the schema so every v5 peer
   // merges these columns the same way.
   people: ["aliases", "emails"],
+  // Protocol 6: who lists an attendee. Union keeps attendance over-inclusive
+  // when two devices change the set at once, the safe direction.
+  meeting_attendees: ["sources"],
 };
 
 /** Column carrying free-text body that gets conflict-copy treatment. */

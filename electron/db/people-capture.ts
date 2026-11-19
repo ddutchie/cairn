@@ -17,7 +17,7 @@ import type Database from "better-sqlite3";
 import { foldName, formatMeetingDate, parseAttendeeList, splitAttendeeValues, type AttendeeRef } from "../../shared/people/parse";
 import type { AttendeeSource, PeopleStatus, Provenance } from "../../shared/types/people";
 import {
-  addAttendee, createMeeting, createPerson, getMeeting, getPerson, removeAttendee, setNoteMeeting, updateMeeting,
+  addAttendee, createMeeting, createPerson, getMeeting, getPerson, attendeeIdsFromSource, removeAttendeeSource, setNoteMeeting, updateMeeting,
 } from "./people-queries";
 import { noteMeetingId, stubPersonId } from "../../shared/people/ids";
 
@@ -233,13 +233,9 @@ export function captureNoteMeeting(db: Db, input: CaptureInput): CaptureResult {
       }
     }
 
-    const previous = db.prepare(
-      "SELECT person_id FROM meeting_attendees WHERE meeting_id = ? AND source = ? AND deleted_at IS NULL",
-    ).all(meeting.id, input.source) as { person_id: string }[];
-    for (const { person_id } of previous) {
+    for (const person_id of attendeeIdsFromSource(db, meeting.id, input.source)) {
       if (keep.has(person_id)) continue;
-      removeAttendee(db, meeting.id, person_id);
-      result.removed.push(person_id);
+      if (removeAttendeeSource(db, meeting.id, person_id, input.source)) result.removed.push(person_id);
     }
     return result;
   })();

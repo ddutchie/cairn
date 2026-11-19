@@ -59,7 +59,11 @@ migration, plus how it's built and released.
    items above are done: canonical `is_me` at read time (oldest wins),
    `app:reset`, note and project delete (`onNoteDeleted`), cross-workspace
    `mergeProject` (`detachForeignPeopleLinks`), and conflict copies drop
-   `meeting_id`/`owner_person_id` (`stripCopyLinks`). Body-line and checklist
+   `meeting_id`/`owner_person_id` (`stripCopyLinks`). Per-source attendance:
+   `meeting_attendees.sources` (v67 desktop, v11 mobile, sync protocol 6,
+   union-merged) lists every source naming a person; `source` is the strongest.
+   `removeAttendeeSource` drops a person only when the last source lets go;
+   use `attendeeIdsFromSource` instead of querying `source = ?`. Body-line and checklist
    capture passes (writing `note_action_items`) land with W4 indexing, which
    already owns the per-note reindex hook.
    - **Sync follow-up (any time, not tied to data):** `exportOplog` stamps

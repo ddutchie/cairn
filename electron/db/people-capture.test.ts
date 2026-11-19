@@ -228,6 +228,21 @@ describe("review fixes", () => {
     expect(attending(r.meetingId)).toEqual([{ personId: ana.id, status: "confirmed", source: "manual" }]);
   });
 
+  it("keeps a person while any source still lists them", () => {
+    note("n1");
+    const ana = person("Ana");
+    const r = captureNoteMeeting(db, { noteId: "n1", attendees: ["Ana"], source: "frontmatter", provenance: "explicit" });
+    captureNoteMeeting(db, { noteId: "n1", attendees: ["Ana"], source: "calendar", provenance: "explicit" });
+    // The calendar owns the row now, but both sources are remembered.
+    expect(listAttendees(db, r.meetingId)[0].sources.sort()).toEqual(["calendar", "frontmatter"]);
+    // A later calendar capture without Ana must not remove her: frontmatter still lists her.
+    expect(captureNoteMeeting(db, { noteId: "n1", attendees: [], source: "calendar", provenance: "explicit" }).removed).toEqual([]);
+    expect(attending(r.meetingId)).toEqual([{ personId: ana.id, status: "confirmed", source: "frontmatter" }]);
+    // Once the last source drops her, she goes.
+    expect(captureNoteMeeting(db, { noteId: "n1", attendees: [], source: "frontmatter", provenance: "explicit" }).removed).toEqual([ana.id]);
+    expect(attending(r.meetingId)).toEqual([]);
+  });
+
   it("writes a reference that reads back as the same person", () => {
     note("n1");
     const hashTitle = note("p1", "Ana #work");

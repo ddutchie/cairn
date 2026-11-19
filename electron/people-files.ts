@@ -59,7 +59,7 @@ export function capturePeopleFromFile(db: Database.Database, filePath: string, n
   if (!props.hasAttendees) {
     const hadFromFile = db.prepare(`
       SELECT 1 FROM notes n JOIN meeting_attendees a ON a.meeting_id = n.meeting_id AND a.deleted_at IS NULL
-      WHERE n.id = ? AND a.source = 'frontmatter' LIMIT 1
+      WHERE n.id = ? AND EXISTS (SELECT 1 FROM json_each(a.sources) WHERE value = 'frontmatter') LIMIT 1
     `).get(noteId);
     if (!hadFromFile) return null;
     return captureNoteMeeting(db, { noteId, attendees: [], source: "frontmatter", provenance: "explicit" });
