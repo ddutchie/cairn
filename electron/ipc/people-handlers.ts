@@ -11,6 +11,9 @@ import { registerContractHandle, broadcastEvent } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as pq from "../db/people-queries";
 import * as pv from "../db/people-view-queries";
+import { applyMigration, buildInventory } from "../db/people-migration";
+import { makeFrontmatterReader, refreshMeetingFrontmatter } from "../people-files";
+import { suppressNextChange } from "../file-watcher";
 
 export function registerPeopleHandlers(ctx: DbContext): void {
   registerContractHandle("people:flag:get", () => handle(() => pq.isPeopleEnabled(ctx.db)));
@@ -45,5 +48,21 @@ export function registerPeopleHandlers(ctx: DbContext): void {
   registerContractHandle("db:people:attendee:add", (_e, input) => handle(() => pq.addAttendee(ctx.db, input)));
   registerContractHandle("db:people:attendee:remove", (_e, { meetingId, personId }) =>
     handle(() => pq.removeAttendee(ctx.db, meetingId, personId)),
+  );
+
+  // Migration gate (W9): the inventory only reads; apply writes what the user approved, and never in a dry run.
+  registerContractHandle("db:people:migration:inventory", (_e, { workspaceId }) =>
+    handle(() => buildInventory(ctx.db, workspaceId, { readFrontmatter: makeFrontmatterReader(ctx.db, ctx.workspacePath, workspaceId) })),
+  );
+  registerContractHandle("db:people:migration:apply", (_e, { workspaceId, approvals, dryRun }) =>
+    handle(() => {
+      const result = applyMigration(ctx.db, workspaceId, approvals ?? {}, {
+        dryRun: dryRun === true,
+        readFrontmatter: makeFrontmatterReader(ctx.db, ctx.workspacePath, workspaceId),
+        refreshFrontmatter: (noteIds) => refreshMeetingFrontmatter(ctx.db, ctx.workspacePath, noteIds, suppressNextChange).written,
+      });
+      if (!result.dryRun && result.applied) broadcastEvent("db:changed", null);
+      return result;
+    }),
   );
 }

@@ -225,9 +225,9 @@ export const TOOL_SCHEMAS = {
   // ── People ────────────────────────────────────────────────────────────────────
 
   people: {
-    description: "People the user works with, their meetings and relationships. Reads: 'query' (by name, relationship or status; empty lists everyone), 'get' (one person: details, relationships, persona note id), 'timeline' (their meetings, mentions and owned tasks, newest first), 'relationships' (who manages/mentors/partners whom). Writes: 'upsert' (create or update a person) and 'link' (an edge between two people, an attendee on a meeting note, or a mention). Anything you infer rather than read stated goes in as status 'suggested' for the user to confirm.",
+    description: "People the user works with, their meetings and relationships. Reads: 'query' (by name, relationship or status; empty lists everyone), 'get' (one person: details, relationships, persona note id), 'timeline' (their meetings, mentions and owned tasks, newest first), 'relationships' (who manages/mentors/partners whom), 'inventory' (read-only scan of the person and meeting notes already in the workspace, for migrating them; the user applies it). Writes: 'upsert' (create or update a person) and 'link' (an edge between two people, an attendee on a meeting note, or a mention). Anything you infer rather than read stated goes in as status 'suggested' for the user to confirm.",
     schema: z.object({
-      action:       z.enum(["query", "get", "timeline", "relationships", "upsert", "link"]),
+      action:       z.enum(["query", "get", "timeline", "relationships", "inventory", "upsert", "link"]),
       personId:     sIdOpt.describe("get/timeline/relationships/upsert: the person (or pass name)"),
       name:         sStrOpt.describe("query: name filter; get/upsert: the person's name"),
       relationship: sStrOpt.describe("query: only people with this relationship to the user (e.g. direct_report, manager, peer, stakeholder, mentor)"),

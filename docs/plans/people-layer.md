@@ -131,6 +131,108 @@ migration, plus how it's built and released.
    Deleting a note tombstones the meeting it made (`nmt:`) with its last note;
    the unscoped graph hides note-made meetings with no live, unarchived note.
    Archiving does not tombstone (unarchiving would lose confirmed attendees).
+   W9 as built (`claude/people-w9-migration-e448d5`): the tooling and tests for the
+   migration gate. Not run on the pilot corpus (that needs Gerard's other
+   machine). Pure heuristics in `shared/people/inventory.ts` (`guessPersona`,
+   `guessMeeting`, `looksLikeName`, `nameFromTitle`, `firstName`; `isGroupName`
+   and `withoutCode` moved into `parse.ts`, W4 imports them); `buildInventory` /
+   `applyMigration` in `electron/db/people-migration.ts`; report and request
+   types in `shared/types/people-migration.ts`. Surfaces: the `people` tool's
+   read-only `inventory` action (compact: ids, names, confidence, action; no
+   apply for agents), IPC `db:people:migration:inventory` / `db:people:migration:apply`
+   (`dryRun`), and a "Find in notes" panel (`MigrationPanel`) opened from the
+   People view's toolbar. A migration only ever happens from the panel/IPC with
+   the user's ticks; no agent path writes it.
+   - **Inventory** (read-only, works with the flag off): candidate persona
+     notes (tag `person`/`people`/`persona`/`contact`/`colleague`/`teammate` or
+     frontmatter `type`: +3; `People`/`Personas`/`Contacts`/… folder: +2;
+     `Discussions/<Name>` folder named for a name-like title: +2; "Persona - "
+     title prefix: +2; a 2–4 word capitalised title: +1 only next to another
+     signal; high ≥ 4, medium 3, low 2, below 2 not listed), meeting notes
+     (`attendees` frontmatter read from the files, `**Attendees:**`/`When:`
+     body lines; code blocks, placeholders like "TBD"/"users", bare prose and a
+     lone `date` don't count), owned checklist items by owner with how each
+     owner resolves (`person`, `candidate` = a note that would become a person,
+     `ambiguous`, `group` for "Team", `unknown`), ambiguous names (two candidate
+     notes with one folded name, and short names two candidates share), and
+     collisions with existing people (by persona link, email, or name). Archived
+     notes are listed and skipped, deleted ones are not scanned, and only the
+     asked workspace is read.
+   - **Apply** takes `{ personas: [{ noteId, name?, aliases? }], meetings:
+     [noteId] }` and re-derives everything from the database; nothing is
+     trusted from an earlier inventory. Per persona: create a confirmed person
+     (provenance `convention`, id `migratedPersonId` so two devices make one
+     row, aliases from the title's nickname/frontmatter/accepted first names
+     plus the persona title) or, when a person already matches, link the persona
+     note to them (a stub is confirmed; a person with a different persona note,
+     a dismissed one, an ambiguous name, an email/name conflict, or one the user
+     deleted since is skipped with a reason). A first name ("Ana") is never
+     guessed: the inventory suggests it as an alias when it fits exactly one
+     candidate and the user ticks it; an alias another person already answers to
+     is dropped. Then the W4 pass (`indexNotePeople`, body "Attendees:" pass
+     left out) adds mentions and resolves action-item owners for the workspace's
+     notes, and each approved meeting note goes through `captureNoteMeeting`
+     (`frontmatter` source for an `attendees` property, `body_line` for the
+     line, confirmed because the user approved it, `noStubs`: a name nobody
+     matches stays text, an ambiguous one becomes suggested attendees listing
+     both). Frontmatter `attendees`/`date` are written through
+     `refreshMeetingFrontmatter` only for meeting notes with a confirmed
+     attendee, after the database commit; persona notes, bodies and the
+     "When:" line are never touched. Dry run runs the same code inside a
+     transaction that is rolled back (and skips files), so the preview is exact.
+     Flag off: `applied: false`, no writes.
+   - **Tests**: `electron/test-support/people-corpus.ts` (synthetic, pilot
+     shape: 15 persona notes incl. a nickname, an email alias, two same first
+     names, two notes with one name, one archived, one deleted, one weak guess,
+     existing people to collide with; 6 meetings with bold, bulleted and
+     frontmatter attendee forms; 20 owned items in `**Name** -`, `[[Name]]:` and
+     `@name` forms plus "Team"; prose, code-fence and journal look-alikes; a
+     second workspace with the same names), `people-migration.test.ts`
+     (inventory facts, flag-off no-op, dry run = real result and no write,
+     idempotence by whole-table snapshots including `sync_pending`, no
+     tombstones, notes unchanged, deleted/dismissed people stay, no cross-
+     workspace link, per-timeline and open-item acceptance checks),
+     `people-migration-files.test.ts` (real files), `shared/people/inventory.test.ts`.
+   - **Runbook: running it on the real corpus** (the gate; not done yet).
+     1. Back up first (copy the workspace folder and the database; the migration
+        never deletes, but the frontmatter write touches meeting note files).
+     2. Update to a build with this change, and open the work workspace. Turn
+        on the People preview (Settings → Sidebar & views) so the view and the
+        apply step are available; the flag alone doesn't change any data.
+     3. People view → "Find in notes". Read the list before ticking: expect
+        about 15 people and 6 meeting notes. Check that every persona note you
+        know is listed with sensible confidence, that nothing else is ticked
+        (a low guess is never ticked for you), that the two Sebastiens and
+        Sebastian show as skipped or ambiguous, and that "Chris" (or any first
+        name two people share) shows in the ambiguity line.
+     4. Tick the first-name aliases you want ("Also answer to “Sebastien”" only
+        where it points to one person), then Preview. The summary should show
+        about the number of people you ticked, the meetings with attendees,
+        and the action items assigned; names that match nobody are counted as
+        staying text.
+     5. Apply. Open three meeting notes and check the attendee strip and the
+        `attendees`/`date` properties; open two persona notes and confirm the
+        text is exactly as before; open a person page and compare their open
+        items with the unchecked lines they own.
+     6. Run Find in notes again: nothing left to create, every persona "Already
+        a person", and Apply on the same ticks reports "Nothing to change".
+     7. Volatile-text cleanup (phase 4) is not part of this tool: do it with the
+        agent as normal note edits after the checks above.
+   - **Acceptance criteria for the gate**: (a) inventory of the real corpus
+     lists all 15 personas and 6 meetings with no persona missing and no wrong
+     person ticked; (b) Preview and Apply agree; (c) after Apply, each of the
+     meetings with N resolved attendees is on N people's timelines; (d) each
+     person's open items match the unchecked lines they own; (e) a second
+     Apply, and a second Find in notes, change nothing; (f) no persona note body
+     differs (diff the notes folder, ignoring meeting note frontmatter); (g) the
+     ambiguous names were settled by the user, not guessed; (h) with the flag
+     off the workspace behaves as before. Anything failing goes back as a
+     fixture in `people-corpus.ts` first.
+   - **Not covered**: a person's Slack id, relationship type and cadence (set
+     in the People view after migrating); nicknames only written in prose;
+     one-word persona titles (a bare first name needs a tag or folder
+     convention and a name-like title to be proposed); persona notes that live
+     in several workspaces (each workspace is migrated on its own).
    - **Sync follow-up (any time, not tied to data):** `exportOplog` stamps
      forwarded ops with this device's protocol version, so a v4 device seen
      only through a v5 relay is never flagged "behind". Stamp only own ops.
