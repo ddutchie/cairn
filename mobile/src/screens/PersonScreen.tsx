@@ -199,12 +199,15 @@ function RelationshipSheet({ visible, relationship, cadence, onClose, onSave }: 
   const s = useMemo(() => makeStyles(t), [t]);
   const [types, setTypes] = useState<Set<RelationshipType>>(new Set());
   const [cad, setCad] = useState<Cadence | null>(null);
+  // What the sheet opened with: save applies only what the user changed from it, on top of the latest person.
+  const [opened, setOpened] = useState<{ types: Set<RelationshipType>; cad: Cadence | null }>({ types: new Set(), cad: null });
   // Re-seed from the person each time the sheet opens.
   const [wasVisible, setWasVisible] = useState(false);
   if (visible && !wasVisible) {
     setWasVisible(true);
     setTypes(new Set(relationship.map((r) => r.type)));
     setCad(cadence);
+    setOpened({ types: new Set(relationship.map((r) => r.type)), cad: cadence });
   } else if (!visible && wasVisible) {
     setWasVisible(false);
   }
@@ -216,10 +219,13 @@ function RelationshipSheet({ visible, relationship, cadence, onClose, onSave }: 
       return next;
     });
   const save = () => {
-    const kept = relationship.filter((r) => types.has(r.type));
+    // Sync may have changed the person while the sheet was open: remove only what the user unticked,
+    // add only what they ticked, and keep the cadence they didn't touch.
+    const removed = new Set([...opened.types].filter((x) => !types.has(x)));
+    const kept = relationship.filter((r) => !removed.has(r.type));
     const have = new Set(kept.map((r) => r.type));
-    const added: Relationship[] = [...types].filter((x) => !have.has(x)).map((type) => ({ type, provenance: "explicit" }));
-    onSave([...kept, ...added], cad);
+    const added: Relationship[] = [...types].filter((x) => !opened.types.has(x) && !have.has(x)).map((type) => ({ type, provenance: "explicit" }));
+    onSave([...kept, ...added], cad !== opened.cad ? cad : cadence);
   };
   return (
     <BottomSheet visible={visible} onClose={onClose} maxHeight="80%">

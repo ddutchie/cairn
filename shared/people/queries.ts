@@ -599,8 +599,10 @@ export function removeAttendeeSource(db: Db, meetingId: string, personId: string
   if (rest.length === 0) {
     // Mark this source's claim off before the tombstone, so a later reader can tell
     // "this source let go" (off) from "someone removed a person this source still lists" (on).
-    db.prepare("UPDATE meeting_attendees SET sources = ? WHERE id = ?").run(claimsWith(row, source, false, ts()), row.id);
-    removeAttendee(db, meetingId, personId);
+    db.transaction(() => {
+      db.prepare("UPDATE meeting_attendees SET sources = ? WHERE id = ?").run(claimsWith(row, source, false, ts()), row.id);
+      removeAttendee(db, meetingId, personId);
+    })();
     return true;
   }
   // Keep the dropped claim (off, dated) so the removal wins over an older claim on another device.

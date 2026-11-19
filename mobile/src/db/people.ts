@@ -20,7 +20,7 @@ import { createExpoSyncDb } from "./expo-sync-db";
 import { notifyLocalWrite } from "@/sync/write-signal";
 import { LIVE, NOT_CONFLICT } from "./sql";
 import * as pq from "@cairn/shared/people/queries";
-import { captureNoteMeeting, loadCandidates } from "@cairn/shared/people/capture";
+import { captureNoteMeeting, loadCandidates, meetingLinkPending } from "@cairn/shared/people/capture";
 import { getPersonPage, listPersonSummaries } from "@cairn/shared/people/view-queries";
 import { ownedItemsIn, setItemDone } from "@cairn/shared/people/action-items";
 import type { Cadence, MeetingAttendee, PeopleStatus, Person, Relationship } from "@cairn/shared/types/people";
@@ -83,7 +83,7 @@ interface NoteBody { id: string; title: string; content: string }
 /** Live notes in the workspace that contain an unchecked task line. */
 function notesWithOpenTasks(ws: string): NoteBody[] {
   return getDb().getAllSync<NoteBody>(
-    `SELECT id, title, content FROM notes WHERE workspace_id = ? AND ${LIVE} AND ${NOT_CONFLICT} AND content LIKE '%[ ]%'`,
+    `SELECT id, title, content FROM notes WHERE workspace_id = ? AND ${LIVE} AND ${NOT_CONFLICT} AND content LIKE '%[ ]%' AND type = 'note'`,
     ws,
   );
 }
@@ -187,12 +187,12 @@ export function attendeeCandidates(noteId: string): Person[] {
 export function addNoteAttendee(noteId: string, personId: string): MeetingAttendee {
   return write((db) => {
     let meetingId = getDb().getFirstSync<{ meeting_id: string | null }>("SELECT meeting_id FROM notes WHERE id = ?", noteId)?.meeting_id ?? null;
-    if (meetingId && !pq.getMeeting(db, meetingId)) {
+    if (meetingLinkPending(db, meetingId)) {
       // The note points at a calendar meeting whose row hasn't synced yet; capturing now would
       // replace that link with a new meeting. Retry after the next sync.
       throw new Error("This note's meeting hasn't synced to this device yet. Sync, then try again.");
     }
-    if (!meetingId) {
+    if (!meetingId || !pq.getMeeting(db, meetingId)) {
       // Nobody is listed yet, so nothing this call could remove.
       meetingId = captureNoteMeeting(db, { noteId, attendees: [], source: "manual", provenance: "explicit" }).meetingId;
     }

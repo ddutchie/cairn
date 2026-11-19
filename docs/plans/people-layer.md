@@ -142,7 +142,7 @@ migration, plus how it's built and released.
    `people-tools.ts` carry the privacy filter and the flag-gated tool/arg names.
    Mobile has no `app_kv` (and the desktop flag doesn't sync), so the flag is a
    device setting (`mobile/src/people/flag.ts`, meta DB): Settings → Appearance →
-   Developer in dev builds, or `EXPO_PUBLIC_CAIRN_PEOPLE=1`. Off: no screens,
+   Developer in dev builds, or `EXPO_PUBLIC_CAIRN_PEOPLE=1`. With that variable set the flag cannot be turned off from the switch (the variable wins on every start); remove it to disable People in such a build. Off: no screens,
    menu rows, strip, tool or args (`builtinTools()`), but the privacy filter
    always runs (a private persona note synced from desktop stays hidden).
    Screens: People list (+ suggested tray), person page, attendee strip, entry

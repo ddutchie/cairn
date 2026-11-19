@@ -283,10 +283,58 @@ describe("People layer: the tools write through the shared code", () => {
 
   it("a People failure after the note is written is reported, not thrown", async () => {
     q.ensureNote.mockReturnValue("n1");
-    people.db = { prepare: () => { throw new Error("db locked"); }, transaction: () => () => { throw new Error("db locked"); } };
+    // The privacy lookup still works; the attendee write does not.
+    people.db = {
+      prepare: (sql: string) => (/agent_private/i.test(sql) ? db.prepare(sql) : (() => { throw new Error("db locked"); })()),
+      transaction: () => () => { throw new Error("db locked"); },
+    };
     const r = await call("ensure_note", { projectId: "p1", title: "Weekly sync", content: "x", attendees: ["Ana Ruiz"] });
     expect(r).toMatchObject({ id: "n1" });
     expect(String(r.error)).toMatch(/attendees n1: db locked/);
+  });
+
+  it("update_tasks leaves the owner alone on a card whose move was refused", async () => {
+    q.getCard.mockImplementation((id: string) => (id === "c1" ? { id: "c1", title: "Card", project_id: "p1", column_id: "col" } : null));
+    q.listColumns.mockReturnValue([{ id: "col", type: "todo" }]);
+    const r = await call("update_tasks", { cardIds: ["c1"], columnType: "done", owner: "Ana Ruiz" });
+    expect(String(r.error)).toMatch(/no done column/);
+    expect((db.prepare("SELECT owner_person_id AS o FROM task_cards WHERE id = 'c1'").get() as { o: string | null }).o).toBeNull();
+  });
+
+  it("a private person's persona note id never comes back from a write", async () => {
+    const r = await people_({ action: "upsert", personId: "chris", cadence: "weekly" });
+    expect(JSON.stringify(r)).not.toContain("persona-chris");
+  });
+
+  it("a failing privacy lookup fails the call instead of skipping the filter", async () => {
+    people.db = { prepare: () => { throw new Error("disk I/O error"); }, transaction: () => () => undefined };
+    await expect(call("people", { action: "query" })).rejects.toThrow(/disk I\/O/);
+  });
+
+  it("timeline reads owned checklist items from note bodies when there is no action-item index", async () => {
+    db.prepare("UPDATE notes SET content = ? WHERE id = 'n1'").run("- [ ] **Ana Ruiz** - draft the plan\n- [x] **Ana Ruiz** - book the room\n");
+    const r = await people_({ action: "timeline", personId: "ana" });
+    expect(r.actionItems).toEqual([
+      { noteId: "n1", text: expect.stringContaining("draft the plan"), done: false },
+      { noteId: "n1", text: expect.stringContaining("book the room"), done: true },
+    ]);
+  });
+
+  it("an agent unlink withdraws only the agent's claim, not the user's", async () => {
+    await people_({ action: "link", link: "attendee", personId: "ana", noteId: "n1" });
+    const meetingId = (db.prepare("SELECT meeting_id AS m FROM notes WHERE id = 'n1'").get() as { m: string }).m;
+    db.prepare("UPDATE meeting_attendees SET sources = ? WHERE meeting_id = ? AND person_id = 'ana'")
+      .run(JSON.stringify({ declared: { on: true, at: "2026-11-18T10:00:00.000Z" }, manual: { on: true, at: "2026-11-18T10:00:00.000Z" } }), meetingId);
+    await people_({ action: "link", link: "attendee", personId: "ana", noteId: "n1", remove: true });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM meeting_attendees WHERE person_id = 'ana' AND deleted_at IS NULL").get()).toEqual({ n: 1 });
+  });
+
+  it("attendees on a note whose linked meeting hasn't synced are refused, not relinked", async () => {
+    db.prepare("UPDATE notes SET meeting_id = 'cal:future' WHERE id = 'n1'").run();
+    q.ensureNote.mockReturnValue("n1");
+    const r = await call("ensure_note", { projectId: "p1", title: "Weekly sync", content: "x", attendees: ["Ana Ruiz"] });
+    expect(String(r.error)).toMatch(/hasn't synced/);
+    expect(db.prepare("SELECT meeting_id AS m FROM notes WHERE id = 'n1'").get()).toEqual({ m: "cal:future" });
   });
 
   it("update_tasks and create_task set the owner; an empty owner clears it", async () => {

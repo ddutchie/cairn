@@ -141,6 +141,8 @@ describe("mobile People writes sync like the desktop's", () => {
     sync(dir, desktop, mobile);
     for (const d of [desktop, mobile]) {
       expect(d.db.prepare("SELECT COUNT(*) AS n FROM meeting_attendees WHERE person_id = 'ana'").get()).toEqual({ n: 1 });
+      // One row, and it is live (not a tombstone on each side).
+      expect(pq.listAttendees(d.db, meetingId).map((a) => a.personId)).toEqual(["ana"]);
     }
   });
 

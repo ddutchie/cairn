@@ -417,6 +417,7 @@ const BASE_TOOLS: ToolDef[] = [
       if (a.priority !== undefined) patch.priority = str(a.priority);
       if (a.dueDate !== undefined) patch.dueDate = str(a.dueDate) || null;
       if (a.assignee !== undefined) patch.assignee = str(a.assignee) || null;
+      const applied: string[] = [];
       for (const id of ids) {
         const card = q.getCard(id);
         if (!card) { errors.push(`${id}: Task not found`); continue; }
@@ -432,6 +433,7 @@ const BASE_TOOLS: ToolDef[] = [
           errors.push(`${id}: ${(e as Error).message}`);
           continue;
         }
+        applied.push(id);
         if (strArray(a.tagNames).length > 0) {
           const r = q.tagTask(id, strArray(a.tagNames), tagMode(a.tagMode));
           if (isErr(r)) errors.push(`tag ${id}: ${r.error}`);
@@ -445,7 +447,7 @@ const BASE_TOOLS: ToolDef[] = [
           if (isErr(r)) errors.push(`unlink ${noteId}→${id}: ${r.error}`);
         }
       }
-      const owner = applyCardOwner(ids.filter((id) => q.getCard(id)), a, errors);
+      const owner = applyCardOwner(applied, a, errors);
       const cards = ids.map((id) => q.getCard(id)).filter((c) => c !== null).map((c) => ({ id: c!.id, title: c!.title, columnId: c!.column_id }));
       const own = owner !== undefined ? { owner } : {};
       return summarize(cards.length === 1 ? { ...cards[0], updated: true, ...own } : { updated: cards, ...own }, errors);
@@ -541,21 +543,29 @@ function guardPrivate(t: ToolDef): ToolDef {
   return {
     ...t,
     run: async (args) => {
-      let hidden: ReadonlySet<string> = new Set();
-      try {
-        hidden = agentHiddenNoteIds(peopleDb());
-      } catch {
-        // An old install without the People tables has nothing to hide.
-      }
+      let hidden = hiddenNoteIds();
       const reads = isReadCall(t.name, args);
       if (!reads) {
         const refused = refusesHiddenNoteWrite(hidden, t.name, args, (projectId, title) => q.findNoteByTitle(projectId, title)?.id);
         if (refused) return refused;
       }
       const result = await t.run(args);
-      return reads ? scrubHidden(hidden, result, args) : result;
+      // Re-read: the call itself may have changed who is private (a person upsert), and a
+      // write result can name a private persona note it didn't ask about (`personaNoteId`).
+      hidden = hiddenNoteIds();
+      return scrubHidden(hidden, result, reads ? args : {});
     },
   };
+}
+
+/** Private persona note ids. Only a missing People table means "nothing to hide"; any other failure fails the call. */
+function hiddenNoteIds(): ReadonlySet<string> {
+  try {
+    return agentHiddenNoteIds(peopleDb());
+  } catch (e) {
+    if (/no such table/i.test(e instanceof Error ? e.message : String(e))) return new Set();
+    throw e;
+  }
 }
 
 /**

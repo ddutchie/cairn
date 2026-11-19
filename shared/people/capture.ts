@@ -143,6 +143,11 @@ export function removedBySomeoneElse(db: Db, meetingId: string, personId: string
   return !!row?.deleted_at && parseClaims(row.sources)[source]?.on === true;
 }
 
+/** True when a note links to a meeting whose row hasn't reached this device yet (capturing now would replace that link). */
+export function meetingLinkPending(db: Db, meetingId: string | null | undefined): boolean {
+  return !!meetingId && !db.prepare("SELECT 1 FROM meetings WHERE id = ?").get(meetingId);
+}
+
 export function toRefs(list: unknown[] | AttendeeRef[]): AttendeeRef[] {
   // Already-parsed references pass through untouched: re-parsing their text would
   // strip a leading "@" that is part of a name. Strings are parsed here.
@@ -162,8 +167,8 @@ export function toRefs(list: unknown[] | AttendeeRef[]): AttendeeRef[] {
 }
 
 function normalizeRef(ref: AttendeeRef): AttendeeRef | null {
-  const name = ref.name?.trim();
-  const email = ref.email?.trim().toLowerCase();
+  const name = typeof ref.name === "string" ? ref.name.trim() : undefined;
+  const email = typeof ref.email === "string" ? ref.email.trim().toLowerCase() : undefined;
   if (!name && !email) return null;
   return { ...(name ? { name } : {}), ...(email ? { email } : {}) };
 }
@@ -182,16 +187,21 @@ export function captureNoteMeeting(db: Db, input: CaptureInput): CaptureResult {
   if (!note) throw new Error(`Note not found: ${input.noteId}`);
   const refs = toRefs(input.attendees);
 
-  return db.transaction((): CaptureResult => {
+  const pending: Candidate[] = [];
+  const outcome = db.transaction((): CaptureResult => {
     let meeting = note.meeting_id ? getMeeting(db, note.meeting_id) : null;
     if (!meeting) {
       meeting = ensureNoteMeeting(db, note, input.date ?? note.created_at);
       setNoteMeeting(db, note.id, meeting.id);
-    } else if (input.date && Date.parse(input.date) !== Date.parse(meeting.startsAt)) {
+    }
+    // An explicit date applies to a linked and a relinked meeting alike; no date keeps the current one.
+    if (input.date && Date.parse(input.date) !== Date.parse(meeting.startsAt)) {
       meeting = updateMeeting(db, meeting.id, { startsAt: input.date });
     }
 
-    const candidates = input.candidates ?? loadCandidates(db, note.workspace_id);
+    // Work on a copy: a stub made here is rolled back with the transaction if a later write fails, so it
+    // joins the caller's list only after commit (below).
+    const candidates = [...(input.candidates ?? loadCandidates(db, note.workspace_id))];
     const result: CaptureResult = { meetingId: meeting.id, attendees: [], suggested: [], created: [], removed: [], skipped: [] };
     const keep = new Set<string>();
 
@@ -233,7 +243,9 @@ export function captureNoteMeeting(db: Db, input: CaptureInput): CaptureResult {
         if (skip(stubId)) continue;
         const person = ensureStubPerson(db, note.workspace_id, name, ref.email, input.provenance);
         // The new stub is a candidate for the rest of this list ("Chris, chris@…").
-        candidates.push({ id: person.id, status: "suggested", slackId: null, emails: person.emails, keys: new Set([foldName(name)]) });
+        const fresh: Candidate = { id: person.id, status: "suggested", slackId: null, emails: person.emails, keys: new Set([foldName(name)]) };
+        candidates.push(fresh);
+        pending.push(fresh);
         addAttendee(db, { meetingId: meeting.id, personId: person.id, status, source: input.source, provenance: input.provenance });
         keep.add(person.id);
         result.created.push(person.id);
@@ -248,6 +260,9 @@ export function captureNoteMeeting(db: Db, input: CaptureInput): CaptureResult {
     }
     return result;
   })();
+  // Committed: share the stubs this capture made with the caller's list for the next note.
+  if (input.candidates) input.candidates.push(...pending);
+  return outcome;
 }
 
 /** What a meeting note's frontmatter should say: attendee wikilinks/names and the date. */

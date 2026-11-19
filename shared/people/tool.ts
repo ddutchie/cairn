@@ -13,10 +13,11 @@
 import type { SyncDb } from "../sync/db-adapter";
 import {
   addAttendee, addEdge, listAttendees, updateMeeting, addMention, createPerson, getPerson, getRelations, listOwnedCardIds,
-  listPeople, listPersonMeetings, listPersonMentionNoteIds, listMeetingNoteIds, removeAttendee, removeEdge,
+  listPeople, listPersonMeetings, listPersonMentionNoteIds, listMeetingNoteIds, removeAttendeeSource, removeEdge,
   removeMention, setCardOwner, updatePerson,
 } from "./queries";
-import { captureNoteMeeting, resolvePerson } from "./capture";
+import { captureNoteMeeting, loadCandidates, meetingLinkPending, resolvePerson } from "./capture";
+import { ownedItemsIn } from "./action-items";
 import { edgeRowId } from "./ids";
 import { parseMeetingDate } from "./parse";
 import {
@@ -120,8 +121,38 @@ function queryPeople(db: Db, workspaceId: string, args: Args) {
   let list = listPeople(db, workspaceId, { statuses: status ? [status] : ["confirmed", "suggested"], relationship });
   const q = typeof args.name === "string" ? args.name.trim().toLowerCase() : "";
   if (q) list = list.filter((p) => [p.name, ...p.aliases, ...p.emails].some((s) => s.toLowerCase().includes(q)));
-  const limit = typeof args.limit === "number" && args.limit > 0 ? args.limit : 25;
+  const limit = listLimit(args.limit);
   return { people: list.slice(0, limit).map(personSummary), total: list.length };
+}
+
+/** A positive whole number, else the default page size. */
+const PENDING_MEETING = "This note's meeting hasn't synced to this device yet. Try again after the next sync.";
+
+function listLimit(v: unknown): number {
+  return typeof v === "number" && Number.isInteger(v) && v > 0 ? v : 25;
+}
+
+function ownedChecklistItems(db: Db, workspaceId: string, personId: string, limit: number): { noteId: string; text: string; done: number }[] {
+  try {
+    return db.prepare(`
+      SELECT a.note_id AS noteId, a.text, a.done FROM note_action_items a
+      JOIN notes n ON n.id = a.note_id AND n.deleted_at IS NULL
+      WHERE a.owner_person_id = ? ORDER BY a.done, n.updated_at DESC LIMIT ?
+    `).all(personId, limit) as { noteId: string; text: string; done: number }[];
+  } catch (e) {
+    if (!/no such table/i.test(e instanceof Error ? e.message : String(e))) throw e;
+  }
+  const candidates = loadCandidates(db, workspaceId);
+  const notes = db.prepare(
+    "SELECT id, content FROM notes WHERE workspace_id = ? AND deleted_at IS NULL AND archived_at IS NULL AND content LIKE '%[%]%' ORDER BY updated_at DESC",
+  ).all(workspaceId) as { id: string; content: string | null }[];
+  const out: { noteId: string; text: string; done: number }[] = [];
+  for (const n of notes) {
+    for (const i of ownedItemsIn(n.content ?? "", candidates)) {
+      if (i.ownerPersonId === personId) out.push({ noteId: n.id, text: i.text, done: i.done ? 1 : 0 });
+    }
+  }
+  return out.sort((a, b) => a.done - b.done).slice(0, limit);
 }
 
 function relationsOf(db: Db, personId: string) {
@@ -152,7 +183,7 @@ function getOne(db: Db, workspaceId: string, args: Args) {
 function timeline(db: Db, workspaceId: string, args: Args) {
   const p = findPerson(db, workspaceId, args);
   if (isErr(p)) return p;
-  const limit = typeof args.limit === "number" && args.limit > 0 ? args.limit : 25;
+  const limit = listLimit(args.limit);
   const meetings = listPersonMeetings(db, p.id, limit).map((m) => ({
     id: m.id,
     title: m.title,
@@ -170,12 +201,9 @@ function timeline(db: Db, workspaceId: string, args: Args) {
     SELECT c.id, c.title, COALESCE(b.name, '') AS column FROM task_cards c LEFT JOIN board_columns b ON b.id = c.column_id
     WHERE c.id IN (${cardIds.map(() => "?").join(",")}) AND c.deleted_at IS NULL
   `).all(...cardIds);
-  // Checklist items in notes that name this person as owner (indexed from note bodies).
-  const items = db.prepare(`
-    SELECT a.note_id AS noteId, a.text, a.done FROM note_action_items a
-    JOIN notes n ON n.id = a.note_id AND n.deleted_at IS NULL
-    WHERE a.owner_person_id = ? ORDER BY a.done, n.updated_at DESC LIMIT ?
-  `).all(p.id, limit) as { noteId: string; text: string; done: number }[];
+  // Checklist items in notes that name this person as owner: the desktop indexes them; a device
+  // without that index (mobile) reads them from the note bodies.
+  const items = ownedChecklistItems(db, workspaceId, p.id, limit);
   return {
     person: { id: p.id, name: p.name },
     meetings,
@@ -294,8 +322,10 @@ function link(db: Db, ctx: PeopleToolContext, workspaceId: string, args: Args) {
       const noteId = noteInWorkspace(db, args.noteId, workspaceId);
       if (isErr(noteId)) return noteId;
       let meetingId = (db.prepare("SELECT meeting_id FROM notes WHERE id = ?").get(noteId) as { meeting_id: string | null }).meeting_id;
+      if (!remove && meetingLinkPending(db, meetingId)) return { error: PENDING_MEETING };
       if (remove) {
-        if (meetingId) removeAttendee(db, meetingId, p.id);
+        // Withdraws only the agent's own claim; a person the user confirmed (or the calendar lists) stays.
+        if (meetingId) removeAttendeeSource(db, meetingId, p.id, "declared");
       } else {
         if (!meetingId) meetingId = captureNoteMeeting(db, { noteId, attendees: [], source: "declared", provenance }).meetingId;
         addAttendee(db, { meetingId, personId: p.id, status, source: "declared", provenance });
@@ -332,6 +362,7 @@ export function setNoteAttendees(db: Db, ctx: PeopleToolContext, args: Args): un
   const date = args.date !== undefined ? parseMeetingDate(args.date) : null;
   if (args.date !== undefined && args.date !== "" && !date) return { error: `Couldn't read the date "${args.date}". Use YYYY-MM-DD or an ISO datetime.` };
   const values = Array.isArray(args.attendees) ? args.attendees.filter((v: unknown) => typeof v === "string") as string[] : undefined;
+  if (meetingLinkPending(db, note.meetingId)) return { error: PENDING_MEETING };
   // Only a date: set it on the note's meeting (a note without attendees doesn't become one).
   if (!values && !note.meetingId) return { meeting: null };
   try {
@@ -380,6 +411,7 @@ export function setCardOwnerArg(db: Db, ctx: PeopleToolContext, args: Args): unk
   const cardId = String(args.cardId ?? "");
   const card = db.prepare("SELECT workspace_id AS ws FROM task_cards WHERE id = ? AND deleted_at IS NULL").get(cardId) as { ws: string } | undefined;
   if (!card) return { error: `No task with id "${cardId}"` };
+  if (args.owner !== undefined && args.owner !== null && typeof args.owner !== "string") return { error: "owner must be a name, email or person id, or an empty string to clear" };
   const owner = typeof args.owner === "string" ? args.owner.trim() : "";
   if (!owner) {
     setCardOwner(db, cardId, null);
