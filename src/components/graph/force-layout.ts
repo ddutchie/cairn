@@ -48,6 +48,9 @@ export interface LayoutInit {
   nodes: LayoutNode[];
   links: LayoutLink[];
   spacing: number;
+  /** Every node is seeded with an already-settled layout of this exact graph
+   *  (a revisit): post the seeds as they are and end, without re-heating. */
+  resume?: boolean;
 }
 
 export type LayoutRequest =
@@ -74,6 +77,15 @@ const LARGE_FRAME_MS = 32;
 const TICK_BUDGET_MS = 8;
 /** Upper bound on ticks per post, so small graphs still visibly settle. */
 const MAX_TICKS_PER_FRAME = 3;
+/**
+ * Time the worker spends settling a new layout before posting anything.
+ * Drawing every intermediate frame of a settle is what made large graphs
+ * slow (each frame is a full canvas redraw, dashed edges included); a
+ * 476-node / 2756-edge graph settles in ~400ms of ticks, so it now usually
+ * arrives finished in one post. Larger graphs post what they have at the
+ * budget and settle the rest visibly.
+ */
+export const PRESETTLE_MS = 700;
 
 export interface ForceLayout {
   setSpacing(spacing: number): void;
@@ -88,6 +100,7 @@ export function runForceLayout(
   init: LayoutInit,
   onTick: (positions: Float32Array) => void,
   onEnd: () => void,
+  opts: { presettleMs?: number } = {},
 ): ForceLayout {
   let spacing = init.spacing;
   const nodes: SimNode[] = init.nodes.map((n) => ({ ...n }));
@@ -150,21 +163,33 @@ export function runForceLayout(
   let timer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
   const frameMs = nodes.length > LARGE_GRAPH_NODES ? LARGE_FRAME_MS : FRAME_MS;
+  // The first post of a new layout may run ahead (see PRESETTLE_MS).
+  let presettleMs = opts.presettleMs ?? 0;
   const step = () => {
     timer = null;
     if (stopped) return;
     const start = Date.now();
+    const budget = Math.max(TICK_BUDGET_MS, presettleMs);
+    const maxTicks = presettleMs > 0 ? Infinity : MAX_TICKS_PER_FRAME;
+    presettleMs = 0;
     let ticks = 0;
     do {
       sim.tick();
       ticks++;
-    } while (ticks < MAX_TICKS_PER_FRAME && sim.alpha() >= sim.alphaMin() && Date.now() - start < TICK_BUDGET_MS);
+    } while (ticks < maxTicks && sim.alpha() >= sim.alphaMin() && Date.now() - start < budget);
     emit();
     if (sim.alpha() < sim.alphaMin()) { onEnd(); return; }
     timer = setTimeout(step, Math.max(0, frameMs - (Date.now() - start)));
   };
-  // First frame goes out immediately so the canvas has positions to draw.
-  step();
+  if (init.resume) {
+    // Nothing to settle; a later setSpacing() still re-heats normally.
+    emit();
+    onEnd();
+  } else {
+    // First frame goes out immediately (after any presettle) so the canvas
+    // has positions to draw.
+    step();
+  }
 
   return {
     setSpacing(next) {
