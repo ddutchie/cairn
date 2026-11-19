@@ -1,11 +1,13 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
+import Constants from "expo-constants";
 import { View, Text, ScrollView, StyleSheet, Switch } from "react-native";
 import { Check } from "lucide-react-native";
 import { ModalSafeView } from "@/components/ModalSafeView";
 import { PressableScale } from "@/components/PressableScale";
 import { haptics } from "@/haptics";
 import { setFoldOverlay, setListeningOrb, useFoldOverlay, useListeningOrb } from "@/lib/dev-flags";
-import { setPeopleEnabled, usePeopleEnabled } from "@/people/flag";
+import { setPeopleEnabled, unlockPreview, usePeopleEnabled, usePreviewUnlocked } from "@/people/flag";
+import { FRESH_TAPS, registerUnlockTap, showPeopleSwitch } from "@cairn/shared/people/preview-unlock";
 import {
   useTheme,
   useAccent,
@@ -35,6 +37,20 @@ export default function AppearanceSettingsScreen() {
   const fontId = useFont();
   const foldOverlay = useFoldOverlay();
   const peopleOn = usePeopleEnabled();
+  const previewUnlocked = usePreviewUnlocked();
+  const showPeople = showPeopleSwitch({ dev: __DEV__, unlocked: previewUnlocked, flagOn: peopleOn });
+  const taps = useRef(FRESH_TAPS);
+  const [unlockNote, setUnlockNote] = useState("");
+  const version = Constants.expoConfig?.version ?? "";
+  const onVersionTap = () => {
+    const r = registerUnlockTap(taps.current, Date.now());
+    taps.current = r.state;
+    if (r.unlocked) {
+      unlockPreview();
+      haptics.success();
+      setUnlockNote("Preview features unlocked");
+    }
+  };
   const listeningOrb = useListeningOrb();
   const styles = useMemo(() => makeStyles(t), [t]);
 
@@ -155,12 +171,17 @@ export default function AppearanceSettingsScreen() {
               accessibilityLabel="Listening orb"
             />
           </View>
+        </View>
+      ) : null}
+      {showPeople ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Preview</Text>
           <View style={styles.row}>
             <View style={styles.rowMain}>
               <Text style={styles.rowTitle}>People</Text>
               <Text style={styles.rowSub}>
                 The People layer: a People list, person pages, attendees on meeting notes and the
-                people tool in chat. Off until it launches; this device only. Dev builds only.
+                people tool in chat. Unreleased. Off until it launches; this device only.
               </Text>
             </View>
             <Switch
@@ -174,6 +195,18 @@ export default function AppearanceSettingsScreen() {
           </View>
         </View>
       ) : null}
+
+      {version ? (
+        <PressableScale
+          onPress={onVersionTap}
+          accessibilityRole="button"
+          accessibilityLabel={`Cairn version ${version}`}
+          style={styles.versionWrap}
+        >
+          <Text style={styles.version}>v{version}</Text>
+          {unlockNote ? <Text style={styles.version} accessibilityLiveRegion="polite">{unlockNote}</Text> : null}
+        </PressableScale>
+      ) : null}
     </ScrollView>
     </ModalSafeView>
   );
@@ -185,6 +218,8 @@ function makeStyles(t: Theme) {
     body: { padding: 18, gap: 20 },
     section: { gap: 8 },
     sectionLabel: { ...typeScale.overline, color: t.textTertiary },
+    versionWrap: { alignItems: "center", paddingVertical: 8, gap: 2 },
+    version: { ...typeScale.caption, color: t.textTertiary, fontVariant: ["tabular-nums"] },
     sectionHint: { ...typeScale.caption, color: t.textTertiary, marginBottom: 4 },
     list: { gap: 8 },
     row: {

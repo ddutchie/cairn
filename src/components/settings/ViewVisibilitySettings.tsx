@@ -9,6 +9,8 @@ import { Kanban, CalendarDays, Workflow, GitBranch, BarChart2, Terminal, Message
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { ToggleableView } from "@/store/slices/ui";
+import { showPeopleSwitch } from "../../../shared/people/preview-unlock";
+import { isPreviewUnlocked } from "@/lib/people/preview-unlock";
 import { SettingsGroup, SettingsRow, Toggle } from "./shared";
 
 interface ViewOption {
@@ -32,13 +34,6 @@ const VIEW_OPTIONS: ViewOption[] = [
 const PEOPLE_OPTION: ViewOption = {
   view: "people", label: "People", description: "People you work with, their meetings and notes", icon: <Users size={13} />,
 };
-
-/**
- * The People layer is unreleased: its switch shows in development builds, and
- * anywhere once the flag is on (so it can be turned off again). Release users
- * with the flag off see nothing.
- */
-const SHOW_PEOPLE_PREVIEW = process.env.NODE_ENV === "development";
 
 export function ViewVisibilitySettings() {
   const { hiddenViews, toggleViewVisibility, peopleEnabled, setPeopleEnabled } = useCairnStore(useShallow((s) => ({
@@ -92,7 +87,7 @@ export function ViewVisibilitySettings() {
         );
       })}
     </SettingsGroup>
-    {(SHOW_PEOPLE_PREVIEW || peopleEnabled) && (
+    {showPeopleSwitch({ dev: process.env.NODE_ENV === "development", unlocked: isPreviewUnlocked(), flagOn: peopleEnabled }) && (
       <div className="mt-8">
         <SettingsGroup
           title="People (preview)"

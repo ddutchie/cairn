@@ -150,6 +150,14 @@ migration, plus how it's built and released.
    from note bodies; ticking rewrites that box via `setItemDone` and saves the
    note (desktop re-indexes on arrival). Attendee writes use claim source
    `manual`; removing is a tombstone. Not verified on a simulator.
+   Release builds: the switch is hidden until the device unlocks preview
+   features by tapping the version line seven times (each within 2 s of the
+   last; `shared/people/preview-unlock.ts`). Desktop: the "Cairn x.y.z" line
+   under Settings → About, stored in `localStorage`
+   (`cairn:preview-features-unlocked`); mobile: the version line at the bottom
+   of Settings → Appearance, stored in the meta DB (`preview.unlocked`). Never
+   synced. Dev builds and anyone whose flag is already on still see the switch
+   (so it can be turned off).
    W7 as built (`feat/people-w7-insights`): two Insights layouts,
    `RelationshipCanvas` and `OrgChartCanvas` (`src/components/graph/`), added to
    `InsightsView` only while `peopleEnabled` (a People layout selected when the

@@ -55,3 +55,42 @@ const subscribe = (cb: () => void) => {
 export function usePeopleEnabled(): boolean {
   return useSyncExternalStore(subscribe, isPeopleEnabled, isPeopleEnabled);
 }
+
+// ── Preview-features unlock (hidden: tap the version line in Settings 7 times) ──
+
+const UNLOCK_KEY = "preview.unlocked";
+let unlocked: boolean | null = null;
+const unlockListeners = new Set<() => void>();
+
+/** True once this device unlocked preview features. Device-local meta, never synced. */
+export function isPreviewUnlocked(): boolean {
+  if (unlocked === null) {
+    try {
+      unlocked = getMeta(UNLOCK_KEY) === "1";
+    } catch {
+      unlocked = false;
+    }
+  }
+  return unlocked;
+}
+
+export function unlockPreview(): void {
+  unlocked = true;
+  try {
+    setMeta(UNLOCK_KEY, "1");
+  } catch {
+    // the in-memory value still drives this session
+  }
+  unlockListeners.forEach((l) => l());
+}
+
+const subscribeUnlock = (cb: () => void) => {
+  unlockListeners.add(cb);
+  return () => {
+    unlockListeners.delete(cb);
+  };
+};
+
+export function usePreviewUnlocked(): boolean {
+  return useSyncExternalStore(subscribeUnlock, isPreviewUnlocked, isPreviewUnlocked);
+}
