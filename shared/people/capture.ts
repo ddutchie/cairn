@@ -1,0 +1,411 @@
+/**
+ * People layer capture: resolve names/emails to people, and turn "this note is
+ * a meeting with these attendees" into meeting + attendee rows. Every capture
+ * path (frontmatter, agent tools, calendar, the attendee strip) goes through
+ * here, so matching works the same everywhere. Plan: docs/plans/people-layer.md
+ * ("Capture", decision 12).
+ *
+ * Matching is exact, never fuzzy: Slack id → email → name, alias or persona
+ * note title (compared case- and accent-insensitively). Two candidates →
+ * both become suggested attendees for the user to settle. No match → a
+ * suggested stub person. A person the user dismissed is never re-created.
+ *
+ * Governance: runs on the caller's db handle (desktop, the MCP runtime and
+ * mobile, through the portable `SyncDb`).
+ */
+
+import type { SyncDb } from "../sync/db-adapter";
+import { foldName, formatMeetingDate, parseAttendeeList, parseAttendeeValue, splitAttendeeValues, type AttendeeRef } from "./parse";
+import type { AttendeeSource, PeopleStatus, Provenance } from "../types/people";
+import {
+  addAttendee, createMeeting, createPerson, getMeeting, getPerson, updatePerson, attendeeIdsFromSource, removeAttendeeSource, setNoteMeeting, updateMeeting,
+} from "./queries";
+import { attendeeRowId, noteMeetingId, stubPersonId } from "./ids";
+import { parseClaims } from "./claims";
+import { resolveIn, type Candidate, type PersonLookup, type Resolution } from "./resolve";
+
+export { resolveIn };
+export type { Candidate, PersonLookup, Resolution };
+
+type Db = SyncDb;
+
+/** The workspace's people as match candidates (live rows, any status, archived included: former colleagues still match). Load once per capture. */
+export function loadCandidates(db: Db, workspaceId: string): Candidate[] {
+  const rows = db.prepare(`
+    SELECT p.id, p.status, p.slack_id, p.emails, p.name, p.aliases, n.title AS persona_title
+    FROM people p
+    LEFT JOIN notes n ON n.id = p.persona_note_id AND n.deleted_at IS NULL
+    WHERE p.workspace_id = ? AND p.deleted_at IS NULL
+  `).all(workspaceId) as Array<{
+    id: string; status: PeopleStatus; slack_id: string | null; emails: string; name: string; aliases: string; persona_title: string | null;
+  }>;
+  return rows.map((r) => {
+    const keys = new Set<string>([foldName(r.name)]);
+    for (const a of safeArray(r.aliases)) keys.add(foldName(a));
+    if (r.persona_title) keys.add(foldName(r.persona_title));
+    return { id: r.id, status: r.status, slackId: r.slack_id, emails: safeArray(r.emails).map((e) => e.toLowerCase()), keys };
+  });
+}
+
+function safeArray(json: string): string[] {
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Resolve one reference in a workspace (loads candidates; use resolveIn for batches). */
+export function resolvePerson(db: Db, workspaceId: string, ref: PersonLookup): Resolution {
+  return resolveIn(loadCandidates(db, workspaceId), ref);
+}
+
+/** A label for a stub person: the name, or the part of the email before the @. */
+export function stubName(ref: AttendeeRef): string | null {
+  if (ref.name?.trim()) return ref.name.trim();
+  if (ref.email) return ref.email.split("@")[0];
+  return null;
+}
+
+/**
+ * The suggested stub for an unmatched name or email, with a deterministic id
+ * (`stubPersonId`). A stub that was deleted (not dismissed) is revived.
+ */
+export function ensureStubPerson(db: Db, workspaceId: string, name: string, email: string | undefined, provenance: Provenance) {
+  const id = stubPersonId(workspaceId, email ?? foldName(name));
+  const row = db.prepare("SELECT deleted_at FROM people WHERE id = ?").get(id) as { deleted_at: string | null } | undefined;
+  if (!row) {
+    return createPerson(db, { id, workspaceId, name, emails: email ? [email] : [], status: "suggested", provenance });
+  }
+  if (row.deleted_at) {
+    const now = new Date().toISOString();
+    db.prepare("UPDATE people SET deleted_at = NULL, status = 'suggested', archived_at = NULL, updated_at = ? WHERE id = ?").run(now, id);
+  }
+  return getPerson(db, id)!;
+}
+
+/** The note's own meeting (`noteMeetingId`), created or revived. */
+function ensureNoteMeeting(db: Db, note: { id: string; workspace_id: string; title: string }, startsAt: string) {
+  const id = noteMeetingId(note.workspace_id, note.id);
+  const row = db.prepare("SELECT deleted_at FROM meetings WHERE id = ?").get(id) as { deleted_at: string | null } | undefined;
+  if (!row) return createMeeting(db, { id, workspaceId: note.workspace_id, title: note.title, startsAt, source: "note" });
+  if (row.deleted_at) {
+    db.prepare("UPDATE meetings SET deleted_at = NULL, title = ?, starts_at = ?, updated_at = ? WHERE id = ?")
+      .run(note.title, startsAt, new Date().toISOString(), id);
+  }
+  return getMeeting(db, id)!;
+}
+
+export interface CaptureInput {
+  noteId: string;
+  /** Raw values (strings as written) or parsed refs. */
+  attendees: unknown[] | AttendeeRef[];
+  /** People already identified by id (an agent passing person ids); added as confirmed and kept. */
+  personIds?: string[];
+  /** ISO date/time of the meeting; null/undefined keeps the current one. */
+  date?: string | null;
+  /** Which path is writing. Attendees previously added by this path and not listed now are removed. */
+  source: AttendeeSource;
+  provenance: Provenance;
+  /** Status for the people this call adds (default confirmed). Body lines use `suggested`: never applied silently. */
+  status?: PeopleStatus;
+  /**
+   * Don't re-add someone this source still lists but who was removed from the
+   * meeting by someone else (the user, another device): their attendee row is
+   * tombstoned while this source's claim on it is still on.
+   */
+  keepRemoved?: boolean;
+  /** Match existing people only: names nobody matches are left out instead of becoming stub people. */
+  noStubs?: boolean;
+  /** The workspace's candidates, when the caller already loaded them for this note (saves a scan per note). */
+  candidates?: Candidate[];
+}
+
+export interface CaptureResult {
+  meetingId: string;
+  /** Person ids now attending through this source. */
+  attendees: string[];
+  /** Person ids added as suggestions (ambiguous names). */
+  suggested: string[];
+  /** Stub people created for names nobody matched. */
+  created: string[];
+  /** Person ids removed because this source no longer lists them. */
+  removed: string[];
+  /** Person ids this source lists but that were left out (`keepRemoved`: someone else removed them). */
+  skipped: string[];
+}
+
+/** A tombstoned attendee row that this source's claim still lists: removed by someone else. */
+export function removedBySomeoneElse(db: Db, meetingId: string, personId: string, source: AttendeeSource): boolean {
+  const row = db.prepare("SELECT deleted_at, sources FROM meeting_attendees WHERE id = ?")
+    .get(attendeeRowId(meetingId, personId)) as { deleted_at: string | null; sources: string } | undefined;
+  return !!row?.deleted_at && parseClaims(row.sources)[source]?.on === true;
+}
+
+/** True when a note links to a meeting whose row hasn't reached this device yet (capturing now would replace that link). */
+export function meetingLinkPending(db: Db, meetingId: string | null | undefined): boolean {
+  return !!meetingId && !db.prepare("SELECT 1 FROM meetings WHERE id = ?").get(meetingId);
+}
+
+export function toRefs(list: unknown[] | AttendeeRef[]): AttendeeRef[] {
+  // Already-parsed references pass through untouched: re-parsing their text would
+  // strip a leading "@" that is part of a name. Strings are parsed here.
+  const out: AttendeeRef[] = [];
+  const seen = new Set<string>();
+  for (const item of list) {
+    const ref = item && typeof item === "object" && !Array.isArray(item)
+      ? normalizeRef(item as AttendeeRef)
+      : parseAttendeeValue(item);
+    if (!ref) continue;
+    const key = ref.email ?? foldName(ref.name ?? "");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(ref);
+  }
+  return out;
+}
+
+function normalizeRef(ref: AttendeeRef): AttendeeRef | null {
+  const name = typeof ref.name === "string" ? ref.name.trim() : undefined;
+  const email = typeof ref.email === "string" ? ref.email.trim().toLowerCase() : undefined;
+  if (!name && !email) return null;
+  return { ...(name ? { name } : {}), ...(email ? { email } : {}) };
+}
+
+/**
+ * Make a note a meeting with these attendees, as stated by one source. Creates
+ * the meeting (titled after the note) when the note has none, sets its date
+ * when given, adds the resolved people, and removes people this same source
+ * had added before but no longer lists. Attendees from other sources (the
+ * calendar, the attendee strip) are left alone. Idempotent: running it again
+ * with the same input changes nothing.
+ */
+export function captureNoteMeeting(db: Db, input: CaptureInput): CaptureResult {
+  const note = db.prepare("SELECT id, workspace_id, title, created_at, meeting_id FROM notes WHERE id = ? AND deleted_at IS NULL")
+    .get(input.noteId) as { id: string; workspace_id: string; title: string; created_at: string; meeting_id: string | null } | undefined;
+  if (!note) throw new Error(`Note not found: ${input.noteId}`);
+  const refs = toRefs(input.attendees);
+
+  const pending: Candidate[] = [];
+  const outcome = db.transaction((): CaptureResult => {
+    let meeting = note.meeting_id ? getMeeting(db, note.meeting_id) : null;
+    if (!meeting) {
+      meeting = ensureNoteMeeting(db, note, input.date ?? note.created_at);
+      setNoteMeeting(db, note.id, meeting.id);
+    }
+    // An explicit date applies to a linked and a relinked meeting alike; no date keeps the current one.
+    if (input.date && Date.parse(input.date) !== Date.parse(meeting.startsAt)) {
+      meeting = updateMeeting(db, meeting.id, { startsAt: input.date });
+    }
+
+    // Work on a copy: a stub made here is rolled back with the transaction if a later write fails, so it
+    // joins the caller's list only after commit (below).
+    const candidates = [...(input.candidates ?? loadCandidates(db, note.workspace_id))];
+    const result: CaptureResult = { meetingId: meeting.id, attendees: [], suggested: [], created: [], removed: [], skipped: [] };
+    const keep = new Set<string>();
+
+    const status = input.status ?? "confirmed";
+    const meetingId = meeting.id;
+    const skip = (pid: string) => {
+      const skipped = !!input.keepRemoved && removedBySomeoneElse(db, meetingId, pid, input.source);
+      if (skipped) result.skipped.push(pid);
+      return skipped;
+    };
+
+    for (const pid of input.personIds ?? []) {
+      if (keep.has(pid) || !candidates.some((c) => c.id === pid) || skip(pid)) continue;
+      addAttendee(db, { meetingId: meeting.id, personId: pid, status, source: input.source, provenance: input.provenance });
+      keep.add(pid);
+      result.attendees.push(pid);
+    }
+
+    for (const ref of refs) {
+      const r = resolveIn(candidates, ref);
+      if (r.kind === "dismissed") continue;
+      if (r.kind === "match") {
+        if (keep.has(r.personId)) continue;
+        if (skip(r.personId)) { keep.add(r.personId); continue; }
+        addAttendee(db, { meetingId: meeting.id, personId: r.personId, status, source: input.source, provenance: input.provenance });
+        keep.add(r.personId);
+        result.attendees.push(r.personId);
+      } else if (r.kind === "ambiguous") {
+        for (const pid of r.personIds) {
+          if (skip(pid)) { keep.add(pid); continue; }
+          addAttendee(db, { meetingId: meeting.id, personId: pid, status: "suggested", source: input.source, provenance: "inferred" });
+          keep.add(pid);
+          result.suggested.push(pid);
+        }
+      } else {
+        const name = stubName(ref);
+        if (!name || input.noStubs) continue;
+        const stubId = stubPersonId(note.workspace_id, ref.email ?? foldName(name));
+        if (skip(stubId)) continue;
+        const person = ensureStubPerson(db, note.workspace_id, name, ref.email, input.provenance);
+        // The new stub is a candidate for the rest of this list ("Chris, chris@…").
+        const fresh: Candidate = { id: person.id, status: "suggested", slackId: null, emails: person.emails, keys: new Set([foldName(name)]) };
+        candidates.push(fresh);
+        pending.push(fresh);
+        addAttendee(db, { meetingId: meeting.id, personId: person.id, status, source: input.source, provenance: input.provenance });
+        keep.add(person.id);
+        result.created.push(person.id);
+        result.attendees.push(person.id);
+      }
+    }
+
+    rememberPersonaTitles(db, [...keep]);
+    for (const person_id of attendeeIdsFromSource(db, meeting.id, input.source)) {
+      if (keep.has(person_id)) continue;
+      if (removeAttendeeSource(db, meeting.id, person_id, input.source)) result.removed.push(person_id);
+    }
+    return result;
+  })();
+  // Committed: share the stubs this capture made with the caller's list for the next note.
+  if (input.candidates) input.candidates.push(...pending);
+  return outcome;
+}
+
+/** What a meeting note's frontmatter should say: attendee wikilinks/names and the date. */
+export interface MeetingFrontmatter {
+  attendees: string[];
+  date: string;
+  meetingId: string;
+  /**
+   * Confirmed attendees no written reference can identify (no persona title or
+   * email, and their name is shared). They are written by name, which reads
+   * back as a suggestion; the caller should pin them (`pinUnreferenced`) so
+   * the file no longer owns their attendance.
+   */
+  unreferenced: string[];
+}
+
+/**
+ * Render the `attendees`/`date` frontmatter for a note's meeting, or null when
+ * the note isn't a meeting. Confirmed attendees are written as `[[persona note
+ * title]]` when they have a persona note, else their plain name. Values already
+ * in the file that don't resolve to exactly one live person (an ambiguous name,
+ * someone unknown) are kept as written, so a write-back never drops what the
+ * user typed.
+ */
+export function renderMeetingFrontmatter(db: Db, noteId: string, existing?: unknown): MeetingFrontmatter | null {
+  const row = db.prepare(`
+    SELECT n.workspace_id, m.id AS meeting_id, m.starts_at FROM notes n
+    JOIN meetings m ON m.id = n.meeting_id AND m.deleted_at IS NULL
+    WHERE n.id = ? AND n.deleted_at IS NULL
+  `).get(noteId) as { workspace_id: string; meeting_id: string; starts_at: string } | undefined;
+  if (!row) return null;
+
+  const people = db.prepare(`
+    SELECT p.id, p.name, p.emails, n.title AS persona_title FROM meeting_attendees a
+    JOIN people p ON p.id = a.person_id AND p.deleted_at IS NULL
+    LEFT JOIN notes n ON n.id = p.persona_note_id AND n.deleted_at IS NULL
+    WHERE a.meeting_id = ? AND a.deleted_at IS NULL AND a.status = 'confirmed'
+    ORDER BY a.created_at, p.name
+  `).all(row.meeting_id) as { id: string; name: string; emails: string; persona_title: string | null }[];
+
+  const candidates = loadCandidates(db, row.workspace_id);
+  const unreferenced: string[] = [];
+  const attendees = people.map((p) => {
+    const ref = attendeeReference(candidates, p);
+    if (!ref) unreferenced.push(p.id);
+    return ref ?? p.name;
+  });
+  const attending = new Set(people.map((p) => p.id));
+
+  // A YAML list, or one string ("Chris" / "Ana, Ben") the way capture reads it.
+  const existingValues = Array.isArray(existing) ? existing : typeof existing === "string" ? splitAttendeeValues(existing) : [];
+  if (existingValues.length > 0) {
+    const seen = new Set(attendees.map((a) => a.toLowerCase()));
+    for (const raw of existingValues) {
+      if (typeof raw !== "string" || !raw.trim()) continue;
+      const [ref] = parseAttendeeList([raw]);
+      const r = ref ? resolveIn(candidates, ref) : { kind: "none" as const };
+      // Someone who resolves to one person is written from the DB (or was removed there); keep the rest verbatim.
+      if (r.kind === "match" || r.kind === "dismissed") continue;
+      if (r.kind === "ambiguous" && r.personIds.some((id) => attending.has(id))) continue;
+      if (seen.has(raw.toLowerCase())) continue;
+      seen.add(raw.toLowerCase());
+      attendees.push(raw);
+    }
+  }
+  return { attendees, date: formatMeetingDate(row.starts_at), meetingId: row.meeting_id, unreferenced };
+}
+
+/**
+ * Keep each person's current persona-note title as an alias. A title is how
+ * files and other notes name them (`[[Ana Ruiz]]`), and a rename can arrive by
+ * sync (mobile edits titles directly) without passing through `onNoteRenamed`,
+ * so the title is remembered whenever Cairn reads or writes a reference to it.
+ * A later rename then leaves the old title resolving to the same person.
+ */
+export function rememberPersonaTitles(db: Db, personIds: readonly string[]): void {
+  const row = db.prepare(`
+    SELECT n.title FROM people p JOIN notes n ON n.id = p.persona_note_id AND n.deleted_at IS NULL
+    WHERE p.id = ? AND p.deleted_at IS NULL
+  `);
+  for (const id of new Set(personIds)) {
+    const title = (row.get(id) as { title: string } | undefined)?.title?.trim();
+    const person = title ? getPerson(db, id) : null;
+    if (!person || !title) continue;
+    if (![person.name, ...person.aliases].some((x) => x.toLowerCase() === title.toLowerCase())) {
+      updatePerson(db, id, { aliases: [...person.aliases, title] });
+    }
+  }
+}
+
+/**
+ * Make the given attendees "manual" so a file that can't name them faithfully
+ * (see `MeetingFrontmatter.unreferenced`) never removes them on the next read.
+ */
+export function pinUnreferenced(db: Db, fm: Pick<MeetingFrontmatter, "meetingId" | "unreferenced">): void {
+  for (const personId of fm.unreferenced) {
+    addAttendee(db, { meetingId: fm.meetingId, personId, source: "manual", provenance: "explicit" });
+  }
+}
+
+/**
+ * How to write one attendee so that reading the file back finds the same
+ * person: `[[persona note title]]` when that round-trips (a title with `#` or
+ * `|` doesn't), else the name, else an email. A name two people share falls
+ * back to the email. With none, there is no faithful reference (null) and
+ * the caller pins the attendee instead.
+ */
+function attendeeReference(candidates: Candidate[], p: { id: string; name: string; emails: string; persona_title: string | null }): string | null {
+  const options = [
+    ...(p.persona_title ? [`[[${p.persona_title}]]`] : []),
+    p.name,
+    // A leading "@" is read as a handle prefix; quotes keep it part of the name.
+    ...(p.name.trim().startsWith("@") ? [`"${p.name}"`] : []),
+    ...safeArray(p.emails),
+  ];
+  for (const value of options) {
+    const [ref] = parseAttendeeList([value]);
+    const r = ref ? resolveIn(candidates, ref) : null;
+    if (r?.kind === "match" && r.personId === p.id) return value;
+  }
+  return null;
+}
+
+/** Note ids whose meeting frontmatter may be stale after changes to these rows. */
+export function notesAffectedBy(db: Db, changed: { meetingIds?: string[]; personIds?: string[]; noteIds?: string[] }): string[] {
+  const ids = new Set<string>(changed.noteIds ?? []);
+  const meetingIds = new Set<string>(changed.meetingIds ?? []);
+  const personIds = new Set<string>(changed.personIds ?? []);
+  // A persona note's title is how its person is written in other notes' attendees.
+  for (const nid of changed.noteIds ?? []) {
+    for (const r of db.prepare("SELECT id FROM people WHERE persona_note_id = ? AND deleted_at IS NULL").all(nid) as { id: string }[]) {
+      personIds.add(r.id);
+    }
+  }
+  for (const pid of personIds) {
+    for (const r of db.prepare("SELECT DISTINCT meeting_id FROM meeting_attendees WHERE person_id = ?").all(pid) as { meeting_id: string }[]) {
+      meetingIds.add(r.meeting_id);
+    }
+  }
+  for (const mid of meetingIds) {
+    for (const r of db.prepare("SELECT id FROM notes WHERE meeting_id = ? AND deleted_at IS NULL").all(mid) as { id: string }[]) {
+      ids.add(r.id);
+    }
+  }
+  return [...ids];
+}

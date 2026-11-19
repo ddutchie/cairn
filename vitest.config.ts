@@ -11,6 +11,9 @@ loadDotenv({ path: path.resolve(__dirname, ".env.test"), override: false });
 const sharedAlias = {
   // Redirect better-sqlite3 so it loads via nativeBinding from vitest-native/
   "better-sqlite3": path.resolve(__dirname, "vitest-sqlite-shim.cjs"),
+  // For tests that import mobile/ sources (they use the @cairn/shared package alias).
+  "@cairn/shared/": path.resolve(__dirname, "./shared") + "/",
+  "@cairn/shared": path.resolve(__dirname, "./shared/sync/index.ts"),
   "@": path.resolve(__dirname, "./src"),
 };
 
@@ -27,6 +30,29 @@ const mobileAlias = {
 };
 
 
+/** Keeps oxc off mobile/tsconfig.json (extends expo's base, absent in root-only installs). Needed wherever a test transforms a mobile/ file. */
+const mobileStandaloneTsconfig = {
+    name: "mobile-standalone-tsconfig",
+    // Vite's public OxcOptions type omits `tsconfig`, but the underlying
+    // oxc transform reads it at runtime (it's spread straight into the
+    // native transformSync call). An inline raw tsconfig here makes the
+    // transform skip its filesystem walk-up entirely. Cast because the
+    // field isn't in the exposed type surface.
+    config() {
+      return {
+        oxc: {
+          tsconfig: {
+            compilerOptions: {
+              target: "es2022",
+              jsx: "react-jsx",
+              verbatimModuleSyntax: false,
+            },
+          },
+        } as unknown as UserConfig["oxc"],
+      };
+    },
+  };
+
 export default defineConfig({
   resolve: { alias: sharedAlias },
   test: {
@@ -37,7 +63,7 @@ export default defineConfig({
     //  - "component": React component tests rendered in jsdom via Testing Library.
     projects: [
       {
-        plugins: [react()],
+        plugins: [react(), mobileStandaloneTsconfig],
         resolve: { alias: sharedAlias },
         test: {
           name: "node",
@@ -70,29 +96,7 @@ export default defineConfig({
         // found). Disable oxc's tsconfig lookup for this project and feed it a
         // self-contained config instead, so the transform never touches the
         // expo-extended mobile/tsconfig.json.
-        plugins: [
-          {
-            name: "mobile-standalone-tsconfig",
-            // Vite's public OxcOptions type omits `tsconfig`, but the underlying
-            // oxc transform reads it at runtime (it's spread straight into the
-            // native transformSync call). An inline raw tsconfig here makes the
-            // transform skip its filesystem walk-up entirely. Cast because the
-            // field isn't in the exposed type surface.
-            config() {
-              return {
-                oxc: {
-                  tsconfig: {
-                    compilerOptions: {
-                      target: "es2022",
-                      jsx: "react-jsx",
-                      verbatimModuleSyntax: false,
-                    },
-                  },
-                } as unknown as UserConfig["oxc"],
-              };
-            },
-          },
-        ],
+        plugins: [mobileStandaloneTsconfig],
         test: {
           name: "mobile",
           environment: "node",

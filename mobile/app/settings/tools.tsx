@@ -35,7 +35,7 @@ import {
   type InstalledMcpServer,
 } from "@/chat/mcp-store";
 import { startAuth, signOut, hasTokens, type OAuthServerConfig } from "@/chat/mcp-oauth";
-import { TOOLS, WRITE_TOOL_NAMES, type ToolDef } from "@/chat/tools";
+import { builtinTools, WRITE_TOOL_NAMES, type ToolDef } from "@/chat/tools";
 import { getToggleMap, setToolEnabled } from "@/chat/tool-toggles";
 import type { RegistryServiceEntry, RegistryMcpEntry } from "@cairn/shared/chat/registry-schema";
 import { ConnectorLogo } from "@/components/ConnectorLogo";
@@ -83,8 +83,8 @@ function entryMatchesQuery(
  */
 
 // Split the always-on built-in tools into Read vs Write for the disclosure.
-const READ_BUILTINS: ToolDef[] = TOOLS.filter((t) => !WRITE_TOOL_NAMES.has(t.name));
-const WRITE_BUILTINS: ToolDef[] = TOOLS.filter((t) => WRITE_TOOL_NAMES.has(t.name));
+// Read when the screen renders, not at import: the People tool is listed only while the People layer is on.
+const isRead = (t: ToolDef) => !WRITE_TOOL_NAMES.has(t.name);
 
 /** Map an installed OAuth MCP server to the OAuth flow's server config. */
 function oauthCfg(s: InstalledMcpServer): OAuthServerConfig {
@@ -113,6 +113,7 @@ export default function ToolsSettingsScreen() {
   // Built-in tools are collapsed by default so the screen stays compact — the
   // list is long and informational, not something you act on often.
   const [builtinsOpen, setBuiltinsOpen] = useState(false);
+  const builtins = useMemo(() => builtinTools(), []);
   // Which installed MCP server's tool list is expanded (one at a time).
   const [expandedMcp, setExpandedMcp] = useState<string | null>(null);
   // Bumped after each successful refreshServerTools() so the memoised per-server
@@ -654,15 +655,15 @@ export default function ToolsSettingsScreen() {
                 <ChevronRight size={16} color={t.textSecondary} />
               )}
               <Text style={styles.disclosureTitle}>Built-in tools</Text>
-              <Text style={styles.disclosureCount}>{TOOLS.length}</Text>
+              <Text style={styles.disclosureCount}>{builtins.length}</Text>
             </Pressable>
             {builtinsOpen && (
               <>
                 <Text style={styles.sectionHint}>
                   What the assistant can do with your notes and tasks. Always on.
                 </Text>
-                {renderBuiltinGroup("Read", READ_BUILTINS)}
-                {renderBuiltinGroup("Write", WRITE_BUILTINS)}
+                {renderBuiltinGroup("Read", builtins.filter(isRead))}
+                {renderBuiltinGroup("Write", builtins.filter((t) => !isRead(t)))}
               </>
             )}
           </View>

@@ -14,6 +14,7 @@
 import * as z from "zod";
 
 import { isCairnReadTool } from "../../shared/agent/tool-names";
+import { PEOPLE_TOOLS, PEOPLE_TOOL_ARGS, PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION_DESKTOP } from "../../shared/agent/people-tools";
 
 // ── Shared field shapes ────────────────────────────────────────────────────────
 
@@ -39,9 +40,9 @@ const sTagMode    = z.enum(["add", "remove", "set"]).optional().describe("How ta
 const sIdList     = z.array(z.string());
 
 // People layer args (hidden while the feature is off — see toolSchemasFor).
-const sAttendees  = z.array(z.string()).optional().describe("Meeting notes: who attended (names, emails or person ids). Makes the note a meeting; replaces the attendees you declared before");
-const sMeetDate   = sStrOpt.describe("Meeting notes: when it happened (YYYY-MM-DD or ISO datetime)");
-const sOwner      = sStrOpt.describe("Person who owns this task (name, email or person id), or empty to clear");
+const sAttendees  = z.array(z.string()).optional().describe(PEOPLE_ARG_DESCRIPTIONS.attendees);
+const sMeetDate   = sStrOpt.describe(PEOPLE_ARG_DESCRIPTIONS.date);
+const sOwner      = sStrOpt.describe(PEOPLE_ARG_DESCRIPTIONS.owner);
 
 export const TOOL_SCHEMAS = {
 
@@ -225,7 +226,7 @@ export const TOOL_SCHEMAS = {
   // ── People ────────────────────────────────────────────────────────────────────
 
   people: {
-    description: "People the user works with, their meetings and relationships. Reads: 'query' (by name, relationship or status; empty lists everyone), 'get' (one person: details, relationships, persona note id), 'timeline' (their meetings, mentions and owned tasks, newest first), 'relationships' (who manages/mentors/partners whom), 'inventory' (read-only scan of the person and meeting notes already in the workspace, for migrating them; the user applies it). Writes: 'upsert' (create or update a person) and 'link' (an edge between two people, an attendee on a meeting note, or a mention). Anything you infer rather than read stated goes in as status 'suggested' for the user to confirm.",
+    description: PEOPLE_TOOL_DESCRIPTION_DESKTOP,
     schema: z.object({
       action:       z.enum(["query", "get", "timeline", "relationships", "inventory", "upsert", "link"]),
       personId:     sIdOpt.describe("get/timeline/relationships/upsert: the person (or pass name)"),
@@ -379,16 +380,8 @@ export const CHAT_EXCLUDED_TOOLS: ToolName[] = [
 // Chat-only tools (not exposed via MCP)
 export const CHAT_ONLY_TOOLS: ToolName[] = ["spawn_tasks_from_note", "ask_questions", "suggest_connections"];
 
-/** Tools that exist only while the People layer is on (`feature.people`). */
-export const PEOPLE_TOOLS: ReadonlySet<string> = new Set(["people"]);
-
-/** Arguments of other tools that exist only while the People layer is on. */
-export const PEOPLE_TOOL_ARGS: Readonly<Partial<Record<ToolName, readonly string[]>>> = {
-  ensure_note:  ["attendees", "date"],
-  update_notes: ["attendees", "date"],
-  create_task:  ["owner"],
-  update_tasks: ["owner"],
-};
+// Which tool and arguments the People layer adds: `shared/agent/people-tools.ts`, shared with mobile.
+export { PEOPLE_TOOLS, PEOPLE_TOOL_ARGS };
 
 export type ToolSchemaEntry = { description: string; schema: z.ZodObject<z.ZodRawShape> };
 

@@ -131,6 +131,33 @@ migration, plus how it's built and released.
    Deleting a note tombstones the meeting it made (`nmt:`) with its last note;
    the unscoped graph hides note-made meetings with no live, unarchived note.
    Archiving does not tombstone (unarchiving would lose confirmed attendees).
+   W8 as built (`feat/people-w8-mobile`): the DB-bound People code moved to
+   `shared/` so mobile runs the same claims, ids and tombstones as desktop:
+   `shared/people/queries.ts`, `capture.ts` (resolver in `resolve.ts`),
+   `view-queries.ts`, `tool.ts` (the `people` tool and the `attendees`/`date`/
+   `owner` handlers), `action-items.ts`, `model.ts`, over the portable `SyncDb`;
+   `electron/db/people-*.ts` and `electron/mcp/tools/people.ts` are thin
+   re-exports plus the desktop-only parts (the `app_kv` flag, delete cascades on
+   local tables, frontmatter refresh). `shared/agent/people-privacy.ts` and
+   `people-tools.ts` carry the privacy filter and the flag-gated tool/arg names.
+   Mobile has no `app_kv` (and the desktop flag doesn't sync), so the flag is a
+   device setting (`mobile/src/people/flag.ts`, meta DB): Settings → Appearance →
+   Developer in dev builds, or `EXPO_PUBLIC_CAIRN_PEOPLE=1`. With that variable set the flag cannot be turned off from the switch (the variable wins on every start); remove it to disable People in such a build. Off: no screens,
+   menu rows, strip, tool or args (`builtinTools()`), but the privacy filter
+   always runs (a private persona note synced from desktop stays hidden).
+   Screens: People list (+ suggested tray), person page, attendee strip, entry
+   in the workspace menu. No action-item index on mobile: open items are read
+   from note bodies; ticking rewrites that box via `setItemDone` and saves the
+   note (desktop re-indexes on arrival). Attendee writes use claim source
+   `manual`; removing is a tombstone. Not verified on a simulator.
+   Release builds: the switch is hidden until the device unlocks preview
+   features by tapping the version line seven times (each within 2 s of the
+   last; `shared/people/preview-unlock.ts`). Desktop: the "Cairn x.y.z" line
+   under Settings → About, stored in `localStorage`
+   (`cairn:preview-features-unlocked`); mobile: the version line at the bottom
+   of Settings → Appearance, stored in the meta DB (`preview.unlocked`). Never
+   synced. Dev builds and anyone whose flag is already on still see the switch
+   (so it can be turned off).
    W7 as built (`feat/people-w7-insights`): two Insights layouts,
    `RelationshipCanvas` and `OrgChartCanvas` (`src/components/graph/`), added to
    `InsightsView` only while `peopleEnabled` (a People layout selected when the

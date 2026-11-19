@@ -46,6 +46,14 @@ function workspaceIdForProject(projectId: string): string {
   return row?.workspace_id ?? "";
 }
 
+/** The workspace a person belongs to, or undefined when there is no such live person. */
+export function workspaceIdForPerson(personId: string): string | undefined {
+  return getDb().getFirstSync<{ workspace_id: string }>(
+    "SELECT workspace_id FROM people WHERE id = ? AND deleted_at IS NULL",
+    personId,
+  )?.workspace_id;
+}
+
 /** Resolve an array of tag ids to full tag rows (name + colour), skipping unknowns. */
 export function tagsForIds(tagIds: string[]): TagRow[] {
   if (tagIds.length === 0) return [];

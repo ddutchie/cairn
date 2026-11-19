@@ -10,6 +10,7 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "paths": { "@cairn/shared/*": ["./shared/*"] },
     "types": ["node"]
   },
   "include": [

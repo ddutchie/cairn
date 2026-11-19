@@ -5,7 +5,7 @@ import { createNote, deleteNote, updateNote } from "./notes-queries";
 import {
   addAttendee, addMention, createMeeting, createPerson, getMe, getPerson, listAttendees, setNoteMeeting, setPeopleEnabled, updatePerson,
 } from "./people-queries";
-import { captureNoteMeeting, notesAffectedBy, pinUnreferenced, renderMeetingFrontmatter, resolvePerson } from "./people-capture";
+import { captureNoteMeeting, loadCandidates, notesAffectedBy, pinUnreferenced, renderMeetingFrontmatter, resolvePerson } from "./people-capture";
 import { noteMeetingId, stubPersonId } from "../../shared/people/ids";
 import { deleteProject, mergeProject } from "./workspace-queries";
 
@@ -322,5 +322,19 @@ describe("review fixes", () => {
     expect(back.removed).toEqual([]);
     expect(back.attendees).toEqual([at.id]);
     expect(attending(r.meetingId)).toHaveLength(1);
+  });
+});
+
+describe("rolled-back captures", () => {
+  it("a stub made in a failed capture is not left in the caller's candidate list", () => {
+    note("n1");
+    const candidates = loadCandidates(db, "ws1");
+    db.exec("CREATE TRIGGER boom BEFORE INSERT ON meeting_attendees BEGIN SELECT RAISE(ABORT, 'boom'); END");
+    expect(() => captureNoteMeeting(db, { noteId: "n1", attendees: ["Dana Lee"], source: "frontmatter", provenance: "explicit", candidates })).toThrow(/boom/);
+    expect(candidates).toHaveLength(0);
+    db.exec("DROP TRIGGER boom");
+    const r = captureNoteMeeting(db, { noteId: "n1", attendees: ["Dana Lee"], source: "frontmatter", provenance: "explicit", candidates });
+    expect(r.created).toHaveLength(1);
+    expect(candidates).toHaveLength(1);
   });
 });
