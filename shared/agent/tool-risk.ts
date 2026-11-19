@@ -67,7 +67,7 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
 ]);
 
 /** `people` actions that only read: no approval, and their results are privacy-scrubbed like other reads. */
-export const PEOPLE_READ_ACTIONS: ReadonlySet<string> = new Set(["query", "get", "timeline", "relationships"]);
+export const PEOPLE_READ_ACTIONS: ReadonlySet<string> = new Set(["query", "get", "timeline", "relationships", "inventory"]);
 
 /** Risk of one call: like riskForTool, except `people` reads are READ. */
 export function riskForCall(name: string, args: Record<string, unknown> = {}): RiskClass {
