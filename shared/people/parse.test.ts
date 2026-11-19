@@ -166,3 +166,12 @@ describe("cleanProfileField", () => {
     expect(cleanProfileField("location", "x".repeat(81)).error).toMatch(/at most 80/);
   });
 });
+
+describe("matchesPersonQuery: time zone", () => {
+  it("finds a person by time zone", async () => {
+    const { matchesPersonQuery } = await import("./model");
+    const p = { name: "Ana", aliases: [], emails: [], relationship: [], timezone: "Europe/Berlin" } as never;
+    expect(matchesPersonQuery(p, "europe/berlin")).toBe(true);
+    expect(matchesPersonQuery(p, "tokyo")).toBe(false);
+  });
+});

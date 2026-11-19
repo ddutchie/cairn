@@ -80,4 +80,19 @@ describe("NoteMarkdownPreview — wikilinks (opt-in)", () => {
     expect(chip!.textContent).toBe("Nobody Here ↗");
     expect(container.textContent).not.toContain("[[");
   });
+
+  it("opens the note in the active workspace when two workspaces share a title", async () => {
+    const { useCairnStore } = await import("@/store");
+    const setActiveProject = vi.fn();
+    useCairnStore.setState({
+      activeWorkspaceId: "w2", activeProjectId: "pA", setActiveProject,
+      notes: [
+        { id: "n1", title: "Ana Lopez", projectId: "p1", workspaceId: "w1" },
+        { id: "n2", title: "Ana Lopez", projectId: "p2", workspaceId: "w2" },
+      ],
+    } as never);
+    const { container } = render(<TooltipProvider><NoteMarkdownPreview content="See [[Ana Lopez]]" wikilinks /></TooltipProvider>);
+    container.querySelector("button")!.click();
+    expect(setActiveProject).toHaveBeenCalledWith("p2");
+  });
 });

@@ -121,3 +121,15 @@ describe("humanizedRunStep", () => {
     expect(humanizeSearchResult("notes", {}, 0)).toEqual({ pre: "No notes found" });
   });
 });
+
+describe("humanizeTool: people outcomes", () => {
+  it("doesn't claim a name-only upsert added someone until the result says so", () => {
+    expect(humanizeTool("people", { action: "upsert", name: "Ana" })).toEqual({ pre: "Saved", obj: "Ana" });
+    expect(humanizeTool("people", { action: "upsert", name: "Ana", outcome: "created" })).toEqual({ pre: "Added", obj: "Ana", post: "to People" });
+    expect(humanizeTool("people", { action: "upsert", name: "Ana", outcome: "updated" })).toEqual({ pre: "Updated", obj: "Ana" });
+  });
+
+  it("says an attendee stayed when another source still lists them", () => {
+    expect(humanizeTool("people", { action: "link", link: "attendee", name: "Ana", remove: true, outcome: "kept" }).pre).toBe("Kept");
+  });
+});

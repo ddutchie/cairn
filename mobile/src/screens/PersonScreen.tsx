@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { View, Text, ScrollView, StyleSheet, TextInput } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Check, Circle, Lock } from "lucide-react-native";
+import { ICON_EDIT, ICON_PEOPLE } from "@/components/toolbar-icons";
 import { ScreenChrome } from "@/components/screen-chrome";
 import { PressableScale } from "@/components/PressableScale";
 import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
@@ -65,8 +66,8 @@ export function PersonScreen() {
       <ScreenChrome
         title={person.name}
         right={[
-          { kind: "button", key: "details", label: "Details", onPress: () => setDetails(true) },
-          { kind: "button", key: "edit", label: "Edit", onPress: () => setEditing(true) },
+          { kind: "button", key: "details", label: "Details", icon: ICON_PEOPLE, onPress: () => setDetails(true) },
+          { kind: "button", key: "edit", label: "Edit", icon: ICON_EDIT, onPress: () => setEditing(true) },
         ]}
       />
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={s.content}>
@@ -278,17 +279,21 @@ const FIELD_LABEL: Record<ProfileField, string> = { title: "Role", team: "Team",
 
 /** Role, team, location, time zone and Slack id. A time zone is checked before saving. */
 function DetailsSheet({ visible, person, onClose, onSave }: {
-  visible: boolean; person: PersonPage["person"]; onClose: () => void; onSave: (edit: ProfileEdit) => void;
+  visible: boolean; person: PersonPage["person"]; onClose: () => void; onSave: (edit: Partial<ProfileEdit>) => void;
 }) {
   const t = useTheme();
   const s = useMemo(() => makeStyles(t), [t]);
   const [vals, setVals] = useState<ProfileEdit>({ title: "", team: "", location: "", timezone: "", slackId: "" });
+  // What the sheet opened with: save sends only what the user changed, so a sync that landed meanwhile isn't overwritten.
+  const [opened, setOpened] = useState<ProfileEdit>({ title: "", team: "", location: "", timezone: "", slackId: "" });
   const [error, setError] = useState<string | null>(null);
   // Re-seed from the person each time the sheet opens.
   const [wasVisible, setWasVisible] = useState(false);
   if (visible && !wasVisible) {
     setWasVisible(true);
-    setVals({ title: person.title ?? "", team: person.team ?? "", location: person.location ?? "", timezone: person.timezone ?? "", slackId: person.slackId ?? "" });
+    const seed = { title: person.title ?? "", team: person.team ?? "", location: person.location ?? "", timezone: person.timezone ?? "", slackId: person.slackId ?? "" };
+    setVals(seed);
+    setOpened(seed);
     setError(null);
   } else if (!visible && wasVisible) {
     setWasVisible(false);
@@ -303,7 +308,9 @@ function DetailsSheet({ visible, person, onClose, onSave }: {
       if (err) return setError(err);
     }
     if (vals.slackId.trim() && !/^[A-Za-z0-9]{3,32}$/.test(vals.slackId.trim())) return setError("A Slack id looks like U01ABCDEF.");
-    onSave(vals);
+    const changed: Partial<ProfileEdit> = {};
+    for (const k of Object.keys(vals) as (keyof ProfileEdit)[]) if (vals[k].trim() !== opened[k].trim()) changed[k] = vals[k];
+    onSave(changed);
   };
   const input = (key: keyof ProfileEdit, label: string, placeholder: string) => (
     <View key={key} style={{ marginTop: 14 }}>

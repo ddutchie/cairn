@@ -45,7 +45,8 @@ export async function proposeProfileFields(db: Database.Database, personId: stri
       maxTokens: 600,
       temperature: 0,
     });
-    return { proposals: parseAutofill(reply, body, person) };
+    // Read the profile again: the user may have filled a field while the model ran.
+    return { proposals: parseAutofill(reply, body, getPerson(db, personId) ?? person) };
   } catch {
     return { skipped: "failed" };
   }

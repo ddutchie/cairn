@@ -25,8 +25,20 @@ describe("persona autofill", () => {
     await screen.findByLabelText("Proposed details");
     const boxes = screen.getAllByRole("checkbox") as HTMLInputElement[];
     expect(boxes.map((b) => b.checked)).toEqual([true, false]);
+    vi.spyOn(peopleClient, "get").mockResolvedValue({ ...page.person } as never);
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(updatePerson).toHaveBeenCalledWith("p1", { title: "Senior Engineer" }));
+  });
+
+  it("leaves a field alone when it changed since the review", async () => {
+    vi.spyOn(peopleClient, "autofill").mockResolvedValue({ proposals: [{ field: "title", value: "Senior Engineer", quote: "Role: Senior Engineer" }] });
+    vi.spyOn(peopleClient, "get").mockResolvedValue({ ...page.person, title: "Staff Engineer" } as never);
+    render(<PersonPage page={page} />);
+    fireEvent.click(screen.getByRole("button", { name: /Fill details from note/ }));
+    await screen.findByLabelText("Proposed details");
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("changed meanwhile");
+    expect(updatePerson).not.toHaveBeenCalled();
   });
 
   it("explains when nothing can be done", async () => {

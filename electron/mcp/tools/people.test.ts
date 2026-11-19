@@ -136,6 +136,16 @@ describe("people tool", () => {
     expect(t.meetings).toHaveLength(1);
     expect(t.meetings[0].notes).toEqual([{ id: "n1", title: "Weekly sync" }]);
   });
+
+  it("removing an attendee reports whether they left the meeting", async () => {
+    const ana = person("Ana Ruiz");
+    // Never declared by this call: nothing to withdraw, so they did not leave.
+    expect((await run("people", { action: "link", link: "attendee", personId: ana.id, noteId: "n1", remove: true })).removed).toBe(false);
+    await run("people", { action: "link", link: "attendee", personId: ana.id, noteId: "n1" });
+    const gone = await run("people", { action: "link", link: "attendee", personId: ana.id, noteId: "n1", remove: true });
+    expect(gone.removed).toBe(true);
+    expect(listAttendees(db, meetingOf("n1")!)).toEqual([]);
+  });
 });
 
 describe("People arguments on note and task tools", () => {

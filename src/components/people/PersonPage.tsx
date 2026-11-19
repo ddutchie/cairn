@@ -187,11 +187,10 @@ function PersonSettings({ page }: { page: PersonPageModel }) {
   // Writes land after a round trip; build each change on the previous one so
   // two quick clicks (Peer, then Mentor) both stick.
   const pendingRel = useRef<{ list: typeof person.relationship; writes: number } | null>(null);
-  const toggleRelationship = (t: RelationshipType) => {
+  // Toggles and label edits share this chain, so each write starts from the latest pending list.
+  const writeRelationship = (change: (base: typeof person.relationship) => typeof person.relationship) => {
     const base = pendingRel.current?.list ?? person.relationship;
-    const next = base.some((r) => r.type === t)
-      ? base.filter((r) => r.type !== t)
-      : [...base, { type: t, provenance: "explicit" as const }];
+    const next = change(base);
     const pending = pendingRel.current ?? { list: next, writes: 0 };
     pending.list = next;
     pending.writes += 1;
@@ -200,6 +199,11 @@ function PersonSettings({ page }: { page: PersonPageModel }) {
       if (pendingRel.current && --pendingRel.current.writes === 0) pendingRel.current = null;
     });
   };
+  const toggleRelationship = (t: RelationshipType) =>
+    writeRelationship((base) => base.some((r) => r.type === t)
+      ? base.filter((r) => r.type !== t)
+      : [...base, { type: t, provenance: "explicit" as const }]);
+  const [labelError, setLabelError] = useState<string | null>(null);
 
   const addEdge = () => {
     const opt = EDGE_ROLE_OPTIONS.find((o) => o.role === edgeRole);
@@ -260,17 +264,25 @@ function PersonSettings({ page }: { page: PersonPageModel }) {
             </button>
           ))}
         </div>
-        {person.relationship.map((r) => (
-          <div key={r.type} className="mt-2 flex items-center gap-2">
+        {labelError && <p role="alert" className="mt-2 text-xs text-[var(--danger)]">{labelError}</p>}
+        {person.relationship.map((r, i) => (
+          <div key={`${r.type}-${i}`} className="mt-2 flex items-center gap-2">
             <span className="w-24 shrink-0 text-xs text-[var(--text-tertiary)]">{RELATIONSHIP_LABELS[r.type]}</span>
             <BlurInput
               ariaLabel={`Label for ${RELATIONSHIP_LABELS[r.type]}`}
               placeholder="Optional, e.g. Executive sponsor"
               value={r.label ?? ""}
               onSave={(v) => {
-                const { label } = cleanRelationshipLabel(v.replace(/[,;]+/g, " "));
+                const { label, error } = cleanRelationshipLabel(v.replace(/[,;]+/g, " "));
+                // Too long: keep the saved label and say why.
+                if (error) { setLabelError(error); return; }
+                setLabelError(null);
                 if ((label ?? "") === (r.label ?? "")) return;
-                void updatePerson(person.id, { relationship: person.relationship.map((x) => (x.type === r.type ? { ...x, label } : x)) });
+                // This entry only: a person can hold the same type twice with different labels.
+                writeRelationship((base) => {
+                  const at = base.findIndex((x) => x.type === r.type && (x.label ?? "") === (r.label ?? ""));
+                  return at < 0 ? base : base.map((x, j) => (j === at ? { ...x, label } : x));
+                });
               }}
             />
           </div>
@@ -475,10 +487,18 @@ function PersonaAutofill({ personId }: { personId: string }) {
   };
   const apply = async () => {
     if (state.kind !== "review") return;
+    // The person may have changed since the review (an edit, sync): leave those fields alone.
+    const latest = await peopleClient.get(personId).catch(() => null);
     const patch: Record<string, string> = {};
-    for (const p of state.proposals) if (picked.has(p.field)) patch[p.field] = p.value;
+    let changed = 0;
+    for (const p of state.proposals) {
+      if (!picked.has(p.field)) continue;
+      const now = latest?.[p.field]?.trim() || undefined;
+      if (latest && now !== (p.current ?? undefined)) { changed++; continue; }
+      patch[p.field] = p.value;
+    }
     if (Object.keys(patch).length) await updatePerson(personId, patch);
-    setState({ kind: "idle" });
+    setState(changed ? { kind: "none", message: `${changed === 1 ? "One field was" : `${changed} fields were`} changed meanwhile and left alone. Run it again to review.` } : { kind: "idle" });
   };
 
   return (

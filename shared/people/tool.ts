@@ -344,7 +344,10 @@ function link(db: Db, ctx: PeopleToolContext, workspaceId: string, args: Args) {
       if (!remove && meetingLinkPending(db, meetingId)) return { error: PENDING_MEETING };
       if (remove) {
         // Withdraws only the agent's own claim; a person the user confirmed (or the calendar lists) stays.
-        if (meetingId) removeAttendeeSource(db, meetingId, p.id, "declared");
+        // False when someone else still lists them (or this call never declared them): they stay at the meeting.
+        const gone = meetingId ? removeAttendeeSource(db, meetingId, p.id, "declared") : false;
+        ctx.meetingsChanged?.([noteId]);
+        return { removed: gone, attendee: { noteId, personId: p.id, name: p.name } };
       } else {
         if (!meetingId) meetingId = captureNoteMeeting(db, { noteId, attendees: [], source: "declared", provenance }).meetingId;
         addAttendee(db, { meetingId, personId: p.id, status, source: "declared", provenance });
