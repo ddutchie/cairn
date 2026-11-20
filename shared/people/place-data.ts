@@ -65,7 +65,7 @@ const PLACE_ALIAS: Record<string, string> = {
   philly: "philadelphia", bombay: "mumbai", saigon: "ho chi minh city", cdmx: "mexico city",
 };
 /** Own-property lookup, so a typed "constructor" or "__proto__" is not an alias. */
-const own = (table: Record<string, string>, key: string): string | undefined => (Object.hasOwn(table, key) ? table[key] : undefined);
+const own = (table: Record<string, string>, key: string): string | undefined => (Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined);
 
 const NOISE = /\b(greater|area|metro|metropolitan|region|remote|based|near)\b/g;
 
