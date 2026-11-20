@@ -8,6 +8,13 @@ import type { HumanizedTool } from "@/lib/humanize-tool";
 import { cn } from "@/lib/utils";
 
 /**
+ * Cards the user opened, by call id. The transcript can remount a card while a turn is
+ * still running (rows are rebuilt as steps arrive), which would reset local state and
+ * collapse a card the moment it opened; this outlives the component.
+ */
+const openedCards = new Set<string>();
+
+/**
  * Shared tool-call card: a compact status chip (icon · brand · action) that
  * expands into labelled panels. Connector (MCP / HTTP service) calls and
  * Cairn's own tools both render through it so every managed call looks and
@@ -23,6 +30,7 @@ export function ToolCard({
   tooltip,
   caption,
   defaultExpanded = false,
+  persistKey,
   headerAction,
   children,
 }: {
@@ -38,12 +46,18 @@ export function ToolCard({
   /** Muted line at the top of the expanded body. */
   caption?: string;
   defaultExpanded?: boolean;
+  /** Call id: keeps the card open across remounts. */
+  persistKey?: string;
   /** Small control beside the collapsed chip (for example "open the note this call created"). */
   headerAction?: ReactNode;
   /** Expanded panels (ToolPayload, ChangeList, chips…). */
   children?: ReactNode;
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [expanded, setExpandedState] = useState(defaultExpanded || (persistKey !== undefined && openedCards.has(persistKey)));
+  const setExpanded = (next: boolean) => {
+    if (persistKey !== undefined) { if (next) openedCards.add(persistKey); else openedCards.delete(persistKey); }
+    setExpandedState(next);
+  };
   return (
     <div data-testid={testId} className="max-w-xl">
       <div className="flex items-center gap-1">
@@ -51,7 +65,7 @@ export function ToolCard({
         <button
           type="button"
           aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => setExpanded(!expanded)}
           className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit max-w-full text-left hover:border-[var(--accent)] cursor-pointer"
         >
           {ok ? <CheckCircle size={9} className="shrink-0 text-[var(--accent)]" /> : <XCircle size={9} className="shrink-0 text-[var(--danger)]" />}

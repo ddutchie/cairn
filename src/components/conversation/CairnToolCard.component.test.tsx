@@ -5,8 +5,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConversationToolCall } from "./ConversationToolCall";
 import type { ConversationToolCall as ToolCall } from "@/lib/conversation/message";
 
+let nextCall = 0;
+// A fresh id per call: open state is remembered by call id.
 function call(over: Partial<ToolCall>): ToolCall {
-  return { name: "tool", label: "tool", ok: true, callId: "c1", ...over };
+  return { name: "tool", label: "tool", ok: true, callId: `c${++nextCall}`, ...over };
 }
 
 function renderCall(toolCall: ToolCall) {
@@ -305,5 +307,15 @@ describe("People tool card", () => {
     }));
     expect(screen.getByText("Linked")).toBeTruthy();
     expect(screen.getAllByText(/manages/).length).toBeGreaterThan(0);
+  });
+
+  it("stays open when the transcript remounts the card mid-turn", async () => {
+    const tc = call({ name: "people", callId: "remount-1", args: { action: "inventory" }, output: "{}" });
+    const first = renderCall(tc);
+    await userEvent.click(screen.getByRole("button"));
+    expect(screen.getByRole("button").getAttribute("aria-expanded")).toBe("true");
+    first.unmount();
+    renderCall(tc);
+    expect(screen.getByRole("button").getAttribute("aria-expanded")).toBe("true");
   });
 });
