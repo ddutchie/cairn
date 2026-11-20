@@ -7,7 +7,7 @@
  * Async because iCloud I/O is async.
  */
 
-import { getDb, getEngine, getActiveSource, getMeta, setMeta, isSourceForgotten } from "@/db";
+import { getDb, getEngine, getActiveSource, getMeta, setMeta, isSourceForgotten, getSourceDb } from "@/db";
 import { getSyncFolderPath, iCloudAvailable } from "./folder";
 import { writeOwnOplog, readSourceOplog, readOwnOplog, hasRemovalMarker } from "./fs-transport";
 import { requestMissingBlobs } from "./blobs";
@@ -74,8 +74,10 @@ export async function syncNow(): Promise<SyncResult> {
     // 0. A removal marker means the workspace was taken out of the shared folder.
     // Publishing our oplog now would resurrect it for every other device, so stop
     // until the user removes it here or the desktop reconnects (which clears the
-    // marker and republishes). An unreadable folder is treated as "not removed".
-    const removed = await withTimeout(hasRemovalMarker(folder, workspaceId), ICLOUD_IO_TIMEOUT_MS, "hasRemovalMarker").catch(() => false);
+    // marker and republishes). If the check itself fails or times out we do NOT
+    // publish: the outer catch reports the sync as disconnected and the next
+    // cycle retries.
+    const removed = await withTimeout(hasRemovalMarker(folder, workspaceId), ICLOUD_IO_TIMEOUT_MS, "hasRemovalMarker");
     if (removed) {
       return {
         drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, removedFromFolder: true,
@@ -144,4 +146,15 @@ export function pendingCount(): number {
   if (!getActiveSource()) return 0;
   const row = getDb().getFirstSync<{ n: number }>("SELECT COUNT(*) AS n FROM sync_pending");
   return row?.n ?? 0;
+}
+
+/** Staged local changes for any workspace on this phone, active or not (0 if it can't be read). */
+export function pendingCountFor(workspaceId: string): number {
+  if (isDemoSource(workspaceId)) return 0; // the sample workspace never syncs
+  try {
+    const row = getSourceDb(workspaceId).getFirstSync<{ n: number }>("SELECT COUNT(*) AS n FROM sync_pending");
+    return row?.n ?? 0;
+  } catch {
+    return 0;
+  }
 }

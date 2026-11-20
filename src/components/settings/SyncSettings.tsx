@@ -24,6 +24,7 @@ export function SyncSettings() {
   const [folder, setFolder] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState<SyncNowResult | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!hasElectron("sync")) return;
@@ -53,10 +54,14 @@ export function SyncSettings() {
   const onRemove = async () => {
     if (!hasElectron("sync")) return;
     setBusy(true);
+    setRemoveError(null);
     try {
       await syncClient.removeFromFolder();
       setFolder(null);
       setLast(null);
+    } catch (err) {
+      // Some files may already be gone; the folder stays connected so this can be retried.
+      setRemoveError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -150,6 +155,11 @@ export function SyncSettings() {
               Remove…
             </ConfirmButton>
           </div>
+          {removeError && (
+            <p role="alert" className="text-xs text-[var(--danger)]">
+              Couldn&apos;t remove the sync files: {removeError}. The folder is still connected — try again.
+            </p>
+          )}
 
           <hr className="border-[var(--border)] opacity-30" />
 

@@ -22,7 +22,7 @@ import { AppState, type AppStateStatus } from "react-native";
 import { syncNow, pendingCount, type SyncResult } from "./sync";
 import { conflictCount } from "@/db/queries";
 import { onLocalWrite } from "./write-signal";
-import { setActiveSource, getActiveSource, getDeviceId, forgetSource } from "@/db";
+import { setActiveSource, getActiveSource, getDeviceId, forgetSource, isSourceForgotten } from "@/db";
 import { clearWorkspaceDrafts } from "@/notes/note-draft";
 import { getSyncFolderPath, iCloudAvailable } from "./folder";
 import { removeWorkspaceFromFolder } from "./fs-transport";
@@ -136,7 +136,16 @@ export interface RemoveSourceResult {
  * local copy is still removed (the shared files are cleaned up by removing it
  * again later, or by the desktop).
  */
-export async function removeSource(workspaceId: string, fallback?: string): Promise<RemoveSourceResult> {
+export function removeSource(workspaceId: string, fallback?: string): Promise<RemoveSourceResult> {
+  // One removal at a time: overlapping ones could switch to a workspace another
+  // removal has already deleted.
+  const run = removalQueue.then(() => removeSourceNow(workspaceId, fallback));
+  removalQueue = run.catch(() => {});
+  return run;
+}
+let removalQueue: Promise<unknown> = Promise.resolve();
+
+async function removeSourceNow(workspaceId: string, fallback?: string): Promise<RemoveSourceResult> {
   let deletedFromFolder: number | null = null;
   if (await iCloudAvailable()) {
     const folder = await getSyncFolderPath();
@@ -146,7 +155,8 @@ export async function removeSource(workspaceId: string, fallback?: string): Prom
   forgetSource(workspaceId);
   clearWorkspaceDrafts(workspaceId);
   if (wasActive) {
-    if (fallback) switchSource(fallback);
+    // The fallback was picked before the folder work; only use it if it survived.
+    if (fallback && !isSourceForgotten(fallback)) switchSource(fallback);
     else {
       refreshCounts();
       snapshot = { ...snapshot, state: "idle", pending: 0, conflicts: 0, lastResult: null };

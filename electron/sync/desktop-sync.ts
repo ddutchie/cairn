@@ -249,7 +249,11 @@ export function clearSyncFolder(db: Database.Database): void {
  * same folder republishes everything and clears the marker, so it re-syncs.
  * The local workspace data is untouched. Returns whether anything was removed.
  */
-export async function removeWorkspaceFromSyncFolder(db: Database.Database): Promise<{ removed: boolean }> {
+export function removeWorkspaceFromSyncFolder(db: Database.Database): Promise<{ removed: boolean }> {
+  return withFolderLock(() => removeWorkspaceFromSyncFolderLocked(db));
+}
+
+async function removeWorkspaceFromSyncFolderLocked(db: Database.Database): Promise<{ removed: boolean }> {
   const folder = getSyncFolder(db);
   const workspaceId = getSourceWorkspaceId(db);
   let removed = false;
@@ -513,7 +517,25 @@ export function drainDesktop(db: Database.Database): number {
  * peer ops so the desktop can re-emit the .md file (dual-write parity). Called
  * AFTER reconcile so the DB is already authoritative.
  */
-export async function syncDesktop(db: Database.Database, projectNote?: NoteFileProjector): Promise<DesktopSyncResult> {
+/**
+ * Sync rounds and workspace removal all touch the same shared folder across
+ * awaits, so they run one at a time: a removal can't land in the middle of a
+ * round (which would clear its marker and publish the oplog straight back), and
+ * a round queued behind a removal sees the folder already disconnected.
+ * Covers every caller — the periodic loop, `sync:now` and the removal handler.
+ */
+let _folderLock: Promise<unknown> = Promise.resolve();
+function withFolderLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = _folderLock.then(fn);
+  _folderLock = run.catch(() => {});
+  return run;
+}
+
+export function syncDesktop(db: Database.Database, projectNote?: NoteFileProjector): Promise<DesktopSyncResult> {
+  return withFolderLock(() => syncDesktopLocked(db, projectNote));
+}
+
+async function syncDesktopLocked(db: Database.Database, projectNote?: NoteFileProjector): Promise<DesktopSyncResult> {
   const folder = getSyncFolder(db);
   if (!folder) {
     updateStatus(db, { connected: false, state: "disabled" });

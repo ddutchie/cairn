@@ -162,12 +162,10 @@ export async function hasRemovalMarker(folder: string, workspaceId: string): Pro
   const marker = PathUtils.join(folder, removalMarkerName(workspaceId));
   if (await exist(marker)) return true;
   // An iCloud placeholder shows up as ".<name>.icloud" until it is downloaded.
-  try {
-    const entries = await readDir(folder);
-    return entries.some((e) => parseRemovalMarkerName(baseName(e)) === workspaceId);
-  } catch {
-    return false;
-  }
+  // Read errors propagate on purpose: "couldn't look" must not read as "no
+  // marker", or sync would publish a workspace that was removed.
+  const entries = await readDir(folder);
+  return entries.some((e) => parseRemovalMarkerName(baseName(e)) === workspaceId);
 }
 
 /**
@@ -179,21 +177,33 @@ export async function hasRemovalMarker(folder: string, workspaceId: string): Pro
  * Resolves with how many oplog files were deleted; throws if one can't be.
  */
 export async function removeWorkspaceFromFolder(folder: string, deviceId: string, workspaceId: string): Promise<number> {
+  const markerPath = PathUtils.join(folder, removalMarkerName(workspaceId));
+  const hadMarker = await exist(markerPath);
   // Marker first: if we're interrupted halfway, phones still see "removed".
   await writeFile(
-    PathUtils.join(folder, removalMarkerName(workspaceId)),
+    markerPath,
     serializeRemovalMarker({ workspaceId, removedAt: new Date().toISOString(), deviceId }),
     { override: true },
   );
   let deleted = 0;
-  for (const entryPath of await readDir(folder)) {
-    if (!isOplogForWorkspace(baseName(entryPath), workspaceId)) continue;
-    // Delete by the raw entry name: an undownloaded file is a ".<name>.icloud" placeholder.
-    const rawName = entryPath.split("/").filter(Boolean).pop() ?? entryPath;
-    const path = PathUtils.join(folder, rawName);
-    lastWrittenDigest.delete(PathUtils.join(folder, baseName(entryPath)));
-    await unlink(path);
-    deleted++;
+  try {
+    for (const entryPath of await readDir(folder)) {
+      const name = baseName(entryPath);
+      // Exact id, not the suffix match readers use: "-ws1.ndjson" also ends
+      // "oplog-<device>-team-ws1.ndjson", which belongs to another workspace.
+      if (parseWorkspaceIdFromOplogName(name) !== workspaceId) continue;
+      // Delete by the raw entry name: an undownloaded file is a ".<name>.icloud" placeholder.
+      const rawName = entryPath.split("/").filter(Boolean).pop() ?? entryPath;
+      lastWrittenDigest.delete(PathUtils.join(folder, name));
+      await unlink(PathUtils.join(folder, rawName));
+      deleted++;
+    }
+  } catch (e) {
+    // Leave the workspace retryable: a marker we added would hide it from the
+    // next scan while this phone still holds it. (Files already deleted stay
+    // deleted; a connected desktop republishes them.)
+    if (!hadMarker) await unlink(markerPath).catch(() => {});
+    throw e;
   }
   return deleted;
 }

@@ -1,7 +1,7 @@
 /** writeOwnOplog skips rewriting an unchanged oplog file. */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const h = vi.hoisted(() => ({ files: new Map<string, string>(), writes: 0 }));
+const h = vi.hoisted(() => ({ files: new Map<string, string>(), writes: 0, readDirFails: false, unlinkFailsFor: "" }));
 
 vi.mock("react-native-cloud-store", () => ({
   writeFile: async (path: string, text: string) => {
@@ -9,10 +9,14 @@ vi.mock("react-native-cloud-store", () => ({
     h.files.set(path, text);
   },
   readFile: async (path: string) => h.files.get(path) ?? "",
-  readDir: async () => [...h.files.keys()],
+  readDir: async () => {
+    if (h.readDirFails) throw new Error("iCloud unavailable");
+    return [...h.files.keys()];
+  },
   exist: async (path: string) => h.files.has(path),
   startDownloadingUbiquitousItem: async () => {},
   unlink: async (path: string) => {
+    if (h.unlinkFailsFor && path.includes(h.unlinkFailsFor)) throw new Error("unlink failed");
     h.files.delete(path);
   },
   PathUtils: {
@@ -34,6 +38,8 @@ const entry = (id: string) =>
 beforeEach(() => {
   h.files.clear();
   h.writes = 0;
+  h.readDirFails = false;
+  h.unlinkFailsFor = "";
 });
 
 describe("writeOwnOplog", () => {
@@ -83,7 +89,37 @@ describe("removeWorkspaceFromFolder", () => {
   });
 });
 
+describe("removeWorkspaceFromFolder safety", () => {
+  it("only deletes oplogs of the exact workspace, not one whose id merely ends with it", async () => {
+    h.files.set("f/oplog-desktop_1-ws1.ndjson", "x");
+    h.files.set("f/oplog-desktop_1-team-ws1.ndjson", "x");
+    expect(await removeWorkspaceFromFolder("f", "mobile_2", "ws1")).toBe(1);
+    expect(h.files.has("f/oplog-desktop_1-team-ws1.ndjson")).toBe(true);
+    expect(h.files.has("f/oplog-desktop_1-ws1.ndjson")).toBe(false);
+  });
+
+  it("removes the marker it added when deleting fails, so the workspace stays visible and retryable", async () => {
+    h.files.set("f/oplog-desktop_1-ws1.ndjson", "x");
+    h.unlinkFailsFor = "oplog-desktop_1-ws1";
+    await expect(removeWorkspaceFromFolder("f", "mobile_2", "ws1")).rejects.toThrow("unlink failed");
+    expect(h.files.has("f/removed-ws1.json")).toBe(false);
+  });
+
+  it("keeps a marker that was already there (the desktop's) when deleting fails", async () => {
+    h.files.set("f/removed-ws1.json", "{}");
+    h.files.set("f/oplog-desktop_1-ws1.ndjson", "x");
+    h.unlinkFailsFor = "oplog-desktop_1-ws1";
+    await expect(removeWorkspaceFromFolder("f", "mobile_2", "ws1")).rejects.toThrow();
+    expect(h.files.has("f/removed-ws1.json")).toBe(true);
+  });
+});
+
 describe("removal markers", () => {
+  it("hasRemovalMarker surfaces a folder read failure instead of answering 'no marker'", async () => {
+    h.readDirFails = true;
+    await expect(hasRemovalMarker("f", "ws-a")).rejects.toThrow("iCloud unavailable");
+  });
+
   it("detects a marker for the workspace only", async () => {
     h.files.set("f/removed-ws-a.json", "{}");
     expect(await hasRemovalMarker("f", "ws-a")).toBe(true);

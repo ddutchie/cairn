@@ -4,7 +4,7 @@ import { useFocusEffect } from "expo-router";
 import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { Trash2 } from "lucide-react-native";
 import { getActiveSource } from "@/db";
-import { pendingCount } from "@/sync/sync";
+import { pendingCountFor } from "@/sync/sync";
 import { removeSource } from "@/sync/controller";
 import { useSyncSources } from "@/sync/useSyncSources";
 import { haptics } from "@/haptics";
@@ -37,7 +37,8 @@ export function WorkspacesCard({ removedFromFolder }: { removedFromFolder: boole
   const confirmRemove = (row: Row) => {
     const close = () => swipeables.current.get(row.workspaceId)?.close();
     const label = row.name ?? "this workspace";
-    const unsynced = row.workspaceId === active ? pendingCount() : 0;
+    if (busy) return; // one removal at a time
+    const unsynced = pendingCountFor(row.workspaceId);
     const fallback = sources.find((s) => s.workspaceId !== row.workspaceId)?.workspaceId;
     haptics.warning();
     Alert.alert(
@@ -88,7 +89,7 @@ export function WorkspacesCard({ removedFromFolder }: { removedFromFolder: boole
           overshootRight={false}
           renderRightActions={() => (
             <View style={[styles.action, { backgroundColor: t.danger }]}>
-              <Trash2 size={18} color="#fff" />
+              <Trash2 size={18} color={t.dangerFg} />
             </View>
           )}
           onSwipeableOpen={() => confirmRemove(s)}

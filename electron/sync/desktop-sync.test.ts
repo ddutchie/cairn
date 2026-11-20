@@ -183,3 +183,26 @@ describe("remove workspace from sync folder", () => {
     db.close();
   });
 });
+
+describe("removal vs in-flight sync", () => {
+  it("a removal started while a sync round is running waits for it, so the oplog is not published back", async () => {
+    const db = new BetterSqlite3(":memory:");
+    applySchema(db);
+    resetDesktopEngine();
+    q.createWorkspace(db, { id: "ws1", name: "WS" });
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-race-"));
+    try {
+      setSyncFolder(db, folder);
+      // Both start in the same tick: the sync round and the removal (sync:now vs the Remove button).
+      const [, removal] = await Promise.all([syncDesktop(db), removeWorkspaceFromSyncFolder(db)]);
+      expect(removal).toEqual({ removed: true });
+      expect(fs.readdirSync(folder)).toEqual(["removed-ws1.json"]);
+      // A round that starts afterwards sees the disconnected state and publishes nothing.
+      await syncDesktop(db);
+      expect(fs.readdirSync(folder)).toEqual(["removed-ws1.json"]);
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+      db.close();
+    }
+  });
+});

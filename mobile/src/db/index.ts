@@ -150,6 +150,11 @@ export function setActiveSource(workspaceId: string): { db: SQLite.SQLiteDatabas
   return { db: handle.db, engine: handle.engine };
 }
 
+/** The local database of any known source (opens it if needed) — for read-only checks on a non-active workspace. */
+export function getSourceDb(workspaceId: string): SQLite.SQLiteDatabase {
+  return openSource(workspaceId).db;
+}
+
 /** True once a source has been selected (and its DB is usable). */
 export function hasActiveSource(): boolean {
   return getActiveSource() != null;
