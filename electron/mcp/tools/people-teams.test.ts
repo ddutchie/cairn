@@ -238,4 +238,17 @@ describe("people tool: teams", () => {
     const linked = await run({ action: "link", link: "edge", personId: boss.id, edgeType: "manager_of", otherPersonId: a.id, endedAt: "2026-05-01" });
     expect(linked.edge.ended).toBeTruthy();
   });
+
+  it("takes the edge type as link, and status as the provenance", async () => {
+    const a = person("Cleo");
+    const boss = person("Dee");
+    const linked = await run({ action: "link", link: "mentor_of", personId: boss.id, otherPersonId: a.id });
+    expect(linked.edge).toMatchObject({ type: "mentor_of", status: "confirmed" });
+    expect((await run({ action: "link", link: "mentor_of", personId: boss.id, otherPersonId: a.id, remove: true })).removed).toBe(true);
+    expect((await run({ action: "link", link: "edge", personId: boss.id, otherPersonId: a.id })).error).toMatch(/link must be one of/);
+    // A suggestion only fills gaps: it doesn't replace a title the user set.
+    await run({ action: "upsert", personId: a.id, title: "Designer" });
+    await run({ action: "upsert", personId: a.id, title: "Intern", status: "suggested" });
+    expect(getPerson(db, a.id)!.title).toBe("Designer");
+  });
 });

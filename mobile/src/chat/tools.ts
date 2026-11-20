@@ -16,11 +16,11 @@ import { getCachedMcpToolDefs, getInstalledMcpServer, toRuntimeConfig } from "./
 import * as mcpClient from "./mcp-client";
 import { parseToolName } from "@cairn/shared/chat/mcp-namespace";
 import { isOverdue, isDueWithin } from "@cairn/shared/notes/due";
-import { EDGE_ENDED_DESCRIPTION, PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION, TEAM_INFO_DESCRIPTION } from "@cairn/shared/agent/people-tools";
+import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_PARAM_DESCRIPTIONS as PD, PEOPLE_TOOL_DESCRIPTION } from "@cairn/shared/agent/people-tools";
 import { isReadCall, refusesHiddenNoteWrite, scrubHidden } from "@cairn/shared/agent/people-privacy";
 import { peopleTool, setCardOwnerArg, setNoteAttendees, type PeopleToolContext } from "@cairn/shared/people/tool";
 import { agentHiddenNoteIds } from "@cairn/shared/people/queries";
-import { CADENCES, PEOPLE_STATUSES, PERSON_EDGE_TYPES, PROVENANCES, RELATIONSHIP_TYPES, TEAM_KINDS } from "@cairn/shared/types/people";
+import { CADENCES, LINK_KINDS, PEOPLE_STATUSES, RELATIONSHIP_TYPES, TEAM_KINDS } from "@cairn/shared/types/people";
 import { peopleDb, peopleWorkspaceId } from "@/db/people";
 import { notifyLocalWrite } from "@/sync/write-signal";
 
@@ -150,21 +150,20 @@ const PEOPLE_TOOL_DEF: ToolDef = {
   params: '{ "action": "query"|"get"|"timeline"|"relationships"|"teams"|"upsert"|"link"|"archive"|"merge"|"team_upsert"|"team_delete", "personId"?: string, "name"?: string, ... }',
   jsonSchema: obj({
     action: { type: "string", enum: ["query", "get", "timeline", "relationships", "teams", "upsert", "link", "archive", "merge", "team_upsert", "team_delete"] },
-    personId: { ...S, description: "get/timeline/relationships/upsert/archive: the person (or pass name); merge: the one who stays" },
-    name: { ...S, description: "query: name filter; get/upsert: the person's name" },
-    relationship: { ...S, description: "query: only people with this relationship to the user (e.g. direct_report, manager, peer, stakeholder, mentor)" },
-    status: { type: "string", enum: [...PEOPLE_STATUSES], description: "query: filter; upsert/link: status of what you write (default confirmed for stated facts)" },
-    provenance: { type: "string", enum: [...PROVENANCES], description: "upsert/link: explicit = stated in text, inferred = your judgment" },
-    aliases: { ...A, description: "upsert: other names (added to existing)" },
-    emails: { ...A, description: "upsert: email addresses (added to existing)" },
+    personId: { ...S, description: PD.personId },
+    name: { ...S, description: PD.name },
+    relationship: { ...S, description: PD.relationship },
+    status: { type: "string", enum: [...PEOPLE_STATUSES], description: PD.status },
+    aliases: { ...A, description: PD.aliases },
+    emails: { ...A, description: PD.emails },
     relationships: {
       type: "array",
-      items: obj({ type: { type: "string", enum: [...RELATIONSHIP_TYPES] }, label: { ...S, description: RELATIONSHIP_LABEL_DESCRIPTION } }, ["type"]),
-      description: "upsert: relationship(s) to the user (replaces the list)",
+      items: obj({ type: { type: "string", enum: [...RELATIONSHIP_TYPES] }, label: { ...S, description: PD.relationshipLabel } }, ["type"]),
+      description: PD.relationships,
     },
-    cadence: { type: "string", enum: [...CADENCES, ""], description: "upsert: 1:1 cadence, empty to clear" },
-    title: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.title },
-    team: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.team },
+    cadence: { type: "string", enum: [...CADENCES, ""], description: PD.cadence },
+    title: { ...S, description: PD.title },
+    team: { ...S, description: PD.team },
     teamInfo: {
       ...obj({
         kind: { type: "string", enum: [...TEAM_KINDS] },
@@ -172,19 +171,18 @@ const PEOPLE_TOOL_DEF: ToolDef = {
         links: { type: "array", items: obj({ label: S, url: S }, ["url"]) },
         members: A, role: S, removeMembers: A, rename: S, mergeInto: S,
       }),
-      description: TEAM_INFO_DESCRIPTION,
+      description: PD.teamInfo,
     },
-    location: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.location },
-    timezone: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.timezone },
-    slackId: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.slackId },
-    personaNoteId: { ...S, description: "upsert: the note about this person" },
-    link: { type: "string", enum: ["edge", "attendee", "mention"], description: "link: what to link" },
-    edgeType: { type: "string", enum: [...PERSON_EDGE_TYPES], description: "link edge: personId <edgeType> otherPersonId" },
-    otherPersonId: { ...S, description: "link edge: the other person; merge: the duplicate that folds into personId" },
-    endedAt: { ...S, description: EDGE_ENDED_DESCRIPTION },
-    label: { ...S, description: "link edge: a short qualifier, e.g. 'dotted line'" },
-    noteId: { ...S, description: "link attendee/mention: the note" },
-    remove: { type: "boolean", description: "link: remove instead of add (an edge is deleted; to keep it as history pass endedAt instead); archive: restore" },
+    location: { ...S, description: PD.location },
+    timezone: { ...S, description: PD.timezone },
+    slackId: { ...S, description: PD.slackId },
+    personaNoteId: { ...S, description: PD.personaNoteId },
+    link: { type: "string", enum: [...LINK_KINDS], description: PD.link },
+    otherPersonId: { ...S, description: PD.otherPersonId },
+    endedAt: { ...S, description: PD.endedAt },
+    label: { ...S, description: PD.label },
+    noteId: { ...S, description: PD.noteId },
+    remove: { type: "boolean", description: PD.remove },
     limit: { type: "number" },
   }, ["action"]),
   run: (a) => {

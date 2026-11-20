@@ -25,7 +25,7 @@ import { mergePeople } from "./merge";
 import { cleanProfileFieldWithPlaces, zoneForPlace } from "./place-zone";
 import { cleanRelationshipLabel, parseMeetingDate, PROFILE_FIELDS } from "./parse";
 import {
-  PEOPLE_STATUSES, PERSON_EDGE_TYPES, PROVENANCES, RELATIONSHIP_TYPES, TEAM_KINDS,
+  LINK_KINDS, PEOPLE_STATUSES, PERSON_EDGE_TYPES, PROVENANCES, RELATIONSHIP_TYPES, TEAM_KINDS,
   type Person, type PeopleStatus, type PersonPatch, type Provenance, type Relationship, type Team, type TeamPatch,
 } from "../types/people";
 
@@ -45,11 +45,15 @@ const errMsg = (err: unknown) => (err instanceof Error ? err.message : String(er
 const strList = (x: unknown): string[] => (Array.isArray(x) ? x.filter((v): v is string => typeof v === "string" && v.trim().length > 0) : []);
 const oneOf = <T extends string>(all: readonly T[], v: unknown): T | undefined => (all as readonly unknown[]).includes(v) ? v as T : undefined;
 
-/** What an agent writes is confirmed when stated, a suggestion when inferred, unless it says otherwise. */
+/**
+ * What an agent writes is confirmed by default; status "suggested" marks it as
+ * inferred, which only fills gaps. `provenance` is no longer offered to the
+ * model but is still read from older calls.
+ */
 function writeStatus(args: Args): { status: PeopleStatus; provenance: Provenance } {
-  const provenance = oneOf(PROVENANCES, args.provenance) ?? "explicit";
-  const status = oneOf(PEOPLE_STATUSES, args.status) ?? (provenance === "inferred" ? "suggested" : "confirmed");
-  return { status, provenance };
+  const given = oneOf(PROVENANCES, args.provenance);
+  const status = oneOf(PEOPLE_STATUSES, args.status) ?? (given === "inferred" ? "suggested" : "confirmed");
+  return { status, provenance: given ?? (status === "suggested" ? "inferred" : "explicit") };
 }
 
 function personSummary(p: Person) {
@@ -518,10 +522,12 @@ function link(db: Db, ctx: PeopleToolContext, workspaceId: string, args: Args) {
   const { status, provenance } = writeStatus(args);
   const remove = args.remove === true;
 
-  switch (args.link) {
+  // `link` names the edge type itself; older calls passed link "edge" with `edgeType`.
+  const edgeType = oneOf(PERSON_EDGE_TYPES, args.link) ?? (args.link === "edge" ? oneOf(PERSON_EDGE_TYPES, args.edgeType) : undefined);
+  if (args.link === "edge" && !edgeType) return { error: `link must be one of: ${LINK_KINDS.join(", ")}` };
+  switch (edgeType ? "edge" : args.link) {
     case "edge": {
-      const type = oneOf(PERSON_EDGE_TYPES, args.edgeType);
-      if (!type) return { error: `edgeType must be one of: ${PERSON_EDGE_TYPES.join(", ")}` };
+      const type = edgeType!;
       const other = findPerson(db, workspaceId, { personId: args.otherPersonId });
       if (isErr(other)) return other;
       if (remove) {
@@ -568,7 +574,7 @@ function link(db: Db, ctx: PeopleToolContext, workspaceId: string, args: Args) {
       return { [remove ? "removed" : "linked"]: true, mention: { noteId, personId: p.id, name: p.name } };
     }
     default:
-      return { error: "link must be one of: edge, attendee, mention" };
+      return { error: `link must be one of: ${LINK_KINDS.join(", ")}` };
   }
 }
 

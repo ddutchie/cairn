@@ -72,6 +72,8 @@ export type Person = {
  */
 export const PERSON_EDGE_TYPES = ["manager_of", "mentor_of", "buddy_of", "stakeholder_of", "partner"] as const;
 export type PersonEdgeType = (typeof PERSON_EDGE_TYPES)[number];
+/** What the agent's `link` takes: an edge type (personId <type> otherPersonId), or a note to put personId on. */
+export const LINK_KINDS = [...PERSON_EDGE_TYPES, "attendee", "mention"] as const;
 
 /** An edge as seen from one person, including the derived inverse ("reports_to"). */
 export type PersonEdgeRole =

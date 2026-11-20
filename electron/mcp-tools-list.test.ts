@@ -45,3 +45,20 @@ describe("MCP tools/list", () => {
     expect(JSON.stringify(searchNotes.inputSchema)).toContain("Pagination offset");
   });
 });
+
+describe("MCP instructions", () => {
+  it("sends the workflow at initialize, naming only tools the server lists", async () => {
+    const server = buildMcpServer({} as never);
+    const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverSide);
+    const client = new Client({ name: "test", version: "1" });
+    await client.connect(clientSide);
+    const text = client.getInstructions() ?? "";
+    const { tools } = await client.listTools();
+    await client.close();
+    expect(text).toContain("task_progress");
+    const listed = new Set(tools.map((t) => t.name));
+    // Every snake_case word in the text that looks like a tool name must be one.
+    for (const name of text.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []) expect(listed.has(name), name).toBe(true);
+  });
+});

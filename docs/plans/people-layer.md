@@ -726,13 +726,15 @@ pattern (`useScopedData`, `useFontScale`, `useContainerDims`).
 - **One new tool `people`** in `TOOL_SCHEMAS`, with `action`: `query` (by
   relationship, name, edge; "who owns X" via persona search), `get`, `timeline`,
   `relationships`, `teams`, `inventory` (read-only migration manifest, desktop),
-  and the writes `upsert`, `link` (edge with optional `endedAt`/`label`,
-  attendee, mention), `archive` (`remove: true` restores), `merge` (fold
+  and the writes `upsert`, `link` (an edge type such as `manager_of`, with
+  optional `endedAt`/`label`; or `attendee` / `mention`), `archive` (`remove: true` restores), `merge` (fold
   `otherPersonId` into `personId`), `team_upsert` (`teamInfo`: kind, details,
   lead, existing parent team, members with a role, `removeMembers`, rename,
-  `mergeInto`) and `team_delete`. Writes take `status` and `provenance`;
-  anything an agent infers goes in as `suggested`, and an inferred team write
-  only fills gaps. A `parentTeam` that doesn't exist is an error (a typo must
+  `mergeInto`) and `team_delete`. Writes take `status`: anything an agent
+  infers goes in as `suggested`, which is stored as provenance `inferred` and
+  only fills gaps (person profile fields and team details). The tool no longer
+  offers `provenance` or `edgeType` (kept under 1.1k tokens, Nov 20), but the
+  handler still reads them from older calls (`link: "edge"` + `edgeType`). A `parentTeam` that doesn't exist is an error (a typo must
   not make a team).
 - `ensure_note` / `update_notes` gain `attendees` + `date`; `create_task` /
   `update_tasks` gain `owner`.

@@ -108,7 +108,9 @@ function humanizePeople(args: ToolArgs): HumanizedTool {
       return args.personId || args.outcome === "updated" ? { pre: "Updated", obj: who } : { pre: "Saved", obj: who };
     case "link": {
       const undo = args.remove === true;
-      if (args.link === "edge") return { pre: undo ? "Unlinked" : "Linked", obj: who, post: typeof args.edgeType === "string" && EDGE_PHRASE[args.edgeType] ? `(${EDGE_PHRASE[args.edgeType]})` : undefined };
+      // `link` names the edge type; older calls passed link "edge" with `edgeType`.
+      const edge = args.link === "edge" ? args.edgeType : args.link;
+      if (typeof edge === "string" && (args.link === "edge" || EDGE_PHRASE[edge])) return { pre: undo ? "Unlinked" : "Linked", obj: who, post: EDGE_PHRASE[edge] ? `(${EDGE_PHRASE[edge]})` : undefined };
       if (args.link === "attendee" && undo && args.outcome === "kept") return { pre: "Kept", obj: who, post: "as an attendee (still listed by another source)" };
       if (args.link === "attendee") return { pre: undo ? "Removed" : "Added", obj: who, post: undo ? "as an attendee" : "as an attendee of a meeting" };
       if (args.link === "mention") return { pre: undo ? "Removed the mention of" : "Linked a note mentioning", obj: who };

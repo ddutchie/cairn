@@ -14,7 +14,8 @@
 import * as z from "zod";
 
 import { isCairnReadTool } from "../../shared/agent/tool-names";
-import { EDGE_ENDED_DESCRIPTION, PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION_DESKTOP, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION, TEAM_INFO_DESCRIPTION } from "../../shared/agent/people-tools";
+import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_PARAM_DESCRIPTIONS as PD, PEOPLE_TOOL_DESCRIPTION_DESKTOP } from "../../shared/agent/people-tools";
+import { LINK_KINDS } from "../../shared/types/people";
 
 // ── Shared field shapes ────────────────────────────────────────────────────────
 
@@ -229,20 +230,19 @@ export const TOOL_SCHEMAS = {
     description: PEOPLE_TOOL_DESCRIPTION_DESKTOP,
     schema: z.object({
       action:       z.enum(["query", "get", "timeline", "relationships", "inventory", "teams", "upsert", "link", "archive", "merge", "team_upsert", "team_delete"]),
-      personId:     sIdOpt.describe("get/timeline/relationships/upsert/archive: the person (or pass name); merge: the one who stays"),
-      name:         sStrOpt.describe("query: name filter; get/upsert: the person's name"),
-      relationship: sStrOpt.describe("query: only people with this relationship to the user (e.g. direct_report, manager, peer, stakeholder, mentor)"),
-      status:       z.enum(["confirmed", "suggested", "dismissed"]).optional().describe("query: filter; upsert/link: status of what you write (default confirmed for stated facts)"),
-      provenance:   z.enum(["explicit", "convention", "inferred"]).optional().describe("upsert/link: explicit = stated in text, inferred = your judgment"),
-      aliases:      z.array(z.string()).optional().describe("upsert: other names (added to existing)"),
-      emails:       z.array(z.string()).optional().describe("upsert: email addresses (added to existing)"),
+      personId:     sIdOpt.describe(PD.personId),
+      name:         sStrOpt.describe(PD.name),
+      relationship: sStrOpt.describe(PD.relationship),
+      status:       z.enum(["confirmed", "suggested", "dismissed"]).optional().describe(PD.status),
+      aliases:      z.array(z.string()).optional().describe(PD.aliases),
+      emails:       z.array(z.string()).optional().describe(PD.emails),
       relationships: z.array(z.object({
         type:  z.enum(["direct_report", "manager", "peer", "stakeholder", "mentor", "buddy", "recruiter", "candidate", "other"]),
-        label: sStrOpt.describe(RELATIONSHIP_LABEL_DESCRIPTION),
-      })).optional().describe("upsert: relationship(s) to the user (replaces the list)"),
-      cadence:      z.enum(["weekly", "biweekly", "monthly", ""]).optional().describe("upsert: 1:1 cadence, empty to clear"),
-      title:        sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.title),
-      team:         sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.team),
+        label: sStrOpt.describe(PD.relationshipLabel),
+      })).optional().describe(PD.relationships),
+      cadence:      z.enum(["weekly", "biweekly", "monthly", ""]).optional().describe(PD.cadence),
+      title:        sStrOpt.describe(PD.title),
+      team:         sStrOpt.describe(PD.team),
       teamInfo:     z.object({
         kind:        z.enum(["team", "guild", "project", "committee"]).optional(),
         description: sStrOpt,
@@ -255,18 +255,17 @@ export const TOOL_SCHEMAS = {
         removeMembers: z.array(z.string()).optional(),
         rename:      sStrOpt,
         mergeInto:   sStrOpt,
-      }).optional().describe(TEAM_INFO_DESCRIPTION),
-      location:     sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.location),
-      timezone:     sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.timezone),
-      slackId:      sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.slackId),
-      personaNoteId: sIdOpt.describe("upsert: the note about this person"),
-      link:         z.enum(["edge", "attendee", "mention"]).optional().describe("link: what to link"),
-      edgeType:     z.enum(["manager_of", "mentor_of", "buddy_of", "stakeholder_of", "partner"]).optional().describe("link edge: personId <edgeType> otherPersonId"),
-      otherPersonId: sIdOpt.describe("link edge: the other person; merge: the duplicate that folds into personId"),
-      endedAt:      sStrOpt.describe(EDGE_ENDED_DESCRIPTION),
-      label:        sStrOpt.describe("link edge: a short qualifier, e.g. 'dotted line'"),
-      noteId:       sIdOpt.describe("link attendee/mention: the note"),
-      remove:       sBoolOpt.describe("link: remove instead of add (an edge is deleted; to keep it as history pass endedAt instead); archive: restore"),
+      }).optional().describe(PD.teamInfo),
+      location:     sStrOpt.describe(PD.location),
+      timezone:     sStrOpt.describe(PD.timezone),
+      slackId:      sStrOpt.describe(PD.slackId),
+      personaNoteId: sIdOpt.describe(PD.personaNoteId),
+      link:         z.enum(LINK_KINDS).optional().describe(PD.link),
+      otherPersonId: sIdOpt.describe(PD.otherPersonId),
+      endedAt:      sStrOpt.describe(PD.endedAt),
+      label:        sStrOpt.describe(PD.label),
+      noteId:       sIdOpt.describe(PD.noteId),
+      remove:       sBoolOpt.describe(PD.remove),
       limit:        z.number().optional().default(25),
     }),
   },
