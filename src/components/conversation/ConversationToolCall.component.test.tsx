@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConversationToolCall } from "./ConversationToolCall";
 import type { ConversationToolCall as ToolCall } from "@/lib/conversation/message";
 import type { ConnectorMeta } from "@/components/shared/ConnectorToolCard";
@@ -59,5 +60,38 @@ describe("skill chip", () => {
     />);
     expect(container.textContent).toContain("Loaded skill pdf");
     expect(container.querySelector("[data-tool='skill']")).toBeNull();
+  });
+});
+
+describe("opened tool cards survive a remount", () => {
+  // The transcript is virtualised and rebuilds rows mid-turn, so a card can unmount and mount again.
+  it("keeps a connector card open", () => {
+    const tc = call({ callId: "remount-connector", name: "mcp__atl1__getPage", args: { id: "1" }, output: "{\"title\":\"Q3\"}" });
+    const first = render(<TooltipProvider><ConversationToolCall sessionId="s1" connectors={connectors} toolCall={tc} /></TooltipProvider>);
+    fireEvent.click(screen.getByRole("button"));
+    expect(screen.getByRole("button").getAttribute("aria-expanded")).toBe("true");
+    first.unmount();
+    render(<TooltipProvider><ConversationToolCall sessionId="s1" connectors={connectors} toolCall={tc} /></TooltipProvider>);
+    expect(screen.getByRole("button").getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("keeps a generic tool chip open, and closes it when the user closes it", () => {
+    const tc = call({ callId: "remount-generic", name: "bash", args: { command: "ls" }, output: "a.txt" });
+    const first = render(<ConversationToolCall sessionId="s1" toolCall={tc} />);
+    expect(screen.queryByText("a.txt")).toBeNull();
+    fireEvent.click(screen.getAllByRole("button")[0]);
+    expect(screen.getByText("a.txt")).toBeTruthy();
+    first.unmount();
+    const second = render(<ConversationToolCall sessionId="s1" toolCall={tc} />);
+    expect(screen.getByText("a.txt")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button")[0]);
+    second.unmount();
+    render(<ConversationToolCall sessionId="s1" toolCall={tc} />);
+    expect(screen.queryByText("a.txt")).toBeNull();
+  });
+
+  it("starts collapsed for a call nobody has opened", () => {
+    render(<ConversationToolCall sessionId="s1" toolCall={call({ callId: "never-opened", name: "bash", args: { command: "ls" }, output: "b.txt" })} />);
+    expect(screen.queryByText("b.txt")).toBeNull();
   });
 });

@@ -125,12 +125,16 @@ export function replayFromRecords(
   }
 
   const s = foldState(records);
+  // The ring shows how full the context is, which is the LAST request's prompt
+  // size. Summing every request in the session counted the same history once per
+  // tool step and overflowed the window (e.g. 2.7M of 1M).
+  const last = s.lastUsage ?? s.usage;
   const usage: SessionUsageMetrics = {
-    promptTokens: s.usage.input + s.usage.cacheRead + s.usage.cacheWrite,
-    completionTokens: s.usage.output,
-    reasoningTokens: s.usage.reasoning,
-    cacheReadTokens: s.usage.cacheRead,
-    cacheCreationTokens: s.usage.cacheWrite,
+    promptTokens: last.input + last.cacheRead + last.cacheWrite,
+    completionTokens: last.output,
+    reasoningTokens: last.reasoning,
+    cacheReadTokens: last.cacheRead,
+    cacheCreationTokens: last.cacheWrite,
     costUsd: s.usage.costUsd || undefined,
     contextWindow,
   };

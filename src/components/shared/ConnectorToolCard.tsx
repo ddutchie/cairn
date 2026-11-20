@@ -20,6 +20,8 @@ export interface ConnectorMeta {
 }
 
 export interface ConnectorToolCall {
+  /** Call id: keeps the card open across transcript remounts. */
+  callId?: string;
   tool: string;
   args?: Record<string, unknown>;
   output?: string;
@@ -44,6 +46,7 @@ export function ConnectorToolCard({ toolCall, connector, testId = "connector-mes
     <ToolCard
       testId={testId}
       summaryTestId="connector-tool-summary"
+      persistKey={toolCall.callId}
       ok={ok}
       icon={<ConnectorLogo iconSvg={connector.iconSvg} kind={connector.kind} color={connector.brandColor} size={14} className="shrink-0" />}
       brand={connector.label || connector.name}

@@ -23,6 +23,24 @@ export function zoneOffsetMinutes(timezone: string, at: Date): number | null {
   }
 }
 
+/** The zone's canonical id as the runtime knows it (aliases like Asia/Calcutta and Asia/Kolkata agree), or null for an unknown zone. */
+export function canonicalZoneId(timezone: string): string | null {
+  try {
+    return new Intl.DateTimeFormat("en", { timeZone: timezone }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether two names are the same zone. Compares identity, not the offset at one
+ * moment: Europe/Berlin and Africa/Lagos are both UTC+1 in winter and are not the same place.
+ */
+export function sameZone(a: string, b: string): boolean {
+  const ca = canonicalZoneId(a);
+  return ca !== null && ca === canonicalZoneId(b);
+}
+
 /** The viewer's own zone, for when "me" has none set. */
 export function systemZone(): string {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; }

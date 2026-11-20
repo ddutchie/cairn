@@ -13,6 +13,7 @@ import type { RelationshipType } from "../../../shared/types/people";
 import { OrgChartCanvas } from "./OrgChartCanvas";
 import { RelationshipCanvas } from "./RelationshipCanvas";
 import { InsightsView } from "./InsightsView";
+import { ConnectionsGraph } from "@/components/people/ConnectionsGraph";
 
 const person = (id: string, name: string, types: RelationshipType[], extra: Partial<PersonSummary> = {}): PersonSummary => ({
   id, workspaceId: "ws1", name, aliases: [], emails: [],
@@ -69,7 +70,7 @@ describe("RelationshipCanvas", () => {
       person("pal", "Pat Peer", ["peer"]),
       person("lone", "Lone Wolf", []),
     ]);
-    render(<RelationshipCanvas />);
+    render(<RelationshipCanvas />, { wrapper: TooltipProvider });
     expect(screen.getByRole("button", { name: /Reporting line, 1/ })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("1 without a link here")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Dana Report/ })).toBeInTheDocument();
@@ -80,9 +81,19 @@ describe("RelationshipCanvas", () => {
     expect(screen.getByRole("button", { name: /^Pat Peer/ })).toBeInTheDocument();
   });
 
+  it("tells the canvas which person a keyboard user is on", () => {
+    seed([person("me", "Me Myself", [], { isMe: true }), person("rep", "Dana Report", ["direct_report"])]);
+    const { container } = render(<RelationshipCanvas />, { wrapper: TooltipProvider });
+    const button = screen.getByRole("button", { name: /^Dana Report/ });
+    fireEvent.focus(button);
+    // The canvas redraws with the person highlighted; nothing throws in a canvas-less test DOM.
+    expect(container.querySelector("canvas")).not.toBeNull();
+    fireEvent.blur(button);
+  });
+
   it("explains when there are no relationships", () => {
     seed([person("a", "Ann", [])]);
-    render(<RelationshipCanvas />);
+    render(<RelationshipCanvas />, { wrapper: TooltipProvider });
     expect(screen.getByText(/No relationships yet/)).toBeInTheDocument();
   });
 });
@@ -93,5 +104,33 @@ describe("InsightsView tabs", () => {
     render(<InsightsView />, { wrapper: TooltipProvider });
     expect(screen.getByRole("tab", { name: /Org chart/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Relationships/ })).toBeInTheDocument();
+  });
+});
+
+describe("ConnectionsGraph", () => {
+  const withTree = () => seed([
+    person("me", "Me Myself", [], { isMe: true }),
+    person("rep", "Dana Report", ["direct_report"]),
+    person("pal", "Pat Peer", ["peer"]),
+    person("lone", "Lone Wolf", []),
+  ]);
+
+  it("lists the people linked to a person and opens one on click", () => {
+    withTree();
+    render(<ConnectionsGraph personId="me" compact />, { wrapper: TooltipProvider });
+    expect(screen.getByRole("heading", { name: "Connections" })).toBeInTheDocument();
+    expect(screen.getByText("2 people")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Lone Wolf/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Dana Report/ }));
+    expect(useCairnStore.getState().peoplePanelId).toBe("rep");
+  });
+
+  it("has no zoom controls and renders nothing for a person without links", () => {
+    withTree();
+    const first = render(<ConnectionsGraph personId="me" compact />, { wrapper: TooltipProvider });
+    expect(screen.queryByRole("button", { name: "Zoom in" })).toBeNull();
+    first.unmount();
+    const second = render(<ConnectionsGraph personId="lone" compact />, { wrapper: TooltipProvider });
+    expect(second.container).toBeEmptyDOMElement();
   });
 });

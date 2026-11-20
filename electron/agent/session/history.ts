@@ -16,7 +16,10 @@ export interface SessionState {
   compactions: number;
   running: boolean;
   lastEnd?: TurnEndReason;
+  /** Totals across every model request in the session (cost, spend); NOT the context size. */
   usage: { input: number; output: number; cacheRead: number; cacheWrite: number; reasoning: number; costUsd: number };
+  /** The most recent request's usage: its prompt side is the current context size. */
+  lastUsage?: { input: number; output: number; cacheRead: number; cacheWrite: number; reasoning: number };
   /** Rules granted during the session (restored into the rule store on reopen). */
   rules: Rule[];
   /** Asks with no decision yet, keyed by callId. */
@@ -37,7 +40,13 @@ export function reduce(state: SessionState, { event }: SessionRecord): SessionSt
   switch (event.type) {
     case "turn/start": state.turns++; state.running = true; break;
     case "turn/end": state.running = false; state.lastEnd = event.reason; state.pendingAsks.clear(); break;
-    case "assistant/message": addUsage(state.usage, event.message.usage); break;
+    case "assistant/message": {
+      const u = event.message.usage;
+      addUsage(state.usage, u);
+      // A request that reported nothing (a stub or an empty reply) says nothing about the context size.
+      if (u && u.input + u.output + u.cacheRead + u.cacheWrite > 0) state.lastUsage = { input: u.input, output: u.output, cacheRead: u.cacheRead, cacheWrite: u.cacheWrite, reasoning: u.reasoning ?? 0 };
+      break;
+    }
     case "compaction": state.compactions++; break;
     case "rule/added": state.rules.push(event.rule); break;
     case "approval/asked": state.pendingAsks.set(event.ask.callId, event.ask); break;

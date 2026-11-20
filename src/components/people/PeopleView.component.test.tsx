@@ -128,7 +128,7 @@ describe("PeopleView", () => {
     expect(screen.queryByRole("textbox", { name: "Search people" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Time zones" }));
     expect(within(screen.getByRole("table", { name: "Working hours by person" })).getByText("Ada Report")).toBeInTheDocument();
-    expect(screen.getByText("No time zone set (1)")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "No time zone set" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "List" }));
     expect(screen.getByRole("textbox", { name: "Search people" })).toBeInTheDocument();
   });
@@ -191,6 +191,26 @@ describe("PeopleView", () => {
     expect(within(who).getByText("Ada Report")).toBeInTheDocument();
     expect(within(who).getByText("Me (you)")).toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Not on the map" })).getByText("No Zone")).toBeInTheDocument();
+  });
+
+  it("pins people at their own city when it lies in their zone, and ignores a location that disagrees", () => {
+    useCairnStore.setState({
+      people: [
+        person("p1", "Mia", [], { timezone: "America/Toronto", location: "Montreal, QC" }),
+        person("p2", "Tom", [], { timezone: "America/Toronto", location: "Toronto" }),
+        person("p3", "Stale", [], { timezone: "America/Los_Angeles", location: "Berlin" }),
+        // Same UTC offset as Berlin in winter, but a different zone: Berlin's pin must not be used.
+        person("p4", "Ada", [], { timezone: "Africa/Lagos", location: "Berlin" }),
+      ],
+    });
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
+    expect(screen.getByRole("button", { name: /^Montreal, 1 person, / })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Toronto, 1 person, / })).toBeInTheDocument();
+    // Berlin isn't in Los Angeles's zone, so the zone's own city is used.
+    expect(screen.getByRole("button", { name: /^Los Angeles, 1 person, / })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Lagos, 1 person, / })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Berlin, / })).toBeNull();
   });
 
   it("opens the add form from any picture by switching to the list", () => {

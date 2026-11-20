@@ -8,6 +8,7 @@
  * dispatcher (`scrubAgentPrivate`), not here.
  */
 import type Database from "better-sqlite3";
+import "../../../shared/people/place-data";
 import { makeFrontmatterReader, refreshMeetingFrontmatter } from "../../people-files";
 import { buildInventory } from "../../db/people-migration";
 import { peopleTool, setCardOwnerArg, setNoteAttendees, type PeopleToolContext } from "../../../shared/people/tool";

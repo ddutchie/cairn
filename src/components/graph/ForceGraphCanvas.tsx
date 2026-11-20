@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useCallback, useState, useMemo } from "react"
 import { GRAPH_NODE_TYPES } from "../../../shared/types/domain";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import * as d3 from "d3";
-import type { GraphNode, KnowledgeGraph } from "@/types";
+import type { GraphEdge, GraphNode, KnowledgeGraph } from "@/types";
 import { createCssVarReader, createAlphaCache, tokenToCssVar } from "@/lib/viz/color";
 import { useFontScale, useThemeRepaint, useContainerDims } from "@/lib/viz/hooks";
 import {
@@ -17,6 +17,7 @@ import {
   type ThemeToken,
 } from "../../../shared/ui/graph";
 import type { LayoutLink } from "./force-layout";
+import { planFocusPan, shouldAutoFit } from "./focus-pan";
 import {
   createForceLayoutClient,
   rememberLayout,
@@ -26,8 +27,49 @@ import {
 } from "./force-layout-client";
 import { IconButton } from "@/components/ui/icon-button";
 
+/** How one edge is drawn, overriding the style its type gets. */
+export interface EdgeLook {
+  token: ThemeToken;
+  opacity: number;
+  dash?: boolean;
+  /** Stroke width in world px (default 1). */
+  width?: number;
+  /** Draw an arrowhead at the target end (source acts on target: "manages", "mentors"). */
+  directed?: boolean;
+}
+
+/** How one node is drawn, overriding the style its type gets. */
+export interface NodeLook {
+  token?: ThemeToken;
+  radius?: number;
+  /** Always label this node, whatever the label mode and zoom. */
+  label?: boolean;
+  /** Hold this node at the centre of the layout. */
+  pin?: boolean;
+}
+
+/**
+ * Per-graph styling for callers whose edges and nodes mean more than their
+ * type says (the People relationship map: a link kind, a former link, "me").
+ * Called once per node/edge when the layout is rebuilt, never per frame, and
+ * its results are part of the layout fingerprint.
+ */
+export interface ForceGraphStyling {
+  edge?: (e: GraphEdge) => EdgeLook | undefined;
+  node?: (n: GraphNode) => NodeLook | undefined;
+  /** Text shown when the pointer rests on the edge. */
+  edgeText?: (e: GraphEdge) => string | undefined;
+}
+
 interface Props {
   graph: KnowledgeGraph;
+  /** Optional per-node / per-edge look; see {@link ForceGraphStyling}. */
+  styling?: ForceGraphStyling;
+  /** A small, static picture inside a page: no zoom buttons, no wheel / drag
+   *  navigation (so scrolling the page never zooms it), a tighter fit. */
+  compact?: boolean;
+  /** Drawn as if hovered (glow and label): the person a keyboard user has focused in a list beside the canvas. */
+  focusNodeId?: string | null;
   selectedNodeId: string | null;
   onNodeClick: (node: GraphNode) => void;
   /** Right-click: the node under the cursor, or null for empty canvas. */
@@ -64,10 +106,13 @@ type SimNode = d3.SimulationNodeDatum & {
   title: string;
   nodeType: GraphNode["type"];
   projectId?: string;
+  look?: NodeLook;
 };
 type SimLink = d3.SimulationLinkDatum<SimNode> & {
   edgeType: string;
   weight: number;
+  look?: EdgeLook;
+  text?: string;
 };
 
 /** Hull outline in world coords, cached until node positions next change. */
@@ -111,6 +156,8 @@ type SceneCache = {
   themeSig: string;
   edges: { stroke: string; width: number; dash: boolean; path: Path2D }[];
   fills: { fill: string; path: Path2D }[];
+  /** Arrowheads of directed edges: tip position (world), heading and colour. Drawn at a fixed screen size. */
+  arrows: { x: number; y: number; angle: number; fill: string }[];
 };
 
 function buildScene(
@@ -120,17 +167,18 @@ function buildScene(
   connected: Set<string> | null,
   read: VarReader,
   alpha: (color: string, opacity: number) => string,
-  typeColor: (type: GraphNode["type"]) => string,
+  nodeColor: (n: SimNode) => string,
   meta: { version: number; themeSig: string },
 ): SceneCache {
   // One path per distinct stroke style.
   const edgeBatches = new Map<string, { stroke: string; width: number; dash: boolean; path: Path2D }>();
+  const arrows: SceneCache["arrows"] = [];
   for (const l of links) {
     const s = l.source as SimNode, tg = l.target as SimNode;
     if (s.x == null || s.y == null || tg.x == null || tg.y == null) continue;
-    const st = sharedEdgeStyle(l.edgeType);
+    const st = l.look ? { token: l.look.token, opacity: l.look.opacity, dash: !!l.look.dash } : sharedEdgeStyle(l.edgeType);
     let op = st.opacity;
-    let w = l.edgeType === "wikilink" ? 1.6 : 1;
+    let w = l.look?.width ?? (l.edgeType === "wikilink" ? 1.6 : 1);
     if (l.edgeType === "semantic" && l.weight < 1) w = 0.5 + l.weight;
     if (sel) {
       const on = connected && connected.has(s.id) && connected.has(tg.id);
@@ -143,6 +191,14 @@ function buildScene(
     if (!b) edgeBatches.set(key, (b = { stroke, width: w, dash: st.dash, path: new Path2D() }));
     b.path.moveTo(s.x, s.y);
     b.path.lineTo(tg.x, tg.y);
+    if (l.look?.directed) {
+      // The head stops at the target node's rim, not its centre.
+      const dx = tg.x - s.x, dy = tg.y - s.y, len = Math.hypot(dx, dy);
+      if (len > 0) {
+        const rim = radiusOf(tg) + 1.5;
+        arrows.push({ x: tg.x - (dx / len) * rim, y: tg.y - (dy / len) * rim, angle: Math.atan2(dy, dx), fill: stroke });
+      }
+    }
   }
 
   // Plain circles batched by fill; the selected node is drawn separately
@@ -151,7 +207,7 @@ function buildScene(
   for (const n of nodes) {
     if (n.x == null || n.y == null || n.id === sel) continue;
     const dim = !!sel && connected != null && !connected.has(n.id);
-    const fill = alpha(typeColor(n.nodeType), dim ? 0.22 : 0.92);
+    const fill = alpha(nodeColor(n), dim ? 0.22 : 0.92);
     let p = fillBatches.get(fill);
     if (!p) fillBatches.set(fill, (p = new Path2D()));
     const r = radiusOf(n);
@@ -167,6 +223,7 @@ function buildScene(
     themeSig: meta.themeSig,
     edges: [...edgeBatches.values()],
     fills: [...fillBatches].map(([fill, path]) => ({ fill, path })),
+    arrows,
   };
 }
 
@@ -177,7 +234,7 @@ function positionsOf(nodes: SimNode[]): Map<string, { x: number; y: number }> {
   return out;
 }
 
-const radiusOf = (n: SimNode) => nodeRadius(n.nodeType);
+const radiusOf = (n: SimNode) => n.look?.radius ?? nodeRadius(n.nodeType);
 const NODE_TYPES = GRAPH_NODE_TYPES;
 /** Largest label font size (screen px, before font scale). */
 const LABEL_MAX_SCREEN_PX = Math.max(...NODE_TYPES.map((t) => labelScreenPx(t)));
@@ -220,6 +277,9 @@ const ZOOM_BTN_CLASS =
 
 function ForceGraphCanvasImpl({
   graph,
+  styling,
+  compact = false,
+  focusNodeId = null,
   selectedNodeId,
   onNodeClick,
   onNodeContextMenu,
@@ -309,8 +369,9 @@ function ForceGraphCanvasImpl({
     else for (const n of nodesRef.current) include(n.x, n.y);
     if (minX === Infinity) return;
     const gw = maxX - minX || 1, gh = maxY - minY || 1;
-    const pad = 60;
-    const k = Math.max(0.2, Math.min(4, Math.min(
+    const pad = compact ? 28 : 60;
+    // A small graph must not blow up to fill the box: cap the scale in compact mode.
+    const k = Math.max(0.2, Math.min(compact ? 1.6 : 4, Math.min(
       (width - pad * 2) / gw,
       (height - pad * 2) / gh,
     )));
@@ -326,12 +387,12 @@ function ForceGraphCanvasImpl({
     const sel = d3.select<HTMLCanvasElement, unknown>(canvas);
     if (animate) sel.transition().duration(animate === true ? 400 : animate).call(zoom.transform, tr);
     else sel.call(zoom.transform, tr);
-  }, []);
+  }, [compact]);
 
   // Keep latest prop values available to the render loop without re-creating it
-  const propsRef = useRef({ selectedNodeId, labelMode, spacing, semanticThreshold, showHulls });
+  const propsRef = useRef({ selectedNodeId, labelMode, spacing, semanticThreshold, showHulls, compact, focusNodeId });
   // eslint-disable-next-line react-hooks/refs -- keep latest value for ref-only consumers (render loop / fit)
-  propsRef.current = { selectedNodeId, labelMode, spacing, semanticThreshold, showHulls };
+  propsRef.current = { selectedNodeId, labelMode, spacing, semanticThreshold, showHulls, compact, focusNodeId };
 
   // ── visible edges (semantic threshold) + degree map ──
   const visibleEdges = useMemo(
@@ -359,12 +420,26 @@ function ForceGraphCanvasImpl({
   // refresh instead of showing stale data.
   // Memoised: these are O(nodes/edges) string builds and the component
   // re-renders on every edge-tooltip mouse move.
+  const nodeLooks = useMemo(() => graph.nodes.map((n) => styling?.node?.(n)), [graph.nodes, styling]);
+  const edgeLooks = useMemo(
+    () => visibleEdges.map((e) => ({ look: styling?.edge?.(e), text: styling?.edgeText?.(e) })),
+    [visibleEdges, styling],
+  );
   const nodeFingerprint = useMemo(() => graph.nodes
-    .map((n) => `${n.id}:${n.type}:${n.projectId ?? ""}:${n.title}`)
-    .join(","), [graph.nodes]);
+    .map((n, i) => {
+      const k = nodeLooks[i];
+      return `${n.id}:${n.type}:${n.projectId ?? ""}:${n.title}${k ? `:${k.token ?? ""}/${k.radius ?? ""}/${k.label ? 1 : 0}/${k.pin ? 1 : 0}` : ""}`;
+    })
+    .join(","), [graph.nodes, nodeLooks]);
   const edgeFingerprint = useMemo(() => visibleEdges
-    .map((e) => `${e.source}-${e.target}:${e.type}:${e.weight ?? 1}`)
-    .join(","), [visibleEdges]);
+    .map((e, i) => {
+      const { look, text } = edgeLooks[i];
+      return `${e.source}-${e.target}:${e.type}:${e.weight ?? 1}${look ? `:${look.token}/${look.opacity}/${look.dash ? 1 : 0}/${look.width ?? ""}/${look.directed ? 1 : 0}` : ""}${text ? `:${text}` : ""}`;
+    })
+    .join(","), [visibleEdges, edgeLooks]);
+  const looksRef = useRef({ nodeLooks, edgeLooks });
+  // eslint-disable-next-line react-hooks/refs -- the rebuild effect reads the latest looks; the fingerprints decide when it runs
+  looksRef.current = { nodeLooks, edgeLooks };
 
   // ── force layout (runs in a Web Worker; see force-layout.ts) ──
   const layoutRef = useRef<ForceLayoutClient | null>(null);
@@ -401,14 +476,20 @@ function ForceGraphCanvasImpl({
   }, []);
   useEffect(() => cancelTween, [cancelTween]);
 
+  // Pan to the keyboard-focused node (defined further down; a ref so the layout callbacks can call it).
+  const revealFocusedRef = useRef<(interrupt: boolean) => void>(() => {});
+  const revealTimerRef = useRef(0);
   const finishLayout = useCallback(() => {
     layoutStateRef.current = "settled";
     canvasRef.current?.setAttribute("data-layout", "settled");
     // Final animated fit once settled (a no-op when already framed).
-    if (!userInteractedRef.current) zoomFit(true);
+    if (shouldAutoFit(userInteractedRef.current, compact)) zoomFit(true);
     didInitialFitRef.current = true;
     rememberCurrent();
-  }, [zoomFit, rememberCurrent]);
+    // A focus that landed before the first layout frame had no position to pan to: retry once the fit has landed.
+    window.clearTimeout(revealTimerRef.current);
+    if (propsRef.current.focusNodeId) revealTimerRef.current = window.setTimeout(() => revealFocusedRef.current(false), 450);
+  }, [zoomFit, rememberCurrent, compact]);
 
   const startTween = useCallback((gen: number, from: Float32Array, to: Float32Array) => {
     const tw = { gen, from, to, start: performance.now(), raf: 0, endPending: false };
@@ -444,6 +525,11 @@ function ForceGraphCanvasImpl({
         if (gen !== genRef.current) return;
         if (layoutStateRef.current === "seeded") layoutStateRef.current = "moving";
         const nodes = nodesRef.current;
+        // A keyboard-focused node with no position yet gets its first one in this frame: check it next frame
+        // (nodes have their positions by then, eased or not) instead of waiting for the layout to settle.
+        const focusId = propsRef.current.focusNodeId;
+        // Two frames: a tween started below assigns positions on its own first frame, which this must come after.
+        if (focusId && nodes.some((n) => n.id === focusId && n.x == null)) requestAnimationFrame(() => requestAnimationFrame(() => revealFocusedRef.current(false)));
         const firstOfGen = lastTickGenRef.current !== gen;
         lastTickGenRef.current = gen;
         const tw = tweenRef.current;
@@ -525,23 +611,26 @@ function ForceGraphCanvasImpl({
     topologyRef.current = topology;
     layoutStateRef.current = "seeded";
 
-    const nodes: SimNode[] = graph.nodes.map((n) => {
+    const nodes: SimNode[] = graph.nodes.map((n, i) => {
       const p = resume ? recalled?.get(n.id) : current.get(n.id) ?? recalled?.get(n.id);
       return {
         id: n.id,
         title: n.title ?? "",
         nodeType: n.type,
         projectId: n.projectId,
+        look: looksRef.current.nodeLooks[i],
         x: p?.x, y: p?.y,
       };
     });
     const indexById = new Map(nodes.map((n, i) => [n.id, i]));
     const links: SimLink[] = [];
     const layoutLinks: LayoutLink[] = [];
-    for (const e of visibleEdges) {
+    for (let ei = 0; ei < visibleEdges.length; ei++) {
+      const e = visibleEdges[ei];
       const si = indexById.get(e.source), ti = indexById.get(e.target);
       if (si == null || ti == null) continue;
-      links.push({ source: nodes[si], target: nodes[ti], edgeType: e.type, weight: e.weight ?? 1 });
+      const { look, text } = looksRef.current.edgeLooks[ei];
+      links.push({ source: nodes[si], target: nodes[ti], edgeType: e.type, weight: e.weight ?? 1, look, text });
       layoutLinks.push({ source: si, target: ti, edgeType: e.type });
     }
 
@@ -558,7 +647,7 @@ function ForceGraphCanvasImpl({
     layoutSpacingRef.current = spacingNow;
     layoutRef.current?.init({
       gen: ++genRef.current,
-      nodes: nodes.map((n) => ({ id: n.id, nodeType: n.nodeType, projectId: n.projectId, x: n.x, y: n.y })),
+      nodes: nodes.map((n) => ({ id: n.id, nodeType: n.nodeType, projectId: n.projectId, x: n.x, y: n.y, pinned: n.look?.pin })),
       links: layoutLinks,
       spacing: spacingNow,
       resume,
@@ -588,7 +677,6 @@ function ForceGraphCanvasImpl({
     if (!ctx) return;
 
     const connected = connectedRef.current;
-    const hovered = hoveredNodeRef.current;
     const nodes = nodesRef.current;
     const links = linksRef.current;
     const { width, height } = dimsRef.current;
@@ -596,7 +684,8 @@ function ForceGraphCanvasImpl({
     const moving = gesturesRef.current > 0 || tweenRef.current != null;
     const dpr = dprFor(nodes.length, moving);
     const t = transformRef.current;
-    const { selectedNodeId: sel, labelMode: lm, showHulls: hulls } = propsRef.current;
+    const { selectedNodeId: sel, labelMode: lm, showHulls: hulls, compact: small, focusNodeId: focused } = propsRef.current;
+    const hovered = hoveredNodeRef.current;
 
     // Keep the backing store on the same DPR the draw uses: the node count can
     // cross the large-graph threshold (search, filter, project toggle) without
@@ -627,7 +716,7 @@ function ForceGraphCanvasImpl({
 
     const bg = read("--background");
     const accent = read("--accent");
-    const typeColor = (type: GraphNode["type"]) => tokenColor(read, nodeTypeToken(type));
+    const nodeColor = (n: SimNode) => tokenColor(read, n.look?.token ?? nodeTypeToken(n.nodeType));
 
     // Visible world-space rect (+ margin for glows/labels) — everything outside
     // it is culled so zoomed-in frames only pay for what's on screen.
@@ -688,7 +777,7 @@ function ForceGraphCanvasImpl({
       scene.connected !== connected ||
       scene.themeSig !== themeSig
     ) {
-      scene = buildScene(nodes, links, sel, connected, read, alpha, typeColor, {
+      scene = buildScene(nodes, links, sel, connected, read, alpha, nodeColor, {
         version: posVersionRef.current,
         themeSig,
       });
@@ -716,6 +805,22 @@ function ForceGraphCanvasImpl({
     }
     ctx.globalAlpha = 1;
     ctx.setLineDash([]);
+    // Arrowheads keep their screen size at any zoom: 7px long, 5px wide.
+    for (const a of scene.arrows) {
+      if (!inView(a.x, a.y)) continue;
+      ctx.save();
+      ctx.translate(a.x, a.y);
+      ctx.rotate(a.angle);
+      ctx.scale(1 / t.k, 1 / t.k);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(-7, -2.6);
+      ctx.lineTo(-7, 2.6);
+      ctx.closePath();
+      ctx.fillStyle = a.fill;
+      ctx.fill();
+      ctx.restore();
+    }
     for (const f of scene.fills) {
       ctx.fillStyle = f.fill;
       ctx.fill(f.path);
@@ -729,11 +834,11 @@ function ForceGraphCanvasImpl({
     for (const n of nodes) {
       if (n.x == null || n.y == null) continue;
       if (inLabelView(n.x, n.y)) labelCandidates.push(n);
-      if ((n.id === sel || n.id === hovered) && inView(n.x, n.y)) highlighted.push(n);
+      if ((n.id === sel || n.id === hovered || n.id === focused) && inView(n.x, n.y)) highlighted.push(n);
     }
     for (const n of highlighted) {
       const r = radiusOf(n);
-      const col = typeColor(n.nodeType);
+      const col = nodeColor(n);
       const isSel = n.id === sel;
       const dim = !isSel && !!sel && connected != null && !connected.has(n.id);
       const g = ctx.createRadialGradient(n.x!, n.y!, r, n.x!, n.y!, r + 14);
@@ -761,8 +866,9 @@ function ForceGraphCanvasImpl({
     const toDraw: LabelDraw[] = [];
     for (const n of labelCandidates) {
       const isSel = n.id === sel;
-      const isHov = n.id === hovered;
-      const showLabel = shouldShowLabel({
+      const isHov = n.id === hovered || n.id === focused;
+      // A compact picture cannot be zoomed, so its labels never wait for a zoom level.
+      const showLabel = n.look?.label || (small && lm === "all") || shouldShowLabel({
         type: n.nodeType,
         isSelected: isSel,
         isHovered: isHov,
@@ -813,8 +919,31 @@ function ForceGraphCanvasImpl({
     drawRef.current();
   }, [dims]);
 
+  // A keyboard user moving through the list beside the canvas: if the focused node is
+  // off-screen (or under the edge), pan to it so the highlight is actually visible. This
+  // includes compact graphs: the fit stops shrinking at 0.2, so a large one can overflow.
+  // Runs on a focus change and again when the layout settles (focus can land before the
+  // first layout frame, when the node has no position yet).
+  const revealFocused = useCallback((interrupt: boolean) => {
+    const id = propsRef.current.focusNodeId;
+    const canvas = canvasRef.current, zoom = zoomRef.current;
+    if (!id || !canvas || !zoom) return;
+    const selection = d3.select<HTMLCanvasElement, unknown>(canvas);
+    // A pan to the previous person may still be running; stop it, then judge from where the view is now.
+    if (interrupt) selection.interrupt();
+    const node = nodesRef.current.find((n) => n.id === id);
+    const { width, height } = dimsRef.current;
+    if (planFocusPan(node, transformRef.current, width, height) !== "pan" || node?.x == null || node.y == null) return;
+    // Moving the view to keep a focused node visible is not the user taking control of it (it would stop later refits).
+    if (!compact) userInteractedRef.current = true;
+    selection.transition().duration(300).call(zoom.translateTo, node.x, node.y);
+  }, [compact]);
+  useEffect(() => { revealFocusedRef.current = revealFocused; }, [revealFocused]);
+  useEffect(() => { revealFocused(true); }, [focusNodeId, revealFocused]);
+  useEffect(() => () => window.clearTimeout(revealTimerRef.current), []);
+
   // redraw whenever selection / threshold / hull-toggle / label-mode / font scale changes
-  useEffect(() => { draw(); }, [selectedNodeId, semanticThreshold, showHulls, labelMode, draw]);
+  useEffect(() => { draw(); }, [selectedNodeId, focusNodeId, semanticThreshold, showHulls, labelMode, draw]);
 
   // Repaint after a theme change so the canvas picks up the new CSS-var colours.
   useThemeRepaint(drawRef);
@@ -838,6 +967,8 @@ function ForceGraphCanvasImpl({
         // Redraw at rest so dashed edges get their dashes back.
         if (gesturesRef.current === 0) scheduleDraw();
       });
+    // Compact: the picture is fixed; the page keeps its wheel and drag.
+    if (compact) zoom.filter(() => false);
     zoomRef.current = zoom;
     selection.call(zoom);
     // initial centering (instant) — fit happens once positions settle
@@ -910,7 +1041,7 @@ function ForceGraphCanvasImpl({
     let best: SimLink | null = null;
     let bd = 6 / t.k;
     for (const l of linksRef.current) {
-      if (l.edgeType !== "semantic") continue;
+      if (l.edgeType !== "semantic" && !l.text) continue;
       const s = l.source as SimNode, e = l.target as SimNode;
       if (s.x == null || e.x == null) continue;
       // distance point→segment
@@ -933,11 +1064,14 @@ function ForceGraphCanvasImpl({
     const node = pick(mx, my);
     const prevHover = hoveredNodeRef.current;
     hoveredNodeRef.current = node ? node.id : null;
-    canvas.style.cursor = node ? "pointer" : "grab";
+    canvas.style.cursor = node ? "pointer" : compact ? "default" : "grab";
 
     if (!node) {
       const edge = pickEdge(mx, my);
-      if (edge) {
+      if (edge?.text) {
+        setHoveredEdgeText(edge.text);
+        setTooltipPos({ x: mx + 12, y: my + 12 });
+      } else if (edge) {
         const s = edge.source as SimNode, tg = edge.target as SimNode;
         const orig = edgeMetaByPair.get(`${s.id}›${tg.id}`);
         const left = orig?.sourceSectionTitle ? `${s.title} › ${orig.sourceSectionTitle}` : s.title;
@@ -954,7 +1088,7 @@ function ForceGraphCanvasImpl({
     }
 
     if (prevHover !== hoveredNodeRef.current) scheduleDraw();
-  }, [pick, pickEdge, edgeMetaByPair, scheduleDraw]);
+  }, [pick, pickEdge, edgeMetaByPair, scheduleDraw, compact]);
 
   const handleClick = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
     const canvas = canvasRef.current;
@@ -992,7 +1126,7 @@ function ForceGraphCanvasImpl({
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-hidden relative"
+      className={compact ? "h-full w-full overflow-hidden relative" : "flex-1 overflow-hidden relative"}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => { hoveredNodeRef.current = null; setHoveredEdgeText(null); scheduleDraw(); }}
       onClick={handleClick}
@@ -1010,7 +1144,7 @@ function ForceGraphCanvasImpl({
       )}
 
       {/* Zoom controls */}
-      <div className="absolute bottom-4 right-4 flex flex-col gap-1">
+      {!compact && <div className="absolute bottom-4 right-4 flex flex-col gap-1">
         <IconButton
           label="Zoom in" tooltipSide="left"
           onClick={(e) => { e.stopPropagation(); zoomBy(1.4); }}
@@ -1032,7 +1166,7 @@ function ForceGraphCanvasImpl({
         >
           <Maximize2 size={13} />
         </IconButton>
-      </div>
+      </div>}
     </div>
   );
 }

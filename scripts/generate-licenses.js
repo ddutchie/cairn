@@ -64,6 +64,8 @@ const ROLE_MAP = {
   "@radix-ui/react-popover":       ["Radix Popover",       "Popovers",                    "UI"],
   "@radix-ui/react-select":        ["Radix Select",        "Select menus",                "UI"],
   "@radix-ui/react-context-menu":  ["Radix Context Menu",  "Context menus",               "UI"],
+  "gemoji":                        ["gemoji",              "Emoji shortcode names",       "UI"],
+  "city-timezones":                ["city-timezones",      "City to time zone lookup",    "UI"],
 
   // ── Agent ───────────────────────────────────────────────────────────────────
   "node-pty":                      ["node-pty",             "PTY process spawning",        "Agent"],

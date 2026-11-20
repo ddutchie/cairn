@@ -67,6 +67,31 @@ describe("session log", () => {
     expect(state.usage).toMatchObject({ input: 10, output: 5, costUsd: 0.01 });
   });
 
+  it("reports the last request's prompt as the context size, not a sum over requests", async () => {
+    const root = await tmp();
+    const { writer } = await openSession(root, { id: "s4" });
+    const grown = { ...usage, input: 100, cacheRead: 900, cacheWrite: 0, output: 7 };
+    const last = { ...assistant([{ type: "text", text: "done" }]), usage: grown };
+    for (const e of [turn[0], turn[1], turn[3], turn[4], turn[5], turn[6], { type: "assistant/message", message: last } as AgentEvent, turn[7]]) await writer.append(e);
+    const log = (await readSession(root, "s4"))!;
+    const { replayFromRecords } = await import("./replay");
+    const u = replayFromRecords(log.records).usage!;
+    expect(u.promptTokens).toBe(1000);
+    expect(u.cacheReadTokens).toBe(900);
+    expect(u.completionTokens).toBe(7);
+    expect(foldState(log.records).usage.input).toBe(120);
+  });
+
+  it("ignores a request that reported no usage when reading the context size", async () => {
+    const root = await tmp();
+    const { writer } = await openSession(root, { id: "s5" });
+    const empty = { ...assistant([{ type: "text", text: "ok" }]), usage: { ...usage, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
+    for (const e of [turn[0], turn[1], turn[3], turn[4], turn[5], turn[6], { type: "assistant/message", message: empty } as AgentEvent, turn[7]]) await writer.append(e);
+    const { replayFromRecords } = await import("./replay");
+    const u = replayFromRecords((await readSession(root, "s5"))!.records).usage!;
+    expect(u.promptTokens).toBe(13);
+  });
+
   it("rejects path-traversing ids", async () => {
     await expect(openSession(await tmp(), { id: "../x" })).rejects.toThrow(/invalid session id/);
   });

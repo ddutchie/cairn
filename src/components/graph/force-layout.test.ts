@@ -61,4 +61,15 @@ describe("runForceLayout", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(count).toBe(before);
   });
+
+  it("holds a pinned node at the origin", async () => {
+    const init = ring(8, false);
+    init.nodes[3] = { ...init.nodes[3], pinned: true };
+    const { frames } = await settle(init);
+    for (const f of frames) {
+      expect(f[3 * 2]).toBe(0);
+      expect(f[3 * 2 + 1]).toBe(0);
+    }
+  });
 });
+

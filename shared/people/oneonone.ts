@@ -5,6 +5,7 @@
  */
 
 import type { Cadence } from "../types/people";
+import { nameToEmoji } from "gemoji";
 
 /** Marks the automation row that runs prep briefs (one per workspace, never scheduled, hidden from the list). */
 export const PREP_COMMUNITY_ID = "cairn:prep";
@@ -235,6 +236,50 @@ const pick = (o: unknown, ...keys: string[]): string | undefined => {
   return undefined;
 };
 
+/** Slack's own names that the standard list (gemoji, GitHub's) spells differently or lacks. */
+const SLACK_NAMES: Record<string, string> = {
+  spiral_calendar_pad: "🗓️", plane: "✈️", sick: "🤒", lunch: "🍽️", large_green_circle: "🟢", beach_with_umbrella: "🏖️",
+  simple_smile: "🙂", slightly_smiling_face: "🙂", face_with_thermometer: "🤒",
+};
+
+/** A Slack status emoji as a character. Slack sends `:name:`; the standard shortcodes (and a few Slack-only names) become characters, and custom ones give "" rather than the raw code. */
+export function statusEmojiChar(code: string | undefined): string {
+  if (!code) return "";
+  const name = code.trim().replace(/^:|:$/g, "").replace(/::skin-tone-\d$/, "");
+  // Own properties only: a status of `:constructor:` must not find Object.prototype's.
+  const own = (o: object) => Object.prototype.hasOwnProperty.call(o, name);
+  const known = own(SLACK_NAMES) ? SLACK_NAMES[name] : own(nameToEmoji) ? nameToEmoji[name] : undefined;
+  if (known) return known;
+  // Already a character (not a `:name:` code): keep it.
+  return /^:.+:$/.test(code.trim()) ? "" : code.trim();
+}
+
+const LINE_KEYS: Record<string, string> = {
+  "display name": "display_name", "real name": "real_name", title: "title", pronouns: "pronouns", timezone: "tz", status: "status_text",
+};
+
+/**
+ * "Title: Manager" lines as the flattened keys the reader below knows. Null when fewer than
+ * `minKeys` known labels are present (free text with one stray "Title:" line isn't a profile).
+ */
+function labelledLines(text: string, minKeys = 1): Record<string, unknown> | null {
+  const out: Record<string, unknown> = {};
+  // Recognised labels, not output keys: "Status: :emoji: text" is one label but two keys.
+  let labels = 0;
+  for (const line of text.split(/\r?\n/)) {
+    const i = line.indexOf(":");
+    if (i < 0) continue;
+    const key = LINE_KEYS[line.slice(0, i).trim().toLowerCase()];
+    const value = line.slice(i + 1).trim();
+    if (!key || !value) continue;
+    labels++;
+    // "Status: :palm_tree: On vacation" is an emoji and its text.
+    const lead = key === "status_text" ? value.match(/^(:[\w+-]+:(?::skin-tone-\d:)?)\s*(.*)$/) : null;
+    if (lead) { out.status_emoji = lead[1]; if (lead[2]) out.status_text = lead[2]; } else out[key] = value;
+  }
+  return labels >= minKeys ? out : null;
+}
+
 /**
  * Read profile fields out of a Slack connector's reply. Connectors differ (raw
  * Slack API JSON, a `profile` wrapper, flattened fields, or text), so this looks
@@ -242,9 +287,11 @@ const pick = (o: unknown, ...keys: string[]): string | undefined => {
  */
 export function parseSlackProfile(reply: string): ProfileFields | null {
   let data: unknown;
-  try { data = JSON.parse(reply); } catch { return null; }
+  try { data = JSON.parse(reply); } catch { data = labelledLines(reply, 2); }
   if (!data || typeof data !== "object") return null;
-  const root = data as Record<string, unknown>;
+  let root = data as Record<string, unknown>;
+  // Slack's own MCP server answers `{"result":"Display Name: …\nTitle: …"}`: labelled text lines inside JSON.
+  if (typeof root.result === "string") root = labelledLines(root.result) ?? root;
   const user = (root.user && typeof root.user === "object" ? root.user : root) as Record<string, unknown>;
   const profile = (user.profile && typeof user.profile === "object" ? user.profile : root.profile && typeof root.profile === "object" ? root.profile : {}) as Record<string, unknown>;
   const fields: ProfileFields = {

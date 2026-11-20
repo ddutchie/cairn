@@ -1,18 +1,12 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { CheckCircle, ChevronDown, ChevronRight, XCircle } from "lucide-react";
 import { MicroLabel } from "@/components/ui/labels";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { HumanizedTool } from "@/lib/humanize-tool";
 import { cn } from "@/lib/utils";
-
-/**
- * Cards the user opened, by call id. The transcript can remount a card while a turn is
- * still running (rows are rebuilt as steps arrive), which would reset local state and
- * collapse a card the moment it opened; this outlives the component.
- */
-const openedCards = new Set<string>();
+import { useOpenedCard } from "@/lib/conversation/opened-cards";
 
 /**
  * Shared tool-call card: a compact status chip (icon · brand · action) that
@@ -53,11 +47,7 @@ export function ToolCard({
   /** Expanded panels (ToolPayload, ChangeList, chips…). */
   children?: ReactNode;
 }) {
-  const [expanded, setExpandedState] = useState(defaultExpanded || (persistKey !== undefined && openedCards.has(persistKey)));
-  const setExpanded = (next: boolean) => {
-    if (persistKey !== undefined) { if (next) openedCards.add(persistKey); else openedCards.delete(persistKey); }
-    setExpandedState(next);
-  };
+  const [expanded, setExpanded] = useOpenedCard(persistKey, defaultExpanded);
   return (
     <div data-testid={testId} className="max-w-xl">
       <div className="flex items-center gap-1">
