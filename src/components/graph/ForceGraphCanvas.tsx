@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useCallback, useState, useMemo } from "react"
 import { GRAPH_NODE_TYPES } from "../../../shared/types/domain";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import * as d3 from "d3";
-import type { GraphNode, KnowledgeGraph } from "@/types";
+import type { GraphEdge, GraphNode, KnowledgeGraph } from "@/types";
 import { createCssVarReader, createAlphaCache, tokenToCssVar } from "@/lib/viz/color";
 import { useFontScale, useThemeRepaint, useContainerDims } from "@/lib/viz/hooks";
 import {
@@ -26,8 +26,40 @@ import {
 } from "./force-layout-client";
 import { IconButton } from "@/components/ui/icon-button";
 
+/** How one edge is drawn, overriding the style its type gets. */
+export interface EdgeLook {
+  token: ThemeToken;
+  opacity: number;
+  dash?: boolean;
+  /** Stroke width in world px (default 1). */
+  width?: number;
+}
+
+/** How one node is drawn, overriding the style its type gets. */
+export interface NodeLook {
+  token?: ThemeToken;
+  radius?: number;
+  /** Always label this node, whatever the label mode and zoom. */
+  label?: boolean;
+}
+
+/**
+ * Per-graph styling for callers whose edges and nodes mean more than their
+ * type says (the People relationship map: a link kind, a former link, "me").
+ * Called once per node/edge when the layout is rebuilt, never per frame, and
+ * its results are part of the layout fingerprint.
+ */
+export interface ForceGraphStyling {
+  edge?: (e: GraphEdge) => EdgeLook | undefined;
+  node?: (n: GraphNode) => NodeLook | undefined;
+  /** Text shown when the pointer rests on the edge. */
+  edgeText?: (e: GraphEdge) => string | undefined;
+}
+
 interface Props {
   graph: KnowledgeGraph;
+  /** Optional per-node / per-edge look; see {@link ForceGraphStyling}. */
+  styling?: ForceGraphStyling;
   selectedNodeId: string | null;
   onNodeClick: (node: GraphNode) => void;
   /** Right-click: the node under the cursor, or null for empty canvas. */
@@ -64,10 +96,13 @@ type SimNode = d3.SimulationNodeDatum & {
   title: string;
   nodeType: GraphNode["type"];
   projectId?: string;
+  look?: NodeLook;
 };
 type SimLink = d3.SimulationLinkDatum<SimNode> & {
   edgeType: string;
   weight: number;
+  look?: EdgeLook;
+  text?: string;
 };
 
 /** Hull outline in world coords, cached until node positions next change. */
@@ -120,7 +155,7 @@ function buildScene(
   connected: Set<string> | null,
   read: VarReader,
   alpha: (color: string, opacity: number) => string,
-  typeColor: (type: GraphNode["type"]) => string,
+  nodeColor: (n: SimNode) => string,
   meta: { version: number; themeSig: string },
 ): SceneCache {
   // One path per distinct stroke style.
@@ -128,9 +163,9 @@ function buildScene(
   for (const l of links) {
     const s = l.source as SimNode, tg = l.target as SimNode;
     if (s.x == null || s.y == null || tg.x == null || tg.y == null) continue;
-    const st = sharedEdgeStyle(l.edgeType);
+    const st = l.look ? { token: l.look.token, opacity: l.look.opacity, dash: !!l.look.dash } : sharedEdgeStyle(l.edgeType);
     let op = st.opacity;
-    let w = l.edgeType === "wikilink" ? 1.6 : 1;
+    let w = l.look?.width ?? (l.edgeType === "wikilink" ? 1.6 : 1);
     if (l.edgeType === "semantic" && l.weight < 1) w = 0.5 + l.weight;
     if (sel) {
       const on = connected && connected.has(s.id) && connected.has(tg.id);
@@ -151,7 +186,7 @@ function buildScene(
   for (const n of nodes) {
     if (n.x == null || n.y == null || n.id === sel) continue;
     const dim = !!sel && connected != null && !connected.has(n.id);
-    const fill = alpha(typeColor(n.nodeType), dim ? 0.22 : 0.92);
+    const fill = alpha(nodeColor(n), dim ? 0.22 : 0.92);
     let p = fillBatches.get(fill);
     if (!p) fillBatches.set(fill, (p = new Path2D()));
     const r = radiusOf(n);
@@ -177,7 +212,7 @@ function positionsOf(nodes: SimNode[]): Map<string, { x: number; y: number }> {
   return out;
 }
 
-const radiusOf = (n: SimNode) => nodeRadius(n.nodeType);
+const radiusOf = (n: SimNode) => n.look?.radius ?? nodeRadius(n.nodeType);
 const NODE_TYPES = GRAPH_NODE_TYPES;
 /** Largest label font size (screen px, before font scale). */
 const LABEL_MAX_SCREEN_PX = Math.max(...NODE_TYPES.map((t) => labelScreenPx(t)));
@@ -220,6 +255,7 @@ const ZOOM_BTN_CLASS =
 
 function ForceGraphCanvasImpl({
   graph,
+  styling,
   selectedNodeId,
   onNodeClick,
   onNodeContextMenu,
@@ -359,12 +395,26 @@ function ForceGraphCanvasImpl({
   // refresh instead of showing stale data.
   // Memoised: these are O(nodes/edges) string builds and the component
   // re-renders on every edge-tooltip mouse move.
+  const nodeLooks = useMemo(() => graph.nodes.map((n) => styling?.node?.(n)), [graph.nodes, styling]);
+  const edgeLooks = useMemo(
+    () => visibleEdges.map((e) => ({ look: styling?.edge?.(e), text: styling?.edgeText?.(e) })),
+    [visibleEdges, styling],
+  );
   const nodeFingerprint = useMemo(() => graph.nodes
-    .map((n) => `${n.id}:${n.type}:${n.projectId ?? ""}:${n.title}`)
-    .join(","), [graph.nodes]);
+    .map((n, i) => {
+      const k = nodeLooks[i];
+      return `${n.id}:${n.type}:${n.projectId ?? ""}:${n.title}${k ? `:${k.token ?? ""}/${k.radius ?? ""}/${k.label ? 1 : 0}` : ""}`;
+    })
+    .join(","), [graph.nodes, nodeLooks]);
   const edgeFingerprint = useMemo(() => visibleEdges
-    .map((e) => `${e.source}-${e.target}:${e.type}:${e.weight ?? 1}`)
-    .join(","), [visibleEdges]);
+    .map((e, i) => {
+      const { look, text } = edgeLooks[i];
+      return `${e.source}-${e.target}:${e.type}:${e.weight ?? 1}${look ? `:${look.token}/${look.opacity}/${look.dash ? 1 : 0}/${look.width ?? ""}` : ""}${text ? `:${text}` : ""}`;
+    })
+    .join(","), [visibleEdges, edgeLooks]);
+  const looksRef = useRef({ nodeLooks, edgeLooks });
+  // eslint-disable-next-line react-hooks/refs -- the rebuild effect reads the latest looks; the fingerprints decide when it runs
+  looksRef.current = { nodeLooks, edgeLooks };
 
   // ── force layout (runs in a Web Worker; see force-layout.ts) ──
   const layoutRef = useRef<ForceLayoutClient | null>(null);
@@ -525,23 +575,26 @@ function ForceGraphCanvasImpl({
     topologyRef.current = topology;
     layoutStateRef.current = "seeded";
 
-    const nodes: SimNode[] = graph.nodes.map((n) => {
+    const nodes: SimNode[] = graph.nodes.map((n, i) => {
       const p = resume ? recalled?.get(n.id) : current.get(n.id) ?? recalled?.get(n.id);
       return {
         id: n.id,
         title: n.title ?? "",
         nodeType: n.type,
         projectId: n.projectId,
+        look: looksRef.current.nodeLooks[i],
         x: p?.x, y: p?.y,
       };
     });
     const indexById = new Map(nodes.map((n, i) => [n.id, i]));
     const links: SimLink[] = [];
     const layoutLinks: LayoutLink[] = [];
-    for (const e of visibleEdges) {
+    for (let ei = 0; ei < visibleEdges.length; ei++) {
+      const e = visibleEdges[ei];
       const si = indexById.get(e.source), ti = indexById.get(e.target);
       if (si == null || ti == null) continue;
-      links.push({ source: nodes[si], target: nodes[ti], edgeType: e.type, weight: e.weight ?? 1 });
+      const { look, text } = looksRef.current.edgeLooks[ei];
+      links.push({ source: nodes[si], target: nodes[ti], edgeType: e.type, weight: e.weight ?? 1, look, text });
       layoutLinks.push({ source: si, target: ti, edgeType: e.type });
     }
 
@@ -627,7 +680,7 @@ function ForceGraphCanvasImpl({
 
     const bg = read("--background");
     const accent = read("--accent");
-    const typeColor = (type: GraphNode["type"]) => tokenColor(read, nodeTypeToken(type));
+    const nodeColor = (n: SimNode) => tokenColor(read, n.look?.token ?? nodeTypeToken(n.nodeType));
 
     // Visible world-space rect (+ margin for glows/labels) — everything outside
     // it is culled so zoomed-in frames only pay for what's on screen.
@@ -688,7 +741,7 @@ function ForceGraphCanvasImpl({
       scene.connected !== connected ||
       scene.themeSig !== themeSig
     ) {
-      scene = buildScene(nodes, links, sel, connected, read, alpha, typeColor, {
+      scene = buildScene(nodes, links, sel, connected, read, alpha, nodeColor, {
         version: posVersionRef.current,
         themeSig,
       });
@@ -733,7 +786,7 @@ function ForceGraphCanvasImpl({
     }
     for (const n of highlighted) {
       const r = radiusOf(n);
-      const col = typeColor(n.nodeType);
+      const col = nodeColor(n);
       const isSel = n.id === sel;
       const dim = !isSel && !!sel && connected != null && !connected.has(n.id);
       const g = ctx.createRadialGradient(n.x!, n.y!, r, n.x!, n.y!, r + 14);
@@ -762,7 +815,7 @@ function ForceGraphCanvasImpl({
     for (const n of labelCandidates) {
       const isSel = n.id === sel;
       const isHov = n.id === hovered;
-      const showLabel = shouldShowLabel({
+      const showLabel = n.look?.label || shouldShowLabel({
         type: n.nodeType,
         isSelected: isSel,
         isHovered: isHov,
@@ -910,7 +963,7 @@ function ForceGraphCanvasImpl({
     let best: SimLink | null = null;
     let bd = 6 / t.k;
     for (const l of linksRef.current) {
-      if (l.edgeType !== "semantic") continue;
+      if (l.edgeType !== "semantic" && !l.text) continue;
       const s = l.source as SimNode, e = l.target as SimNode;
       if (s.x == null || e.x == null) continue;
       // distance point→segment
@@ -937,7 +990,10 @@ function ForceGraphCanvasImpl({
 
     if (!node) {
       const edge = pickEdge(mx, my);
-      if (edge) {
+      if (edge?.text) {
+        setHoveredEdgeText(edge.text);
+        setTooltipPos({ x: mx + 12, y: my + 12 });
+      } else if (edge) {
         const s = edge.source as SimNode, tg = edge.target as SimNode;
         const orig = edgeMetaByPair.get(`${s.id}›${tg.id}`);
         const left = orig?.sourceSectionTitle ? `${s.title} › ${orig.sourceSectionTitle}` : s.title;

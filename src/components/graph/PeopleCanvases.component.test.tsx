@@ -69,7 +69,7 @@ describe("RelationshipCanvas", () => {
       person("pal", "Pat Peer", ["peer"]),
       person("lone", "Lone Wolf", []),
     ]);
-    render(<RelationshipCanvas />);
+    render(<RelationshipCanvas />, { wrapper: TooltipProvider });
     expect(screen.getByRole("button", { name: /Reporting line, 1/ })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("1 without a link here")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Dana Report/ })).toBeInTheDocument();
@@ -82,7 +82,7 @@ describe("RelationshipCanvas", () => {
 
   it("explains when there are no relationships", () => {
     seed([person("a", "Ann", [])]);
-    render(<RelationshipCanvas />);
+    render(<RelationshipCanvas />, { wrapper: TooltipProvider });
     expect(screen.getByText(/No relationships yet/)).toBeInTheDocument();
   });
 });
