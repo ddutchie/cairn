@@ -77,6 +77,8 @@ export function capturePeopleFromFile(db: Database.Database, filePath: string, n
 
 const BACKFILL_KEY = "people.attendeeBackfill.v1";
 const BACKFILL_BATCH = 40;
+/** A file that keeps failing is retried at this many startups, then given up on so it can't re-scan the vault forever. */
+const BACKFILL_MAX_ATTEMPTS = 3;
 const backfillRunning = new Set<string>();
 
 /** Every .md file under a folder, never following symlinks or entering dot folders. */
@@ -102,12 +104,15 @@ function listMarkdownFiles(dir: string, out: string[]): void {
  * note file once per device and workspace folder, in small batches so startup
  * isn't blocked, and records a marker in `app_kv` (not synced) when done. Safe to
  * run twice or be interrupted: capture is idempotent, and the marker is only
- * written after the last batch. Returns how many notes it captured.
+ * written after the last batch, as "done" only when no file failed (a failure is
+ * retried at the next startup, up to three times). Returns how many notes it captured.
  */
 export async function backfillMeetingCapture(db: Database.Database, workspacePath: string): Promise<number> {
   const key = `${BACKFILL_KEY}:${workspacePath}`;
   if (backfillRunning.has(key)) return 0;
-  if (db.prepare("SELECT 1 FROM app_kv WHERE key = ?").get(key)) return 0;
+  const marker = db.prepare("SELECT value FROM app_kv WHERE key = ?").get(key) as { value: string } | undefined;
+  if (marker?.value === "done") return 0;
+  const attempt = marker?.value.startsWith("retry:") ? Number(marker.value.slice(6)) || 0 : 0;
   backfillRunning.add(key);
   try {
     const files: string[] = [];
@@ -115,6 +120,7 @@ export async function backfillMeetingCapture(db: Database.Database, workspacePat
     for (const p of projects) listMarkdownFiles(projectNotesDir(workspacePath, p.name), files);
     const liveNote = db.prepare("SELECT 1 FROM notes WHERE id = ? AND deleted_at IS NULL");
     let captured = 0;
+    let failed = 0;
     for (let i = 0; i < files.length; i += BACKFILL_BATCH) {
       for (const fp of files.slice(i, i + BACKFILL_BATCH)) {
         try {
@@ -124,13 +130,16 @@ export async function backfillMeetingCapture(db: Database.Database, workspacePat
           if (typeof data.id !== "string" || !Object.prototype.hasOwnProperty.call(data, "attendees") || !liveNote.get(data.id)) continue;
           if (capturePeopleFromFile(db, fp, data.id)) captured++;
         } catch (err) {
-          console.error(`[people] backfill skipped ${fp}:`, err);
+          failed++;
+          console.error(`[people] backfill couldn't read ${fp}:`, err);
         }
       }
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
-    db.prepare("INSERT INTO app_kv (key, value, updated_at) VALUES (?, 'done', ?) ON CONFLICT(key) DO UPDATE SET value = 'done', updated_at = excluded.updated_at")
-      .run(key, new Date().toISOString());
+    // Done only when every file was handled. A failure is retried at the next startup, a few times.
+    const next = failed > 0 && attempt + 1 < BACKFILL_MAX_ATTEMPTS ? `retry:${attempt + 1}` : "done";
+    db.prepare("INSERT INTO app_kv (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
+      .run(key, next, new Date().toISOString());
     return captured;
   } finally {
     backfillRunning.delete(key);

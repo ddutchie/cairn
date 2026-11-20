@@ -245,4 +245,37 @@ describe("backfillMeetingCapture", () => {
     expect(meetingOf("n1")).toBeNull();
     expect(meetingOf("n2")).not.toBeNull();
   });
+
+  const marker = () => (db.prepare("SELECT value FROM app_kv WHERE key LIKE 'people.attendeeBackfill.v1:%'").get() as { value: string } | undefined)?.value;
+
+  it("retries a file that failed, instead of marking the backfill done", async () => {
+    createPerson(db, { workspaceId: "ws1", name: "Ana" });
+    const file = noteWithFile("n1", { attendees: ["[[Ana]]"] });
+    fs.chmodSync(file, 0o000);
+    try {
+      expect(await backfillMeetingCapture(db, ws)).toBe(0);
+      expect(marker()).toBe("retry:1");
+      expect(meetingOf("n1")).toBeNull();
+    } finally {
+      fs.chmodSync(file, 0o644);
+    }
+    expect(await backfillMeetingCapture(db, ws)).toBe(1);
+    expect(marker()).toBe("done");
+    expect(meetingOf("n1")).not.toBeNull();
+  });
+
+  it("gives up on a file that keeps failing after three startups", async () => {
+    createPerson(db, { workspaceId: "ws1", name: "Ana" });
+    const file = noteWithFile("n1", { attendees: ["[[Ana]]"] });
+    fs.chmodSync(file, 0o000);
+    try {
+      await backfillMeetingCapture(db, ws);
+      await backfillMeetingCapture(db, ws);
+      expect(marker()).toBe("retry:2");
+      await backfillMeetingCapture(db, ws);
+      expect(marker()).toBe("done");
+    } finally {
+      fs.chmodSync(file, 0o644);
+    }
+  });
 });
