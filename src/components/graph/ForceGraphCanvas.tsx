@@ -659,7 +659,7 @@ function ForceGraphCanvasImpl({
     const dpr = dprFor(nodes.length, moving);
     const t = transformRef.current;
     const { selectedNodeId: sel, labelMode: lm, showHulls: hulls, compact: small, focusNodeId: focused } = propsRef.current;
-    const hovered = hoveredNodeRef.current ?? focused;
+    const hovered = hoveredNodeRef.current;
 
     // Keep the backing store on the same DPR the draw uses: the node count can
     // cross the large-graph threshold (search, filter, project toggle) without
@@ -792,7 +792,7 @@ function ForceGraphCanvasImpl({
     for (const n of nodes) {
       if (n.x == null || n.y == null) continue;
       if (inLabelView(n.x, n.y)) labelCandidates.push(n);
-      if ((n.id === sel || n.id === hovered) && inView(n.x, n.y)) highlighted.push(n);
+      if ((n.id === sel || n.id === hovered || n.id === focused) && inView(n.x, n.y)) highlighted.push(n);
     }
     for (const n of highlighted) {
       const r = radiusOf(n);
@@ -824,7 +824,7 @@ function ForceGraphCanvasImpl({
     const toDraw: LabelDraw[] = [];
     for (const n of labelCandidates) {
       const isSel = n.id === sel;
-      const isHov = n.id === hovered;
+      const isHov = n.id === hovered || n.id === focused;
       // A compact picture cannot be zoomed, so its labels never wait for a zoom level.
       const showLabel = n.look?.label || (small && lm === "all") || shouldShowLabel({
         type: n.nodeType,
@@ -876,6 +876,23 @@ function ForceGraphCanvasImpl({
   useEffect(() => {
     drawRef.current();
   }, [dims]);
+
+  // A keyboard user moving through the list beside the canvas: if the focused node is
+  // off-screen (or under the edge), pan to it so the highlight is actually visible.
+  useEffect(() => {
+    if (!focusNodeId || compact) return;
+    const canvas = canvasRef.current, zoom = zoomRef.current;
+    const node = nodesRef.current.find((n) => n.id === focusNodeId);
+    if (!canvas || !zoom || node?.x == null || node.y == null) return;
+    const t = transformRef.current;
+    const { width, height } = dimsRef.current;
+    const sx = node.x * t.k + t.x, sy = node.y * t.k + t.y;
+    const margin = 48;
+    if (sx >= margin && sx <= width - margin && sy >= margin && sy <= height - margin) return;
+    userInteractedRef.current = true;
+    d3.select<HTMLCanvasElement, unknown>(canvas).transition().duration(300)
+      .call(zoom.translateTo, node.x, node.y);
+  }, [focusNodeId, compact]);
 
   // redraw whenever selection / threshold / hull-toggle / label-mode / font scale changes
   useEffect(() => { draw(); }, [selectedNodeId, focusNodeId, semanticThreshold, showHulls, labelMode, draw]);

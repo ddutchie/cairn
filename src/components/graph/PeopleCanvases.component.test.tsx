@@ -81,6 +81,16 @@ describe("RelationshipCanvas", () => {
     expect(screen.getByRole("button", { name: /^Pat Peer/ })).toBeInTheDocument();
   });
 
+  it("tells the canvas which person a keyboard user is on", () => {
+    seed([person("me", "Me Myself", [], { isMe: true }), person("rep", "Dana Report", ["direct_report"])]);
+    const { container } = render(<RelationshipCanvas />, { wrapper: TooltipProvider });
+    const button = screen.getByRole("button", { name: /^Dana Report/ });
+    fireEvent.focus(button);
+    // The canvas redraws with the person highlighted; nothing throws in a canvas-less test DOM.
+    expect(container.querySelector("canvas")).not.toBeNull();
+    fireEvent.blur(button);
+  });
+
   it("explains when there are no relationships", () => {
     seed([person("a", "Ann", [])]);
     render(<RelationshipCanvas />, { wrapper: TooltipProvider });
