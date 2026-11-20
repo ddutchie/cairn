@@ -5,7 +5,7 @@
  * org chart): the data hook, link colours, the filter chips and "open person".
  * Mounted by InsightsView.
  */
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -56,10 +56,14 @@ export function usePeopleNetwork() {
 }
 const EMPTY_PEOPLE: never[] = [];
 
-/** Open a person in the Insights side panel. */
+/** Where a click on a person goes. Insights uses its side panel; the People view mounts a provider to use its own. */
+export const OpenPersonContext = createContext<((id: string) => void) | null>(null);
+
+/** Open a person: through the nearest `OpenPersonContext`, else in the Insights side panel. */
 export function useOpenPerson() {
+  const override = useContext(OpenPersonContext);
   const setPeoplePanel = useCairnStore((s) => s.setPeoplePanel);
-  return useCallback((id: string) => setPeoplePanel(id), [setPeoplePanel]);
+  return useCallback((id: string) => (override ?? setPeoplePanel)(id), [override, setPeoplePanel]);
 }
 
 interface KindChipProps {
