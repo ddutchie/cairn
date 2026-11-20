@@ -102,4 +102,13 @@ describe("PeopleView", () => {
     renderView();
     expect(screen.getByText("No people yet")).toBeInTheDocument();
   });
+
+  it("keeps a person opened from elsewhere, and starts at the list on the next visit", () => {
+    // openPerson (Today nudge, tool card) selects before the view mounts.
+    useCairnStore.setState({ selectedPersonId: "p1" });
+    const { unmount } = renderView();
+    expect(useCairnStore.getState().selectedPersonId).toBe("p1");
+    unmount();
+    expect(useCairnStore.getState().selectedPersonId).toBeNull();
+  });
 });

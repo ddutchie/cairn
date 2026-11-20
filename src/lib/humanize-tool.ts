@@ -100,6 +100,7 @@ function humanizePeople(args: ToolArgs): HumanizedTool {
       return { pre: "Listed people" };
     case "get": return { pre: "Read", obj: who };
     case "timeline": return { pre: "Read the timeline of", obj: who };
+    case "inventory": return { pre: "Scanned notes for people" };
     case "relationships": return args.personId || args.name ? { pre: "Read the relationships of", obj: who } : { pre: "Read the relationship map" };
     // A name-only call may match an existing person, so "Added" needs the result (`outcome`, set by the card); without it, say "Saved".
     case "upsert":

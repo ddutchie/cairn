@@ -140,11 +140,15 @@ export function PeopleView() {
   const [creating, setCreating] = useState(false);
   const [finding, setFinding] = useState(false);
 
-  // Load on open and on workspace switch (people are workspace-wide).
+  // Load on open and on workspace switch (people are workspace-wide). Don't clear the
+  // selection here: openPerson sets it before this view mounts, and a workspace switch
+  // already clears it in the store.
   useEffect(() => {
-    selectPerson(null);
     void loadPeople();
-  }, [activeWorkspaceId, loadPeople, selectPerson]);
+  }, [activeWorkspaceId, loadPeople]);
+
+  // Reopening People from the sidebar starts at the list, not at the last person.
+  useEffect(() => () => selectPerson(null), [selectPerson]);
 
   // People tables aren't in the change feed's entity set, so refresh on any
   // change (sync, an agent over MCP). Both reads are cheap.
