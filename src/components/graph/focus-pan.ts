@@ -32,3 +32,13 @@ export function planFocusPan(
   if (!node || node.x == null || node.y == null) return "wait";
   return isOnScreen(t, node.x, node.y, width, height) ? "none" : "pan";
 }
+
+/**
+ * Whether a settled layout re-fits the view. A graph the user has panned or
+ * zoomed keeps their view, except a compact one: it cannot be navigated by
+ * pointer, so a rebuild (more links shown) must fit the new people or they
+ * could land out of reach.
+ */
+export function shouldAutoFit(userInteracted: boolean, compact: boolean): boolean {
+  return compact || !userInteracted;
+}

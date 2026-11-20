@@ -41,6 +41,7 @@ import { peopleClient } from "@/lib/ipc/people";
 import { applicableFields, PROFILE_FIELD_LABEL, type AutofillProposal } from "../../../shared/people/autofill";
 import { ConnectionsGraph } from "./ConnectionsGraph";
 import { PlaceInput } from "./PlaceInput";
+import { latestProfileValue, noteProfileWrite } from "./recent-profile-writes";
 import { NextMeeting, ProfileLine, slackStatusText, usePersonProfile } from "./PersonOneOnOne";
 import type { PersonProfile } from "../../../shared/people/oneonone";
 
@@ -157,8 +158,15 @@ function ProfileInput({ field, personId, value, placeholder, timezone }: { field
     const { value: clean, error: err } = cleanProfileFieldWithPlaces(field, v);
     setError(err ?? null);
     if (err) return;
-    // A place that names a zone fills an empty time zone (never replaces one that is set).
-    const zone = field === "location" && !timezone ? picked ?? zoneForPlace(clean) : null;
+    // A place that names a zone fills an empty time zone, never one that is set. "Set" is judged now, not from this render's
+    // prop: a time zone saved a moment ago may not be in the list yet.
+    let zone: string | null = null;
+    if (field === "location") {
+      const person = useCairnStore.getState().people.find((p) => p.id === personId);
+      if (!latestProfileValue(personId, "timezone", person ? person.timezone : timezone)) zone = picked ?? zoneForPlace(clean);
+    }
+    noteProfileWrite(personId, field, clean ?? null);
+    if (zone) noteProfileWrite(personId, "timezone", zone);
     void updatePerson(personId, { [field]: clean ?? null, ...(zone ? { timezone: zone } : {}) });
   };
   const suggests = field === "location" || field === "timezone";

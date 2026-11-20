@@ -17,6 +17,19 @@ describe("parseAutofill", () => {
     expect(out[2]).toEqual({ field: "timezone", value: "Europe/Berlin", quote: "Based in Berlin, Germany." });
   });
 
+  it("still infers the zone from a location the person already has", () => {
+    const loc = { field: "location", value: "Berlin, Germany", quote: "Based in Berlin, Germany." };
+    const out = parseAutofill(reply([loc]), NOTE, { location: "berlin, germany" });
+    expect(out).toEqual([{ field: "timezone", value: "Europe/Berlin", quote: "Based in Berlin, Germany." }]);
+  });
+
+  it("withholds the inferred zone when the stored location differs from the sourced one", () => {
+    const loc = { field: "location", value: "Berlin, Germany", quote: "Based in Berlin, Germany." };
+    const out = parseAutofill(reply([loc]), NOTE, { location: "Paris, France" });
+    // The location change is offered (the user may reject it), but its zone is not: applying only the zone would pair Paris with Berlin's.
+    expect(out.map((p) => p.field)).toEqual(["location"]);
+  });
+
   it("does not propose a zone for a place when one is already set or already proposed", () => {
     const loc = { field: "location", value: "Berlin, Germany", quote: "Based in Berlin, Germany." };
     expect(parseAutofill(reply([loc]), NOTE, { timezone: "Europe/London" }).map((p) => p.field)).toEqual(["location"]);

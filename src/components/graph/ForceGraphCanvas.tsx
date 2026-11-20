@@ -17,7 +17,7 @@ import {
   type ThemeToken,
 } from "../../../shared/ui/graph";
 import type { LayoutLink } from "./force-layout";
-import { planFocusPan } from "./focus-pan";
+import { planFocusPan, shouldAutoFit } from "./focus-pan";
 import {
   createForceLayoutClient,
   rememberLayout,
@@ -483,13 +483,13 @@ function ForceGraphCanvasImpl({
     layoutStateRef.current = "settled";
     canvasRef.current?.setAttribute("data-layout", "settled");
     // Final animated fit once settled (a no-op when already framed).
-    if (!userInteractedRef.current) zoomFit(true);
+    if (shouldAutoFit(userInteractedRef.current, compact)) zoomFit(true);
     didInitialFitRef.current = true;
     rememberCurrent();
     // A focus that landed before the first layout frame had no position to pan to: retry once the fit has landed.
     window.clearTimeout(revealTimerRef.current);
     if (propsRef.current.focusNodeId) revealTimerRef.current = window.setTimeout(() => revealFocusedRef.current(false), 450);
-  }, [zoomFit, rememberCurrent]);
+  }, [zoomFit, rememberCurrent, compact]);
 
   const startTween = useCallback((gen: number, from: Float32Array, to: Float32Array) => {
     const tw = { gen, from, to, start: performance.now(), raf: 0, endPending: false };
@@ -934,9 +934,10 @@ function ForceGraphCanvasImpl({
     const node = nodesRef.current.find((n) => n.id === id);
     const { width, height } = dimsRef.current;
     if (planFocusPan(node, transformRef.current, width, height) !== "pan" || node?.x == null || node.y == null) return;
-    userInteractedRef.current = true;
+    // Moving the view to keep a focused node visible is not the user taking control of it (it would stop later refits).
+    if (!compact) userInteractedRef.current = true;
     selection.transition().duration(300).call(zoom.translateTo, node.x, node.y);
-  }, []);
+  }, [compact]);
   useEffect(() => { revealFocusedRef.current = revealFocused; }, [revealFocused]);
   useEffect(() => { revealFocused(true); }, [focusNodeId, revealFocused]);
   useEffect(() => () => window.clearTimeout(revealTimerRef.current), []);

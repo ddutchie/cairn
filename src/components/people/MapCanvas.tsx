@@ -23,7 +23,7 @@ import "../../../shared/people/place-data";
 import { placeInfo } from "../../../shared/people/place-zone";
 import { ZONE_COORDS } from "../../../shared/people/zone-coords";
 import { sunAt } from "../../../shared/people/sun";
-import { availabilityAt, localHourAt, systemZone, zoneOffsetMinutes, type Availability } from "../../../shared/people/zones";
+import { availabilityAt, localHourAt, sameZone, systemZone, zoneOffsetMinutes, type Availability } from "../../../shared/people/zones";
 import type { PersonSummary } from "../../../shared/types/people-view";
 
 const W = 960;
@@ -43,7 +43,7 @@ function spotOf(p: PersonSummary): { key: string; label: string; lat: number; lo
   const zone = ZONE_COORDS[p.timezone];
   const here = p.location ? placeInfo(p.location) : null;
   // The location only counts when it agrees with the time zone: a stale city must not move someone to the wrong side of the world.
-  if (here?.coords && zoneOffsetMinutes(p.timezone, new Date()) === zoneOffsetMinutes(here.zone, new Date())) {
+  if (here?.coords && sameZone(p.timezone, here.zone)) {
     const [lat, lon] = here.coords;
     return { key: `${p.timezone}|${lat.toFixed(1)},${lon.toFixed(1)}`, label: p.location!.split(",")[0].trim(), lat, lon };
   }

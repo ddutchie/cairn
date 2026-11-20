@@ -56,6 +56,8 @@ export function parseAutofill(reply: string, note: string, current: AutofillCurr
   if (!Array.isArray(list)) return [];
   const flat = note.replace(/\s+/g, " ").toLowerCase();
   const out = new Map<ProfileField, AutofillProposal>();
+  // The sourced location, kept even when it equals what the person already has: it can still name their time zone.
+  let place: { value: string; quote: string } | undefined;
   for (const item of list) {
     if (!item || typeof item !== "object") continue;
     const { field, value, quote } = item as Record<string, unknown>;
@@ -69,12 +71,14 @@ export function parseAutofill(reply: string, note: string, current: AutofillCurr
     // A title, team or location must appear in its own quote. A time zone may be inferred from a named city, so only its quote is checked.
     if (f !== "timezone" && !q.replace(/\s+/g, " ").toLowerCase().includes(clean.replace(/\s+/g, " ").toLowerCase())) continue;
     const cur = current[f]?.trim() || undefined;
+    if (f === "location" && !place) place = { value: clean, quote: q.slice(0, 200) };
     if (cur && cur.toLowerCase() === clean.toLowerCase()) continue;
     out.set(f, { field: f, value: clean, quote: q.slice(0, 200), ...(cur ? { current: cur } : {}) });
   }
-  // A proposed place that names a zone also proposes the zone, quoted from the same words, unless one is set or proposed.
-  const place = out.get("location");
-  if (place && !out.has("timezone") && !current.timezone?.trim()) {
+  // A sourced place that names a zone also proposes the zone, quoted from the same words, unless one is set or proposed.
+  // Withheld when the stored location differs from the sourced one: Apply could then take the zone of a location the user rejected.
+  const stored = current.location?.trim().toLowerCase();
+  if (place && !out.has("timezone") && !current.timezone?.trim() && (!stored || stored === place.value.toLowerCase())) {
     const zone = zoneForPlace(place.value);
     if (zone) out.set("timezone", { field: "timezone", value: zone, quote: place.quote });
   }

@@ -199,6 +199,8 @@ describe("PeopleView", () => {
         person("p1", "Mia", [], { timezone: "America/Toronto", location: "Montreal, QC" }),
         person("p2", "Tom", [], { timezone: "America/Toronto", location: "Toronto" }),
         person("p3", "Stale", [], { timezone: "America/Los_Angeles", location: "Berlin" }),
+        // Same UTC offset as Berlin in winter, but a different zone: Berlin's pin must not be used.
+        person("p4", "Ada", [], { timezone: "Africa/Lagos", location: "Berlin" }),
       ],
     });
     renderView();
@@ -207,6 +209,8 @@ describe("PeopleView", () => {
     expect(screen.getByRole("button", { name: /^Toronto, 1 person, / })).toBeInTheDocument();
     // Berlin isn't in Los Angeles's zone, so the zone's own city is used.
     expect(screen.getByRole("button", { name: /^Los Angeles, 1 person, / })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Lagos, 1 person, / })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Berlin, / })).toBeNull();
   });
 
   it("opens the add form from any picture by switching to the list", () => {

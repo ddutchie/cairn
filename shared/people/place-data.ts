@@ -64,6 +64,9 @@ const PLACE_ALIAS: Record<string, string> = {
   "silicon valley": "san jose", nyc: "new york", "new york city": "new york", la: "los angeles", dc: "washington", "washington dc": "washington", "washington d c": "washington",
   philly: "philadelphia", bombay: "mumbai", saigon: "ho chi minh city", cdmx: "mexico city",
 };
+/** Own-property lookup, so a typed "constructor" or "__proto__" is not an alias. */
+const own = (table: Record<string, string>, key: string): string | undefined => (Object.hasOwn(table, key) ? table[key] : undefined);
+
 const NOISE = /\b(greater|area|metro|metropolitan|region|remote|based|near)\b/g;
 
 const entries: Entry[] = [];
@@ -88,16 +91,17 @@ for (const c of cityMapping) {
 }
 
 const matches = (e: Entry, hint: string): boolean => {
-  const h = COUNTRY_ALIAS[hint] ?? hint;
+  const h = own(COUNTRY_ALIAS, hint) ?? hint;
   if (h === e.province || h === e.country || h === e.iso2) return true;
   if (e.iso2 === "us" && h === e.state) return true;
-  return e.iso2 === "ca" && CA_PROVINCE_ABBR[h] === e.province;
+  return e.iso2 === "ca" && own(CA_PROVINCE_ABBR, h) === e.province;
 };
 
 const biggest = (list: readonly Entry[]) => list.reduce((a, b) => (b.pop > a.pop ? b : a));
 
 function cityLookup(city: string, hints: readonly string[], strict = false): PlaceInfo | null {
-  const found = byCity.get(PLACE_ALIAS[city] ?? city) ?? byCity.get((PLACE_ALIAS[city] ?? city).replace(NOISE, " ").replace(/\s+/g, " ").trim());
+  const name = own(PLACE_ALIAS, city) ?? city;
+  const found = byCity.get(name) ?? byCity.get(name.replace(NOISE, " ").replace(/\s+/g, " ").trim());
   if (!found) return null;
   let pool: readonly Entry[] = found;
   if (hints.length) {
@@ -116,7 +120,7 @@ const DOMINANT = 0.9;
 
 /** A state, province or country that lies (all but a sliver of it) in one zone: Germany, Texas. Not the US, Canada or Brazil. */
 function regionLookup(name: string): PlaceInfo | null {
-  const key = COUNTRY_ALIAS[name];
+  const key = own(COUNTRY_ALIAS, name);
   const list = key ? entries.filter((e) => e.iso2 === key) : byRegion.get(name);
   if (!list?.length) return null;
   const byZone = new Map<string, number>();
@@ -155,7 +159,7 @@ const byPopulation = [...entries].sort((a, b) => b.pop - a.pop);
 function search(query: string, limit: number): PlaceMatch[] {
   const [first, ...rest] = fold(query).split(",").map((p) => p.trim()).filter(Boolean);
   if (!first) return [];
-  const city = PLACE_ALIAS[first] ?? first;
+  const city = own(PLACE_ALIAS, first) ?? first;
   const out: PlaceMatch[] = [];
   const seen = new Set<string>();
   for (const e of byPopulation) {

@@ -26,6 +26,12 @@ describe("zoneForPlace", () => {
     ["Remote, Germany", "Europe/Berlin"],
   ])("%s", (place, zone) => expect(zoneForPlace(place)).toBe(zone));
 
+  it.each(["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf, constructor"])("treats %s as an unknown place, not an alias", (place) => {
+    expect(zoneForPlace(place)).toBeNull();
+    expect(searchPlaces(place)).toEqual([]);
+    expect(cleanProfileFieldWithPlaces("timezone", place).error).toMatch(/isn't a time zone/);
+  });
+
   it("returns null for places it does not know and for multi-zone countries", () => {
     expect(zoneForPlace("Narnia")).toBeNull();
     expect(zoneForPlace("USA")).toBeNull();

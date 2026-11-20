@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { PersonSummary } from "../types/people-view";
 import { NO_TEAM, groupByTeam } from "./teams";
-import { buildZoneModel, formatDiff, overlapHours, workSpans, zoneOffsetMinutes } from "./zones";
+import { buildZoneModel, formatDiff, overlapHours, sameZone, workSpans, zoneOffsetMinutes } from "./zones";
 
 const p = (id: string, name: string, extra: Partial<PersonSummary> = {}): PersonSummary => ({
   id, workspaceId: "w", name, aliases: [], emails: [], relationship: [], status: "confirmed", provenance: "explicit",
@@ -68,5 +68,15 @@ describe("zones", () => {
       const m = buildZoneModel([me, p("1", "A", { timezone: "UTC" })], me, at);
       expect(m.rows[0].localTime).toBe(`12:${String(min).padStart(2, "0")}`);
     }
+  });
+});
+
+describe("sameZone", () => {
+  it("compares identity, not the offset at one moment", () => {
+    expect(sameZone("Europe/Berlin", "Europe/Berlin")).toBe(true);
+    expect(sameZone("Asia/Kolkata", "Asia/Calcutta")).toBe(true);
+    // Same UTC offset in winter, different zones.
+    expect(sameZone("Europe/Berlin", "Africa/Lagos")).toBe(false);
+    expect(sameZone("Europe/Berlin", "Not/AZone")).toBe(false);
   });
 });

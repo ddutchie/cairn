@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isOnScreen, planFocusPan, toScreen } from "./focus-pan";
+import { isOnScreen, planFocusPan, shouldAutoFit, toScreen } from "./focus-pan";
 
 const W = 400, H = 240;
 
@@ -41,5 +41,15 @@ describe("planFocusPan", () => {
     expect(planFocusPan({ x: 3000, y: 0 }, t, W, H)).toBe("pan");
     // And a node already in view needs nothing.
     expect(planFocusPan({ x: 10, y: 10 }, t, W, H)).toBe("none");
+  });
+});
+
+describe("shouldAutoFit", () => {
+  it("keeps a navigated view, except in a compact graph, which must refit when it is rebuilt", () => {
+    expect(shouldAutoFit(false, false)).toBe(true);
+    expect(shouldAutoFit(true, false)).toBe(false);
+    // A focus pan marks nothing as user navigation, and a compact graph refits even if something did.
+    expect(shouldAutoFit(true, true)).toBe(true);
+    expect(shouldAutoFit(false, true)).toBe(true);
   });
 });
