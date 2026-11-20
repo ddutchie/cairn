@@ -120,6 +120,9 @@ export interface ProfileDeps {
   call?: (db: Db, workspaceId: string, scope: string[], name: string, args: Record<string, unknown>) => Promise<string>;
 }
 
+/** DEBUG BRANCH ONLY (debug/slack-profile): trace every decision of a refresh to the main-process console. */
+const dbg = (...a: unknown[]): void => { console.log("[slack-profile]", ...a); };
+
 const attempts = new Map<string, number>();
 const inFlight = new Map<string, Promise<PersonProfile>>();
 
@@ -149,35 +152,44 @@ async function doRefresh(db: Db, personId: string, deps: ProfileDeps): Promise<P
   const now = deps.now ?? Date.now;
   const person = getPerson(db, personId);
   const cached = () => getCachedProfile(db, personId, now());
-  if (!person || !person.slackId) return cached();
+  dbg("refresh start", { personId, name: person?.name, slackId: person?.slackId ?? null });
+  if (!person || !person.slackId) { dbg("stop: no person or no slackId"); return cached(); }
   // Fields read for another Slack id are not this person's: drop them before anything (a failure marker too) builds on them.
   if (!readCache(db, personId)) clearProfile(db, personId);
   const row = readCache(db, personId);
-  if (row && !row.error && profileIsFresh(row.fetched_at, now())) return cached();
-  const last = attempts.get(personId);
-  if (last !== undefined && now() - last < RETRY_AFTER_MS) return cached();
+  // DEBUG: the 24h freshness and 10 min retry guards are bypassed so every page open really fetches.
+  dbg("cache", row ? { fetchedAt: row.fetched_at, error: row.error } : "none", "(guards bypassed)");
 
   const servers = (deps.slackServers ?? defaultSlackServers)(db, person.workspaceId);
+  const all = listScopedConnectors(db, person.workspaceId, workspaceScope(db, person.workspaceId));
+  dbg("connectors in scope", all.map((c) => `${c.kind}:${c.id} "${c.name}"`));
+  dbg("slack connectors matched (/slack/i on id+name)", servers);
   // No Slack connector: nothing to fetch, nothing to flag.
-  if (servers.length === 0) return cached();
+  if (servers.length === 0) { dbg("stop: no connector matched"); return cached(); }
   attempts.set(personId, now());
   const scope = workspaceScope(db, person.workspaceId);
   try {
     const defs = await (deps.defs ?? ((d, w, s) => getExternalToolDefs(d, w, s)))(db, person.workspaceId, scope);
     let failure = "Slack has no tool that reads a profile.";
     for (const serverId of servers) {
+      dbg("tools on", serverId, defs.filter((d) => toolServer(d.function.name) === serverId).map((d) => d.function.name));
       const tool = pickLookupTool(defs, serverId);
+      dbg("picked lookup tool", tool);
       if (!tool) continue;
       const call = deps.call ?? ((d, w, s, n, a) => executeExternalTool(d, w, s, n, a, AbortSignal.timeout(CALL_TIMEOUT_MS), { getOnly: true }));
       const reply = await call(db, person.workspaceId, scope, tool.name, { [tool.idArg]: person.slackId });
+      dbg("reply", reply.slice(0, 600));
       if (/^Error:/i.test(reply.trim())) { failure = reply.trim().slice(0, 200); continue; }
       const fields = parseSlackProfile(reply);
+      dbg("parsed fields", fields);
       if (!fields) { failure = "Slack's reply had no profile fields."; continue; }
       writeGood(db, personId, person.slackId, fields, new Date(now()).toISOString());
       return cached();
     }
+    dbg("FAILED:", failure);
     writeFailure(db, personId, person.slackId, failure, new Date(now()).toISOString());
   } catch (err) {
+    dbg("THREW:", err);
     writeFailure(db, personId, person.slackId, err instanceof Error ? err.message : String(err), new Date(now()).toISOString());
   }
   return cached();

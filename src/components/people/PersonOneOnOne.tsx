@@ -12,7 +12,8 @@
  */
 
 import React, { useCallback, useEffect, useState } from "react";
-import { ExternalLink, Sparkles } from "lucide-react";
+import { ExternalLink, Hash, Sparkles } from "lucide-react";
+import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { PanelHeading } from "@/components/ui/panel";
 import { MicroLabel } from "@/components/ui/labels";
@@ -57,9 +58,16 @@ export function ProfileLine({ profile, person }: { profile: PersonProfile | null
   const own = [person?.title, person?.team, person?.location].filter(Boolean);
   const parts = [person?.title ?? fields.title, person?.team, person?.location, time ? `${time} local` : null, fields.pronouns].filter(Boolean);
   const status = [fields.statusEmoji, fields.statusText].filter(Boolean).join(" ");
-  if (parts.length === 0 && !status) return null;
+  // DEBUG BRANCH: show why Slack gave nothing instead of hiding it.
+  if (parts.length === 0 && !status) return profile?.error ? <p className="mt-1.5 text-xs text-[var(--danger)]">Slack profile: {profile.error}</p> : null;
+  const linked = !!profile?.fetchedAt;
   return (
     <p className="mt-1.5 text-sm text-[var(--text-secondary)]" aria-label={own.length > 0 || person?.timezone ? "Profile" : "From Slack"}>
+      {linked && (
+        <Tooltip content={`Connected to Slack${profile?.stale ? " (last read " + formatRelative(profile.fetchedAt!, { absoluteAfterDays: 30 }) + ")" : ""}`}>
+          <span className="mr-1.5 inline-flex align-[-2px] text-[var(--accent)]" role="img" aria-label="Connected to Slack"><Hash size={13} /></span>
+        </Tooltip>
+      )}
       {parts.join(" · ")}
       {status && <span className="text-[var(--text-tertiary)]">{parts.length ? " · " : ""}{status}</span>}
       {profile?.stale && profile.fetchedAt && (

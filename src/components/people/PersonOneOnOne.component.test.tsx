@@ -43,7 +43,7 @@ beforeEach(() => {
 describe("ProfileLine", () => {
   it("shows title, local time and pronouns, and marks old values", () => {
     const profile: PersonProfile = { fields: { title: "Staff Engineer", timezone: "Europe/London", pronouns: "she/her" }, fetchedAt: "2026-11-01T00:00:00.000Z", stale: true, error: "offline" };
-    render(<ProfileLine profile={profile} />);
+    render(<ProfileLine profile={profile} />, { wrapper: TooltipProvider });
     const line = screen.getByLabelText("From Slack");
     expect(line.textContent).toContain("Staff Engineer");
     expect(line.textContent).toContain("she/her");
@@ -51,7 +51,8 @@ describe("ProfileLine", () => {
     expect(line.textContent).toContain("as of");
   });
   it("shows no marker for fresh values, and nothing at all when Slack gave no fields", () => {
-    const { rerender, container } = render(<ProfileLine profile={{ fields: { title: "PM" }, fetchedAt: new Date().toISOString(), stale: false }} />);
+    const { rerender, container } = render(<ProfileLine profile={{ fields: { title: "PM" }, fetchedAt: new Date().toISOString(), stale: false }} />, { wrapper: TooltipProvider });
+    expect(screen.getByRole("img", { name: "Connected to Slack" })).toBeInTheDocument();
     expect(container.textContent).not.toContain("as of");
     rerender(<ProfileLine profile={{ fields: {}, stale: false }} />);
     expect(container.textContent).toBe("");
