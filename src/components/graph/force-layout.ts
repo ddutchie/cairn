@@ -33,6 +33,8 @@ export interface LayoutNode {
   /** Seed position (kept from the previous layout); omitted for new nodes. */
   x?: number;
   y?: number;
+  /** Held at the origin, so a focused node sits in the middle and the rest arrange around it. */
+  pinned?: boolean;
 }
 
 export interface LayoutLink {
@@ -103,7 +105,7 @@ export function runForceLayout(
   opts: { presettleMs?: number } = {},
 ): ForceLayout {
   let spacing = init.spacing;
-  const nodes: SimNode[] = init.nodes.map((n) => ({ ...n }));
+  const nodes: SimNode[] = init.nodes.map((n) => (n.pinned ? { ...n, x: 0, y: 0, fx: 0, fy: 0 } : { ...n }));
   const links: SimLink[] = init.links.map((l) => ({ source: l.source, target: l.target, edgeType: l.edgeType }));
 
   const degree = new Uint32Array(nodes.length);

@@ -41,6 +41,8 @@ export interface NodeLook {
   radius?: number;
   /** Always label this node, whatever the label mode and zoom. */
   label?: boolean;
+  /** Hold this node at the centre of the layout. */
+  pin?: boolean;
 }
 
 /**
@@ -60,6 +62,9 @@ interface Props {
   graph: KnowledgeGraph;
   /** Optional per-node / per-edge look; see {@link ForceGraphStyling}. */
   styling?: ForceGraphStyling;
+  /** A small, static picture inside a page: no zoom buttons, no wheel / drag
+   *  navigation (so scrolling the page never zooms it), a tighter fit. */
+  compact?: boolean;
   selectedNodeId: string | null;
   onNodeClick: (node: GraphNode) => void;
   /** Right-click: the node under the cursor, or null for empty canvas. */
@@ -256,6 +261,7 @@ const ZOOM_BTN_CLASS =
 function ForceGraphCanvasImpl({
   graph,
   styling,
+  compact = false,
   selectedNodeId,
   onNodeClick,
   onNodeContextMenu,
@@ -345,8 +351,9 @@ function ForceGraphCanvasImpl({
     else for (const n of nodesRef.current) include(n.x, n.y);
     if (minX === Infinity) return;
     const gw = maxX - minX || 1, gh = maxY - minY || 1;
-    const pad = 60;
-    const k = Math.max(0.2, Math.min(4, Math.min(
+    const pad = compact ? 28 : 60;
+    // A small graph must not blow up to fill the box: cap the scale in compact mode.
+    const k = Math.max(0.2, Math.min(compact ? 1.6 : 4, Math.min(
       (width - pad * 2) / gw,
       (height - pad * 2) / gh,
     )));
@@ -362,7 +369,7 @@ function ForceGraphCanvasImpl({
     const sel = d3.select<HTMLCanvasElement, unknown>(canvas);
     if (animate) sel.transition().duration(animate === true ? 400 : animate).call(zoom.transform, tr);
     else sel.call(zoom.transform, tr);
-  }, []);
+  }, [compact]);
 
   // Keep latest prop values available to the render loop without re-creating it
   const propsRef = useRef({ selectedNodeId, labelMode, spacing, semanticThreshold, showHulls });
@@ -403,7 +410,7 @@ function ForceGraphCanvasImpl({
   const nodeFingerprint = useMemo(() => graph.nodes
     .map((n, i) => {
       const k = nodeLooks[i];
-      return `${n.id}:${n.type}:${n.projectId ?? ""}:${n.title}${k ? `:${k.token ?? ""}/${k.radius ?? ""}/${k.label ? 1 : 0}` : ""}`;
+      return `${n.id}:${n.type}:${n.projectId ?? ""}:${n.title}${k ? `:${k.token ?? ""}/${k.radius ?? ""}/${k.label ? 1 : 0}/${k.pin ? 1 : 0}` : ""}`;
     })
     .join(","), [graph.nodes, nodeLooks]);
   const edgeFingerprint = useMemo(() => visibleEdges
@@ -611,7 +618,7 @@ function ForceGraphCanvasImpl({
     layoutSpacingRef.current = spacingNow;
     layoutRef.current?.init({
       gen: ++genRef.current,
-      nodes: nodes.map((n) => ({ id: n.id, nodeType: n.nodeType, projectId: n.projectId, x: n.x, y: n.y })),
+      nodes: nodes.map((n) => ({ id: n.id, nodeType: n.nodeType, projectId: n.projectId, x: n.x, y: n.y, pinned: n.look?.pin })),
       links: layoutLinks,
       spacing: spacingNow,
       resume,
@@ -891,6 +898,8 @@ function ForceGraphCanvasImpl({
         // Redraw at rest so dashed edges get their dashes back.
         if (gesturesRef.current === 0) scheduleDraw();
       });
+    // Compact: the picture is fixed; the page keeps its wheel and drag.
+    if (compact) zoom.filter(() => false);
     zoomRef.current = zoom;
     selection.call(zoom);
     // initial centering (instant) — fit happens once positions settle
@@ -986,7 +995,7 @@ function ForceGraphCanvasImpl({
     const node = pick(mx, my);
     const prevHover = hoveredNodeRef.current;
     hoveredNodeRef.current = node ? node.id : null;
-    canvas.style.cursor = node ? "pointer" : "grab";
+    canvas.style.cursor = node ? "pointer" : compact ? "default" : "grab";
 
     if (!node) {
       const edge = pickEdge(mx, my);
@@ -1010,7 +1019,7 @@ function ForceGraphCanvasImpl({
     }
 
     if (prevHover !== hoveredNodeRef.current) scheduleDraw();
-  }, [pick, pickEdge, edgeMetaByPair, scheduleDraw]);
+  }, [pick, pickEdge, edgeMetaByPair, scheduleDraw, compact]);
 
   const handleClick = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
     const canvas = canvasRef.current;
@@ -1048,7 +1057,7 @@ function ForceGraphCanvasImpl({
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-hidden relative"
+      className={compact ? "h-full w-full overflow-hidden relative" : "flex-1 overflow-hidden relative"}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => { hoveredNodeRef.current = null; setHoveredEdgeText(null); scheduleDraw(); }}
       onClick={handleClick}
@@ -1066,7 +1075,7 @@ function ForceGraphCanvasImpl({
       )}
 
       {/* Zoom controls */}
-      <div className="absolute bottom-4 right-4 flex flex-col gap-1">
+      {!compact && <div className="absolute bottom-4 right-4 flex flex-col gap-1">
         <IconButton
           label="Zoom in" tooltipSide="left"
           onClick={(e) => { e.stopPropagation(); zoomBy(1.4); }}
@@ -1088,7 +1097,7 @@ function ForceGraphCanvasImpl({
         >
           <Maximize2 size={13} />
         </IconButton>
-      </div>
+      </div>}
     </div>
   );
 }

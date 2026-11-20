@@ -45,6 +45,8 @@ export function buildPeopleGraph(
   links: readonly NetworkLink[],
   meId: string | null,
   workspaceId: string,
+  /** A person's own picture: this node is pinned to the centre. */
+  focusId: string | null = null,
 ): PeopleGraph {
   const byId = new Map(people.map((p) => [p.id, p]));
   const nodes: GraphNode[] = people.map((p) => ({ id: p.id, type: "person", title: p.name, workspaceId }));
@@ -65,7 +67,11 @@ export function buildPeopleGraph(
       }
       return { token: LINK_TOKEN[l.kind], opacity: l.ended ? 0.45 : 0.85, dash: l.ended, width: 1.5 };
     },
-    node: (n) => (n.id === meId ? { token: "accent", radius: 10, label: true } : undefined),
+    node: (n) => {
+      if (n.id === focusId) return { token: "accent", radius: 10, label: true, pin: true };
+      if (focusId) return n.id === meId ? { label: true } : undefined;
+      return n.id === meId ? { token: "accent", radius: 10, label: true } : undefined;
+    },
     edgeText: (e) => {
       const l = kindOf.get(e.id);
       return l ? linkText(l, byId.get(l.source)?.name ?? "", byId.get(l.target)?.name ?? "") : undefined;

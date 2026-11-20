@@ -13,6 +13,7 @@ import type { RelationshipType } from "../../../shared/types/people";
 import { OrgChartCanvas } from "./OrgChartCanvas";
 import { RelationshipCanvas } from "./RelationshipCanvas";
 import { InsightsView } from "./InsightsView";
+import { ConnectionsGraph } from "@/components/people/ConnectionsGraph";
 
 const person = (id: string, name: string, types: RelationshipType[], extra: Partial<PersonSummary> = {}): PersonSummary => ({
   id, workspaceId: "ws1", name, aliases: [], emails: [],
@@ -93,5 +94,33 @@ describe("InsightsView tabs", () => {
     render(<InsightsView />, { wrapper: TooltipProvider });
     expect(screen.getByRole("tab", { name: /Org chart/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Relationships/ })).toBeInTheDocument();
+  });
+});
+
+describe("ConnectionsGraph", () => {
+  const withTree = () => seed([
+    person("me", "Me Myself", [], { isMe: true }),
+    person("rep", "Dana Report", ["direct_report"]),
+    person("pal", "Pat Peer", ["peer"]),
+    person("lone", "Lone Wolf", []),
+  ]);
+
+  it("lists the people linked to a person and opens one on click", () => {
+    withTree();
+    render(<ConnectionsGraph personId="me" compact />, { wrapper: TooltipProvider });
+    expect(screen.getByRole("heading", { name: "Connections" })).toBeInTheDocument();
+    expect(screen.getByText("2 people")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Lone Wolf/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Dana Report/ }));
+    expect(useCairnStore.getState().peoplePanelId).toBe("rep");
+  });
+
+  it("has no zoom controls and renders nothing for a person without links", () => {
+    withTree();
+    const first = render(<ConnectionsGraph personId="me" compact />, { wrapper: TooltipProvider });
+    expect(screen.queryByRole("button", { name: "Zoom in" })).toBeNull();
+    first.unmount();
+    const second = render(<ConnectionsGraph personId="lone" compact />, { wrapper: TooltipProvider });
+    expect(second.container).toBeEmptyDOMElement();
   });
 });

@@ -48,4 +48,13 @@ describe("buildPeopleGraph", () => {
     const { graph, styling } = buildPeopleGraph(people, [link({ id: "2", kind: "meeting", source: "a", target: "b", weight: 2 })], null, "ws");
     expect(styling.edgeText!(graph.edges[0])).toBe("Ann – Bo: Meetings together, 2 meetings");
   });
+
+  it("pins the focus person to the centre", () => {
+    const { graph, styling } = buildPeopleGraph(people, [], "me", "ws", "a");
+    expect(styling.node!(graph.nodes[1])).toMatchObject({ pin: true, label: true });
+    // With a focus, "me" is only labelled, not recoloured.
+    expect(styling.node!(graph.nodes[0])).toEqual({ label: true });
+    expect(styling.node!(graph.nodes[2])).toBeUndefined();
+  });
 });
+

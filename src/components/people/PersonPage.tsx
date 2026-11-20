@@ -37,6 +37,7 @@ import {
 } from "./people-model";
 import { peopleClient } from "@/lib/ipc/people";
 import { applicableFields, PROFILE_FIELD_LABEL, type AutofillProposal } from "../../../shared/people/autofill";
+import { ConnectionsGraph } from "./ConnectionsGraph";
 import { NextMeeting, ProfileLine, slackStatusText, usePersonProfile } from "./PersonOneOnOne";
 import type { PersonProfile } from "../../../shared/people/oneonone";
 
@@ -628,6 +629,7 @@ function PersonPageBody({ page, compact }: { page: PersonPageModel; compact: boo
       {editing && <PersonSettings page={page} profile={profile} />}
       <NextMeeting person={page.person} timeline={page.timeline} />
       {/* Slot: Open items, they owe / I owe. */}
+      <ConnectionsGraph personId={page.person.id} compact={compact} />
       <Timeline items={page.timeline} />
       <Persona page={page} />
     </div>
