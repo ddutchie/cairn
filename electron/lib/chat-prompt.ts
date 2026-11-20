@@ -44,6 +44,8 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
       case "get":           return `Reading${who || " a person"}`;
       case "timeline":      return `Reading${who || " a person"}'s timeline`;
       case "relationships": return "Reading relationships";
+      case "teams":         return typeof a.team === "string" && a.team ? `Reading team ${a.team}` : "Listing teams";
+      case "team_upsert":   return `Saving team${typeof a.team === "string" && a.team ? ` ${a.team}` : ""}`;
       case "upsert":        return `Saving person${who}`;
       case "link":          return a.remove ? `Unlinking ${a.link ?? ""}`.trim() : `Linking ${a.link ?? ""}${who}`.trim();
       default:              return "People";

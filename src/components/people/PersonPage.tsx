@@ -16,7 +16,6 @@ import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { Button, FOCUS_RING } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Combobox } from "@/components/ui/combobox";
 import { Toggle } from "@/components/ui/toggle";
@@ -40,6 +39,7 @@ import {
 import { peopleClient } from "@/lib/ipc/people";
 import { applicableFields, PROFILE_FIELD_LABEL, type AutofillProposal } from "../../../shared/people/autofill";
 import { ConnectionsGraph } from "./ConnectionsGraph";
+import { BlurInput, Field } from "./fields";
 import { PlaceInput } from "./PlaceInput";
 import { latestProfileValue, noteProfileWrite } from "./recent-profile-writes";
 import { NextMeeting, ProfileLine, slackStatusText, usePersonProfile } from "./PersonOneOnOne";
@@ -119,36 +119,6 @@ function PersonHeader({ page, profile, compact, editing, onToggleEdit }: { page:
 
 // ── Settings (editing) ──────────────────────────────────────────────────────
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-1 @md:grid-cols-[9rem_1fr] items-start gap-x-3 gap-y-1 py-2 border-b border-[var(--border-subtle)] last:border-0">
-      <MicroLabel className="@md:pt-1.5 text-xs">{label}</MicroLabel>
-      <div className="min-w-0">{children}</div>
-    </div>
-  );
-}
-
-/**
- * A text input that saves on blur or Enter. Callers key it by the saved value
- * (see BlurInput below), so a save or an outside change starts a fresh draft.
- */
-function DraftInput({ value, onSave, placeholder, ariaLabel }: {
-  value: string; onSave: (v: string) => void; placeholder?: string; ariaLabel: string;
-}) {
-  const [draft, setDraft] = useState(value);
-  return (
-    <Input
-      value={draft}
-      aria-label={ariaLabel}
-      placeholder={placeholder}
-      className="text-xs"
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => { if (draft !== value) onSave(draft); }}
-      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-    />
-  );
-}
-
 /** A role, team, place or time zone: one short line, saved on blur, with a message when it isn't valid. */
 function ProfileInput({ field, personId, value, placeholder, timezone }: { field: ProfileField; personId: string; value: string; placeholder: string; timezone?: string }) {
   const updatePerson = useCairnStore((s) => s.updatePerson);
@@ -181,10 +151,6 @@ function ProfileInput({ field, personId, value, placeholder, timezone }: { field
       {error && <p role="alert" className="mt-1 text-2xs text-[var(--danger)]">{error}</p>}
     </>
   );
-}
-
-function BlurInput(props: React.ComponentProps<typeof DraftInput>) {
-  return <DraftInput key={props.value} {...props} />;
 }
 
 function PersonSettings({ page, profile }: { page: PersonPageModel; profile: PersonProfile | null }) {
@@ -635,12 +601,36 @@ export function PersonPage({ page, compact = false }: { page: PersonPageModel | 
   return <PersonPageBody page={page} compact={compact} />;
 }
 
+/**
+ * A person capture or an agent proposed (an attendee name, an inferred fact)
+ * is not in the list until confirmed. Say so on their page, which chat and
+ * notes can open directly, and let the user settle it there.
+ */
+function SuggestionBanner({ page }: { page: PersonPageModel }) {
+  const { confirm, dismiss } = useCairnStore(useShallow((s) => ({ confirm: s.confirmPersonSuggestion, dismiss: s.dismissPersonSuggestion })));
+  const { person } = page;
+  if (person.status !== "suggested" && person.status !== "dismissed") return null;
+  const dismissed = person.status === "dismissed";
+  return (
+    <div role="status" className="mb-6 flex flex-wrap items-center gap-2 rounded-lg border border-[color-mix(in_srgb,var(--warning)_40%,var(--border-subtle))] bg-[color-mix(in_srgb,var(--warning)_8%,var(--surface-2))] px-3 py-2">
+      <p className="min-w-0 flex-1 text-xs text-[var(--text-secondary)]">
+        {dismissed
+          ? "You dismissed this person, so they stay out of your list and capture won't propose them again."
+          : "Suggested from a note or by the assistant. Confirm to add them to your people."}
+      </p>
+      <Button size="xs" variant="accent" onClick={() => void confirm(person.id)}>{dismissed ? "Add back" : "Confirm"}</Button>
+      {!dismissed && <Button size="xs" variant="ghost" onClick={() => void dismiss(person.id)}>Dismiss</Button>}
+    </div>
+  );
+}
+
 function PersonPageBody({ page, compact }: { page: PersonPageModel; compact: boolean }) {
   const [editing, setEditing] = useState(false);
   // One read for the header and for the Slack status in Settings.
   const profile = usePersonProfile(page.person);
   return (
     <div className={compact ? "px-4 py-4" : "max-w-[820px] px-8 py-8"}>
+      <SuggestionBanner page={page} />
       <PersonHeader page={page} profile={profile} compact={compact} editing={editing} onToggleEdit={() => setEditing((e) => !e)} />
       {editing && <PersonSettings page={page} profile={profile} />}
       <NextMeeting person={page.person} timeline={page.timeline} />

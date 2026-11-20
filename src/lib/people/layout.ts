@@ -1,103 +1,77 @@
 /**
- * Pure layout for the Insights people canvases (W7): a settled force layout
- * for the relationship canvas and a tidy tree for the org chart. Both are
- * deterministic (d3-force seeds its initial positions from the node index),
- * so the picture doesn't reshuffle on every render.
+ * Pure layout for the people tree pictures: a tidy tree for the org chart
+ * (people and teams) and the rounded elbows between cards. Deterministic, so
+ * the picture doesn't reshuffle on every render. The network pictures use the
+ * Knowledge Graph's force canvas instead.
  */
 
 import * as d3 from "d3";
-import type { NetworkLink, OrgNode } from "./network";
+import type { OrgNode } from "./network";
 
-export interface Point { x: number; y: number }
+export const ORG_CARD_W = 188;
+export const ORG_CARD_H = 58;
+const ORG_GAP_X = 18;
+const ORG_GAP_Y = 44;
 
-/**
- * Settle a force layout and return one point per id, inside `width` × `height`
- * minus `pad`. Runs synchronously: ticks scale down with node count so a few
- * hundred people stay well under a frame budget.
- */
-export function layoutNetwork(
-  ids: readonly string[],
-  links: readonly NetworkLink[],
-  width: number,
-  height: number,
-  pad = 36,
-): Map<string, Point> {
-  const out = new Map<string, Point>();
-  if (ids.length === 0) return out;
-  const w = Math.max(width, 2 * pad + 1);
-  const h = Math.max(height, 2 * pad + 1);
-  if (ids.length === 1) { out.set(ids[0], { x: w / 2, y: h / 2 }); return out; }
-
-  type SimNode = d3.SimulationNodeDatum & { id: string };
-  const nodes: SimNode[] = ids.map((id) => ({ id }));
-  const index = new Set(ids);
-  const simLinks = links
-    .filter((l) => index.has(l.source) && index.has(l.target))
-    .map((l) => ({ source: l.source, target: l.target, weight: l.weight, kind: l.kind }));
-
-  const spacing = Math.max(28, Math.min(80, Math.sqrt((w * h) / ids.length) * 0.8));
-  const sim = d3.forceSimulation(nodes)
-    .force("link", d3.forceLink<SimNode, typeof simLinks[number]>(simLinks).id((d) => d.id)
-      .distance((l) => (l.kind === "meeting" ? spacing * 1.4 : spacing))
-      .strength((l) => (l.kind === "meeting" ? Math.min(0.5, 0.1 + l.weight * 0.05) : 0.7)))
-    .force("charge", d3.forceManyBody().strength(-spacing * 2.2).distanceMax(spacing * 8))
-    .force("collide", d3.forceCollide(14))
-    .force("x", d3.forceX(w / 2).strength(0.06))
-    .force("y", d3.forceY(h / 2).strength(0.06))
-    .stop();
-
-  const ticks = ids.length > 300 ? 120 : ids.length > 100 ? 200 : 300;
-  for (let i = 0; i < ticks; i++) sim.tick();
-
-  for (const n of nodes) {
-    out.set(n.id, {
-      x: Math.min(w - pad, Math.max(pad, n.x ?? w / 2)),
-      y: Math.min(h - pad, Math.max(pad, n.y ?? h / 2)),
-    });
-  }
-  return out;
-}
-
-export const ORG_CARD_W = 148;
-export const ORG_CARD_H = 44;
-const ORG_GAP_X = 20;
-const ORG_GAP_Y = 36;
-
-export interface OrgLayout {
-  nodes: { id: string; node: OrgNode; x: number; y: number; depth: number }[];
+export interface TreeLayout<T> {
+  nodes: { id: string; node: T; x: number; y: number; depth: number }[];
   links: { id: string; from: string; to: string }[];
   width: number;
   height: number;
 }
 
 /**
- * Top-down tidy tree for a forest. Positions are card top-left corners.
- * Several roots sit side by side under an invisible parent.
+ * Top-down tidy tree for any forest. Positions are card top-left corners;
+ * several roots sit side by side under an invisible parent.
  */
-export function layoutOrg(roots: readonly OrgNode[], pad = 24): OrgLayout {
+export function layoutTree<T>(
+  roots: readonly T[],
+  { id, children, cardW = ORG_CARD_W, cardH = ORG_CARD_H, pad = 24 }: {
+    id: (n: T) => string; children: (n: T) => readonly T[]; cardW?: number; cardH?: number; pad?: number;
+  },
+): TreeLayout<T> {
   if (roots.length === 0) return { nodes: [], links: [], width: 2 * pad, height: 2 * pad };
-  const virtual: OrgNode = { person: null as never, children: [...roots], alsoReportsTo: [], cycleBroken: false };
-  const h = d3.hierarchy(virtual, (n) => n.children);
-  d3.tree<OrgNode>().nodeSize([ORG_CARD_W + ORG_GAP_X, ORG_CARD_H + ORG_GAP_Y]).separation(() => 1)(h);
+  type Box = { item: T | null; kids: Box[] };
+  const wrap = (n: T): Box => ({ item: n, kids: children(n).map(wrap) });
+  const h = d3.hierarchy<Box>({ item: null, kids: roots.map(wrap) }, (b) => b.kids);
+  // Siblings sit close; cousins get a little more room so subtrees read as groups.
+  d3.tree<Box>().nodeSize([cardW + ORG_GAP_X, cardH + ORG_GAP_Y]).separation((a, b) => (a.parent === b.parent ? 1 : 1.15))(h);
 
   const real = h.descendants().filter((d) => d.depth > 0);
   const minX = Math.min(...real.map((d) => d.x!));
   const maxX = Math.max(...real.map((d) => d.x!));
   const maxDepth = Math.max(...real.map((d) => d.depth));
-  const nodes = real.map((d) => ({
-    id: d.data.person.id,
-    node: d.data,
-    x: d.x! - minX + pad,
-    y: (d.depth - 1) * (ORG_CARD_H + ORG_GAP_Y) + pad,
-    depth: d.depth - 1,
-  }));
-  const links = real
-    .filter((d) => d.parent && d.parent.depth > 0)
-    .map((d) => ({ id: `${d.parent!.data.person.id}>${d.data.person.id}`, from: d.parent!.data.person.id, to: d.data.person.id }));
+  const idOf = (d: d3.HierarchyNode<Box>) => id(d.data.item as T);
   return {
-    nodes,
-    links,
-    width: maxX - minX + ORG_CARD_W + 2 * pad,
-    height: maxDepth * (ORG_CARD_H + ORG_GAP_Y) + ORG_CARD_H + 2 * pad,
+    nodes: real.map((d) => ({
+      id: idOf(d), node: d.data.item as T,
+      x: d.x! - minX + pad,
+      y: (d.depth - 1) * (cardH + ORG_GAP_Y) + pad,
+      depth: d.depth - 1,
+    })),
+    links: real
+      .filter((d) => d.parent && d.parent.depth > 0)
+      .map((d) => ({ id: `${idOf(d.parent!)}>${idOf(d)}`, from: idOf(d.parent!), to: idOf(d) })),
+    width: maxX - minX + cardW + 2 * pad,
+    height: maxDepth * (cardH + ORG_GAP_Y) + cardH + 2 * pad,
   };
+}
+
+export type OrgLayout = TreeLayout<OrgNode>;
+
+/** The reporting forest as a tidy tree of person cards. */
+export function layoutOrg(roots: readonly OrgNode[], pad = 24): OrgLayout {
+  return layoutTree(roots, { id: (n) => n.person.id, children: (n) => n.children, pad });
+}
+
+/**
+ * An elbow from the bottom of a parent card to the top of a child, with
+ * rounded corners, so a tree reads as lines rather than a grid.
+ */
+export function elbowPath(x1: number, y1: number, x2: number, y2: number, r = 8): string {
+  const midY = (y1 + y2) / 2;
+  if (Math.abs(x2 - x1) < 1) return `M${x1},${y1} V${y2}`;
+  const dir = x2 > x1 ? 1 : -1;
+  const rr = Math.min(r, Math.abs(x2 - x1) / 2, (y2 - y1) / 2);
+  return `M${x1},${y1} V${midY - rr} Q${x1},${midY} ${x1 + dir * rr},${midY} H${x2 - dir * rr} Q${x2},${midY} ${x2},${midY + rr} V${y2}`;
 }

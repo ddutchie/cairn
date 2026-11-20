@@ -10,6 +10,7 @@ import { registerContractHandle, broadcastEvent } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as pq from "../db/people-queries";
 import * as pv from "../db/people-view-queries";
+import * as tq from "../../shared/people/team-queries";
 import { getCachedProfile, refreshProfile } from "../lib/people/profile";
 import { proposeProfileFields } from "../lib/people/autofill";
 import { findPrepAutomation, isPrepRunning, loadLatestPrepBrief, settleBrief } from "../lib/people/prep";
@@ -36,6 +37,11 @@ export function registerPeopleHandlers(ctx: DbContext): void {
   registerContractHandle("db:people:edge:add", (_e, input) => handle(() => pq.addEdge(ctx.db, input)));
   registerContractHandle("db:people:edge:update", (_e, { id, patch }) => handle(() => pq.updateEdge(ctx.db, id, patch)));
   registerContractHandle("db:people:edge:remove", (_e, { id }) => handle(() => pq.removeEdge(ctx.db, id)));
+
+  registerContractHandle("db:people:teams:list", (_e, { workspaceId }) => handle(() => tq.listTeams(ctx.db, workspaceId)));
+  registerContractHandle("db:people:team:create", (_e, input) => handle(() => tq.createTeam(ctx.db, input)));
+  registerContractHandle("db:people:team:update", (_e, { id, patch }) => handle(() => tq.updateTeam(ctx.db, id, patch)));
+  registerContractHandle("db:people:team:delete", (_e, { id, keepMembers }) => handle(() => tq.deleteTeam(ctx.db, id, { keepMembers })));
 
   registerContractHandle("db:people:meetings", (_e, { personId, limit }) => handle(() => pq.listPersonMeetings(ctx.db, personId, limit)));
   registerContractHandle("db:people:mentionNoteIds", (_e, { personId }) => handle(() => pq.listPersonMentionNoteIds(ctx.db, personId)));

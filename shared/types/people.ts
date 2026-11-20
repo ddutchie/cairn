@@ -187,3 +187,52 @@ export type PersonPatch = Partial<{
   agentPrivate: boolean;
   archivedAt: string | null;
 }>;
+
+// ── Teams ─────────────────────────────────────
+
+/** A link on a team: its board, docs, on-call page. */
+export interface TeamLink {
+  label: string;
+  url: string;
+}
+
+/**
+ * What you know about a team. Membership is `Person.team`, matched to `name`
+ * ignoring case, so a team row adds details to a name people already carry.
+ */
+export type Team = {
+  id: ID;
+  workspaceId: ID;
+  name: string;
+  /** What the team owns and works on, in your words. */
+  description?: string;
+  leadPersonId?: ID;
+  /** The team this one sits under, for the org chart. */
+  parentTeamId?: ID;
+  /** Where to reach the team, e.g. "#sync-team". */
+  channel?: string;
+  links: TeamLink[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export interface TeamCreateInput {
+  id?: ID;
+  workspaceId: ID;
+  name: string;
+  description?: string;
+  leadPersonId?: ID;
+  parentTeamId?: ID;
+  channel?: string;
+  links?: TeamLink[];
+}
+
+/** A partial update. `null` clears an optional field. Renaming moves the members with it. */
+export type TeamPatch = Partial<{
+  name: string;
+  description: string | null;
+  leadPersonId: ID | null;
+  parentTeamId: ID | null;
+  channel: string | null;
+  links: TeamLink[];
+}>;

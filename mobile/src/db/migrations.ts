@@ -11,7 +11,7 @@
  */
 
 import type * as SQLite from "expo-sqlite";
-import { PEOPLE_ADDED_COLUMNS, PEOPLE_SYNC_TABLES_SQL } from "@cairn/shared/sync/people-schema";
+import { PEOPLE_ADDED_COLUMNS, PEOPLE_SYNC_TABLES_SQL, TEAMS_SYNC_TABLE_SQL } from "@cairn/shared/sync/people-schema";
 
 /**
  * Ordered migrations. Index N (0-based) becomes user_version N+1 once applied.
@@ -226,6 +226,11 @@ const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
     for (const column of ["title", "team", "location", "timezone"]) {
       if (!cols.includes(column)) db.execSync(`ALTER TABLE people ADD COLUMN ${column} TEXT`);
     }
+  },
+  // v13: teams (sync protocol 7). Fresh installs have it from the base schema;
+  // capture triggers come free from SYNCABLE_TABLES.
+  (db) => {
+    db.execSync(TEAMS_SYNC_TABLE_SQL);
   },
 ];
 

@@ -16,7 +16,7 @@ import { getCachedMcpToolDefs, getInstalledMcpServer, toRuntimeConfig } from "./
 import * as mcpClient from "./mcp-client";
 import { parseToolName } from "@cairn/shared/chat/mcp-namespace";
 import { isOverdue, isDueWithin } from "@cairn/shared/notes/due";
-import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION } from "@cairn/shared/agent/people-tools";
+import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION, TEAM_INFO_DESCRIPTION } from "@cairn/shared/agent/people-tools";
 import { isReadCall, refusesHiddenNoteWrite, scrubHidden } from "@cairn/shared/agent/people-privacy";
 import { peopleTool, setCardOwnerArg, setNoteAttendees, type PeopleToolContext } from "@cairn/shared/people/tool";
 import { agentHiddenNoteIds } from "@cairn/shared/people/queries";
@@ -147,9 +147,9 @@ const OWNER_ARG = { ...S, description: PEOPLE_ARG_DESCRIPTIONS.owner };
 const PEOPLE_TOOL_DEF: ToolDef = {
   name: "people",
   description: PEOPLE_TOOL_DESCRIPTION,
-  params: '{ "action": "query"|"get"|"timeline"|"relationships"|"upsert"|"link", "personId"?: string, "name"?: string, ... }',
+  params: '{ "action": "query"|"get"|"timeline"|"relationships"|"teams"|"upsert"|"link"|"team_upsert", "personId"?: string, "name"?: string, ... }',
   jsonSchema: obj({
-    action: { type: "string", enum: ["query", "get", "timeline", "relationships", "upsert", "link"] },
+    action: { type: "string", enum: ["query", "get", "timeline", "relationships", "teams", "upsert", "link", "team_upsert"] },
     personId: { ...S, description: "get/timeline/relationships/upsert: the person (or pass name)" },
     name: { ...S, description: "query: name filter; get/upsert: the person's name" },
     relationship: { ...S, description: "query: only people with this relationship to the user (e.g. direct_report, manager, peer, stakeholder, mentor)" },
@@ -165,6 +165,14 @@ const PEOPLE_TOOL_DEF: ToolDef = {
     cadence: { type: "string", enum: [...CADENCES, ""], description: "upsert: 1:1 cadence, empty to clear" },
     title: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.title },
     team: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.team },
+    teamInfo: {
+      ...obj({
+        description: S, lead: S, parentTeam: S, channel: S,
+        links: { type: "array", items: obj({ label: S, url: S }, ["url"]) },
+        members: A, rename: S,
+      }),
+      description: TEAM_INFO_DESCRIPTION,
+    },
     location: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.location },
     timezone: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.timezone },
     slackId: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.slackId },

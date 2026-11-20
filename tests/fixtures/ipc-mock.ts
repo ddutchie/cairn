@@ -293,6 +293,7 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       delete:    noop,
       relations: () => Promise.resolve([]),
       edge:      { add: noop, update: noop, remove: noop },
+      teams:     { list: () => Promise.resolve([]), create: noop, update: noop, delete: noop },
       meetings:  () => Promise.resolve([]),
       mentionNoteIds: () => Promise.resolve([]),
       ownedCardIds:   () => Promise.resolve([]),

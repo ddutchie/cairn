@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import React from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { useCairnStore } from "@/store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { PersonSummary } from "../../../shared/types/people-view";
@@ -123,8 +124,8 @@ describe("PeopleView", () => {
     });
     renderView();
     fireEvent.click(screen.getByRole("button", { name: "Teams" }));
-    const team = screen.getByRole("region", { name: "Platform" });
-    expect(within(team).getByText("Ada Report")).toBeInTheDocument();
+    const card = screen.getByRole("button", { name: /^Platform/ });
+    expect(within(card).getByRole("img", { name: "Ada Report, Elisa Boss" })).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Search people" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Time zones" }));
     expect(within(screen.getByRole("table", { name: "Working hours by person" })).getByText("Ada Report")).toBeInTheDocument();
@@ -133,11 +134,15 @@ describe("PeopleView", () => {
     expect(screen.getByRole("textbox", { name: "Search people" })).toBeInTheDocument();
   });
 
-  it("opens a person in a side panel from a picture, and can hand them to the list", () => {
-    useCairnStore.setState({ people: [person("p1", "Ada Report", ["direct_report"], { team: "Platform" })] });
+  it("opens a team, then a person from it, in the side panel, and can hand them to the list", () => {
+    useCairnStore.setState({ people: [person("p1", "Ada Report", ["direct_report"], { team: "Platform", title: "Engineer" })], teams: [] });
     renderView();
     fireEvent.click(screen.getByRole("button", { name: "Teams" }));
-    fireEvent.click(screen.getByRole("button", { name: "Ada Report" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Platform/ }));
+    const team = screen.getByRole("complementary", { name: "Team" });
+    expect(within(team).getByRole("heading", { name: "Platform" })).toBeInTheDocument();
+    expect(within(team).getByRole("button", { name: "Add details" })).toBeInTheDocument();
+    fireEvent.click(within(team).getByRole("button", { name: /Ada Report/ }));
     expect(screen.getByRole("complementary", { name: "Person" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Open in list/ }));
     expect(useCairnStore.getState().selectedPersonId).toBe("p1");
@@ -225,6 +230,27 @@ describe("PeopleView", () => {
     renderView();
     fireEvent.click(screen.getByRole("button", { name: "Org chart" }));
     expect(screen.getByText(/No people yet/)).toBeInTheDocument();
+  });
+
+  it("groups the list by team or place, and remembers the choice", async () => {
+    const user = userEvent.setup();
+    useCairnStore.setState({
+      people: [
+        person("p1", "Ada Report", ["direct_report"], { team: "Platform", timezone: "Europe/Berlin" }),
+        person("p2", "Elisa Boss", ["manager"], { team: "platform" }),
+        person("p3", "Zed", ["peer"]),
+      ],
+    });
+    renderView();
+    const list = screen.getByRole("complementary", { name: "People" });
+    await user.click(within(list).getByRole("button", { name: /^Group by:/ }));
+    await user.click(screen.getByRole("menuitemradio", { name: "By team" }));
+    expect(within(list).getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual(["Platform", "No team"]);
+    expect(localStorage.getItem("people.listGrouping")).toBe("team");
+    await user.click(within(list).getByRole("button", { name: /^Group by:/ }));
+    await user.click(screen.getByRole("menuitemradio", { name: "By location" }));
+    expect(within(list).getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual(["Berlin", "Unknown"]);
+    localStorage.removeItem("people.listGrouping");
   });
 
   it("keeps the minutes in a time zone row's working hours", () => {

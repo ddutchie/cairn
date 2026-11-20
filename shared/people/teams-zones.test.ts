@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { PersonSummary } from "../types/people-view";
-import { NO_TEAM, groupByTeam } from "./teams";
+import { NO_TEAM, groupByTeam, peopleUnder, teamForest } from "./teams";
+import type { Team } from "../types/people";
 import { buildZoneModel, formatDiff, overlapHours, sameZone, workSpans, zoneOffsetMinutes } from "./zones";
 
 const p = (id: string, name: string, extra: Partial<PersonSummary> = {}): PersonSummary => ({
@@ -22,6 +23,22 @@ describe("groupByTeam", () => {
     ]);
     expect(g.byRelationship).toEqual({ peer: 2, mentor: 1 });
     expect(g.timezones).toEqual(["Europe/London"]);
+  });
+});
+
+describe("teamForest", () => {
+  const t = (id: string, name: string, parentTeamId?: string): Team => ({
+    id, workspaceId: "w", name, parentTeamId, links: [], createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+  });
+  it("nests teams under their parent, keeps empty teams with details, and survives a loop", () => {
+    const people = [p("1", "A", { team: "Sync" }), p("2", "B", { team: "Data" }), p("3", "C", { team: "Loose" })];
+    const groups = groupByTeam(people, [t("pl", "Platform"), t("sy", "Sync", "pl"), t("da", "Data", "pl"), t("x", "X", "y"), t("y", "Y", "x")]);
+    const forest = teamForest(groups);
+    const platform = forest.find((n) => n.group.team === "Platform")!;
+    expect(platform.children.map((c) => c.group.team).sort()).toEqual(["Data", "Sync"]);
+    expect(platform.children[0].path).toEqual(["Platform"]);
+    expect(peopleUnder(platform).map((x) => x.name).sort()).toEqual(["A", "B"]);
+    expect(forest.map((n) => n.group.team)).toEqual(expect.arrayContaining(["Loose", "X", "Y"]));
   });
 });
 

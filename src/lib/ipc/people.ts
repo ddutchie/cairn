@@ -6,6 +6,7 @@
 
 import type {
   Meeting, MeetingAttendee, PeopleStatus, Person, PersonCreateInput, PersonEdge, PersonPatch, PersonRelation,
+  Team, TeamCreateInput, TeamPatch,
 } from "../../../shared/types/people";
 import type { MigrationApprovals, MigrationInventory, MigrationResult } from "../../../shared/types/people-migration";
 import type {
@@ -31,6 +32,10 @@ export const peopleClient = {
   addEdge: (input: PersonEdgeInput): Promise<PersonEdge> => people((p) => p.edge.add(input)),
   updateEdge: (id: string, patch: PersonEdgePatch): Promise<PersonEdge> => people((p) => p.edge.update(id, patch)),
   removeEdge: (id: string): Promise<void> => people((p) => p.edge.remove(id)),
+  teams: (workspaceId: string): Promise<Team[]> => people((p) => p.teams.list(workspaceId)),
+  createTeam: (input: TeamCreateInput): Promise<Team> => people((p) => p.teams.create(input)),
+  updateTeam: (id: string, patch: TeamPatch): Promise<Team> => people((p) => p.teams.update(id, patch)),
+  deleteTeam: (id: string, keepMembers?: boolean): Promise<void> => people((p) => p.teams.delete(id, keepMembers)),
   meetings: (personId: string, limit?: number): Promise<Meeting[]> => people((p) => p.meetings(personId, limit)),
   mentionNoteIds: (personId: string): Promise<string[]> => people((p) => p.mentionNoteIds(personId)),
   ownedCardIds: (personId: string): Promise<string[]> => people((p) => p.ownedCardIds(personId)),

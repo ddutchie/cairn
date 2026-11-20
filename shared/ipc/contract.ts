@@ -18,6 +18,7 @@
 import type { NoteSnippet } from "../notes/search";
 import type {
   Meeting, MeetingAttendee, PeopleStatus, Person, PersonCreateInput, PersonEdge, PersonPatch, PersonRelation,
+  Team, TeamCreateInput, TeamPatch,
 } from "../types/people";
 import type {
   AttendeeInput, PeopleListFilter, PeopleNetwork, PersonEdgeInput, PersonEdgePatch, PersonPage, PersonSummary,
@@ -333,6 +334,13 @@ export interface IpcContract {
   "db:people:edge:add": { writes: true; args: [input: PersonEdgeInput]; result: PersonEdge };
   "db:people:edge:update": { writes: true; args: [req: { id: string; patch: PersonEdgePatch }]; result: PersonEdge };
   "db:people:edge:remove": { writes: true; args: [req: { id: string }]; result: void };
+  /** Team details (members are `Person.team`, matched by name). */
+  "db:people:teams:list": { args: [req: { workspaceId: string }]; result: Team[] };
+  "db:people:team:create": { writes: true; args: [input: TeamCreateInput]; result: Team };
+  /** Renaming moves the members with it. */
+  "db:people:team:update": { writes: true; args: [req: { id: string; patch: TeamPatch }]; result: Team };
+  /** Members leave the team unless `keepMembers`; teams under it move up. */
+  "db:people:team:delete": { writes: true; args: [req: { id: string; keepMembers?: boolean }]; result: void };
   /** Confirmed meetings the person attended, newest first. */
   "db:people:meetings": { args: [req: { personId: string; limit?: number }]; result: Meeting[] };
   "db:people:mentionNoteIds": { args: [req: { personId: string }]; result: string[] };
@@ -1046,6 +1054,10 @@ const CHANNELS: ChannelRecord = {
   "db:people:edge:add": "write",
   "db:people:edge:update": "write",
   "db:people:edge:remove": "write",
+  "db:people:teams:list": "read",
+  "db:people:team:create": "write",
+  "db:people:team:update": "write",
+  "db:people:team:delete": "write",
   "db:people:meetings": "read",
   "db:people:mentionNoteIds": "read",
   "db:people:ownedCardIds": "read",

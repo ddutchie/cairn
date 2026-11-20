@@ -46,6 +46,8 @@ export interface NodeLook {
   label?: boolean;
   /** Hold this node at the centre of the layout. */
   pin?: boolean;
+  /** Draw a ring in this colour just outside the node (People "Bridges": someone's only route to others). */
+  ring?: ThemeToken;
 }
 
 /**
@@ -156,6 +158,7 @@ type SceneCache = {
   themeSig: string;
   edges: { stroke: string; width: number; dash: boolean; path: Path2D }[];
   fills: { fill: string; path: Path2D }[];
+  rings: { stroke: string; path: Path2D }[];
   /** Arrowheads of directed edges: tip position (world), heading and colour. Drawn at a fixed screen size. */
   arrows: { x: number; y: number; angle: number; fill: string }[];
 };
@@ -204,8 +207,18 @@ function buildScene(
   // Plain circles batched by fill; the selected node is drawn separately
   // (with its glow), the hovered one is simply redrawn on top.
   const fillBatches = new Map<string, Path2D>();
+  const ringBatches = new Map<string, Path2D>();
   for (const n of nodes) {
-    if (n.x == null || n.y == null || n.id === sel) continue;
+    if (n.x == null || n.y == null) continue;
+    if (n.look?.ring) {
+      const stroke = tokenColor(read, n.look.ring);
+      let rp = ringBatches.get(stroke);
+      if (!rp) ringBatches.set(stroke, (rp = new Path2D()));
+      const rr = radiusOf(n) + 3.5;
+      rp.moveTo(n.x + rr, n.y);
+      rp.arc(n.x, n.y, rr, 0, 2 * Math.PI);
+    }
+    if (n.id === sel) continue;
     const dim = !!sel && connected != null && !connected.has(n.id);
     const fill = alpha(nodeColor(n), dim ? 0.22 : 0.92);
     let p = fillBatches.get(fill);
@@ -223,6 +236,7 @@ function buildScene(
     themeSig: meta.themeSig,
     edges: [...edgeBatches.values()],
     fills: [...fillBatches].map(([fill, path]) => ({ fill, path })),
+    rings: [...ringBatches].map(([stroke, path]) => ({ stroke, path })),
     arrows,
   };
 }
@@ -428,7 +442,7 @@ function ForceGraphCanvasImpl({
   const nodeFingerprint = useMemo(() => graph.nodes
     .map((n, i) => {
       const k = nodeLooks[i];
-      return `${n.id}:${n.type}:${n.projectId ?? ""}:${n.title}${k ? `:${k.token ?? ""}/${k.radius ?? ""}/${k.label ? 1 : 0}/${k.pin ? 1 : 0}` : ""}`;
+      return `${n.id}:${n.type}:${n.projectId ?? ""}:${n.title}${k ? `:${k.token ?? ""}/${k.radius ?? ""}/${k.label ? 1 : 0}/${k.pin ? 1 : 0}/${k.ring ?? ""}` : ""}`;
     })
     .join(","), [graph.nodes, nodeLooks]);
   const edgeFingerprint = useMemo(() => visibleEdges
@@ -824,6 +838,11 @@ function ForceGraphCanvasImpl({
     for (const f of scene.fills) {
       ctx.fillStyle = f.fill;
       ctx.fill(f.path);
+    }
+    ctx.lineWidth = 2.2 / t.k;
+    for (const rg of scene.rings) {
+      ctx.strokeStyle = rg.stroke;
+      ctx.stroke(rg.path);
     }
 
     // Labels need a per-frame visibility pass (they depend on zoom), so only

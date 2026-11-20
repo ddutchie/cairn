@@ -11,7 +11,7 @@
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { ID } from "@/types";
-import type { Person, PersonCreateInput, PersonPatch } from "../../../shared/types/people";
+import type { Person, PersonCreateInput, PersonPatch, Team, TeamCreateInput, TeamPatch } from "../../../shared/types/people";
 import type { PersonEdgeInput, PersonEdgePatch, PersonPage, PersonSummary } from "../../../shared/types/people-view";
 import { peopleClient } from "@/lib/ipc/people";
 import { hasElectron, reportIpcError } from "@/lib/ipc/client";
@@ -22,6 +22,8 @@ export interface PeopleSlice {
   /** People proposed by capture or an agent (status `suggested`), for the tray. */
   peopleSuggestions: PersonSummary[];
   peopleLoaded: boolean;
+  /** Team details in the active workspace (members are `Person.team`). */
+  teams: Team[];
   selectedPersonId: ID | null;
   /** The selected person's page; null while loading or when none is selected. */
   personPage: PersonPage | null;
@@ -53,6 +55,9 @@ export interface PeopleSlice {
   addPersonEdge: (input: Omit<PersonEdgeInput, "workspaceId">) => Promise<void>;
   updatePersonEdge: (id: ID, patch: PersonEdgePatch) => Promise<void>;
   removePersonEdge: (id: ID) => Promise<void>;
+  createTeam: (input: Omit<TeamCreateInput, "workspaceId">) => Promise<Team | null>;
+  updateTeam: (id: ID, patch: TeamPatch) => Promise<Team | null>;
+  deleteTeam: (id: ID, keepMembers?: boolean) => Promise<void>;
 }
 
 export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = (set, get) => {
@@ -73,6 +78,7 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
     people: [],
     peopleSuggestions: [],
     peopleLoaded: false,
+    teams: [],
     selectedPersonId: null,
     personPage: null,
     personaNoteIds: [],
@@ -82,12 +88,13 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
       const workspaceId = get().activeWorkspaceId;
       if (!workspaceId || !hasElectron("people")) return;
       try {
-        const [people, peopleSuggestions] = await Promise.all([
+        const [people, peopleSuggestions, teams] = await Promise.all([
           peopleClient.summaries({ workspaceId }),
           peopleClient.summaries({ workspaceId, statuses: ["suggested"] }),
+          peopleClient.teams(workspaceId),
         ]);
         if (get().activeWorkspaceId !== workspaceId) return;
-        set({ people, peopleSuggestions, peopleLoaded: true });
+        set({ people, peopleSuggestions, teams, peopleLoaded: true });
       } catch (err) {
         reportIpcError(err, "Couldn't load people");
       }
@@ -186,6 +193,20 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
 
     async removePersonEdge(id) {
       await write(() => peopleClient.removeEdge(id), "Couldn't remove the relationship");
+    },
+
+    async createTeam(input) {
+      const workspaceId = get().activeWorkspaceId;
+      if (!workspaceId) return null;
+      return write(() => peopleClient.createTeam({ ...input, workspaceId }), "Couldn't add the team");
+    },
+
+    async updateTeam(id, patch) {
+      return write(() => peopleClient.updateTeam(id, patch), "Couldn't save the team");
+    },
+
+    async deleteTeam(id, keepMembers) {
+      await write(() => peopleClient.deleteTeam(id, keepMembers), "Couldn't delete the team");
     },
   };
 };

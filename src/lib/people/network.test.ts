@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { PersonEdge, PersonEdgeType, Relationship, RelationshipType } from "../../../shared/types/people";
 import type { PersonSummary } from "../../../shared/types/people-view";
 import { buildOrgChart, deriveLinks, filterLinks, findMe, pathTo, type LinkKind, type OrgNode } from "./network";
-import { layoutNetwork, layoutOrg, ORG_CARD_W } from "./layout";
+import { layoutOrg, ORG_CARD_W } from "./layout";
 
 let n = 0;
 const person = (name: string, extra: Partial<PersonSummary> & { rel?: RelationshipType[] } = {}): PersonSummary => {
@@ -157,38 +157,6 @@ describe("buildOrgChart", () => {
     const org = chart(people, [edge("ceo", "rep"), edge("x", "y"), edge("y", "x")]);
     expect(org.cyclesBroken).toBe(1);
     expect(org.roots).toHaveLength(2);
-  });
-});
-
-describe("layoutNetwork", () => {
-  const ids = Array.from({ length: 60 }, (_, i) => `p${i}`);
-  const links = ids.slice(1).map((id, i) => ({
-    id: `l${i}`, kind: "reporting" as const, source: ids[Math.floor(i / 3)], target: id,
-    directed: true, ended: false, derived: false, weight: 1,
-  }));
-
-  it("places everyone inside the box, deterministically", () => {
-    const a = layoutNetwork(ids, links, 800, 600);
-    const b = layoutNetwork(ids, links, 800, 600);
-    expect(a.size).toBe(60);
-    for (const [id, p] of a) {
-      expect(p.x).toBeGreaterThanOrEqual(36); expect(p.x).toBeLessThanOrEqual(764);
-      expect(p.y).toBeGreaterThanOrEqual(36); expect(p.y).toBeLessThanOrEqual(564);
-      expect(b.get(id)).toEqual(p);
-    }
-  });
-
-  it("handles none, one and a tiny box", () => {
-    expect(layoutNetwork([], [], 100, 100).size).toBe(0);
-    expect(layoutNetwork(["a"], [], 100, 100).get("a")).toEqual({ x: 50, y: 50 });
-    expect(layoutNetwork(["a", "b"], [], 0, 0).size).toBe(2);
-  });
-
-  it("copes with several hundred people quickly", () => {
-    const many = Array.from({ length: 400 }, (_, i) => `q${i}`);
-    const t = performance.now();
-    layoutNetwork(many, [], 1200, 800);
-    expect(performance.now() - t).toBeLessThan(2000);
   });
 });
 

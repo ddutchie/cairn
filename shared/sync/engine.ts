@@ -157,11 +157,16 @@ const RESTORABLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  * that hasn't seen it. An older peer ignores the column; nothing wrote attendee rows before this, so it loses no data, but it
  * is stamped `behind` like protocol 5 so the update hint appears before launch.
  *
+ * Protocol 7 (teams): added the `teams` entity (what a team owns, its lead,
+ * the team above it, its channel and links). Membership stays on
+ * `people.team`, so an older peer loses no membership and stays convergent; it
+ * just shows no team details, and stamping it `behind` says why.
+ *
  * The point of stamping it now, while only two historical shapes exist, is that
  * a peer can be *told* it is behind instead of us inferring capability from
  * which optional fields happen to be present.
  */
-export const SYNC_PROTOCOL_VERSION = 6;
+export const SYNC_PROTOCOL_VERSION = 7;
 
 /** sync_state key prefix for the highest protocol version seen from a peer. */
 const PEER_PROTOCOL_PREFIX = "peer_protocol:";

@@ -1,25 +1,77 @@
 "use client";
 
 /**
- * Org chart (Insights, People layer W7): the reporting tree from `manager_of`
- * edges, anchored on the `is_me` person, whose line to the top is highlighted.
- * Several roots sit side by side; people with no reporting link are listed
- * under the chart. Click or Enter on a card opens the person.
+ * Org chart (Insights and the People view). Two trees:
+ *
+ * - People: the reporting line from `manager_of` edges, anchored on the
+ *   `is_me` person, whose line to the top is highlighted. Each card carries
+ *   the person's role and team; picking a team dims everyone else, so a team
+ *   spread across managers is easy to see. Several roots sit side by side and
+ *   people with no reporting link are listed under the chart.
+ * - Teams: the team tree from each team's "sits under", with its lead and size.
+ *
+ * Cards are HTML over an SVG of rounded elbows, so text follows the font
+ * scale. Zoom with the buttons or ⌘/Ctrl + wheel. Click or Enter opens.
  */
-import React, { useEffect, useMemo, useRef } from "react";
-import { useFontScale } from "@/lib/viz/hooks";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Maximize2, ZoomIn, ZoomOut } from "lucide-react";
+import { useCairnStore } from "@/store";
+import { cn } from "@/lib/utils";
+import { FOCUS_RING } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { Select } from "@/components/ui/select";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { CanvasEmptyState } from "./AnalyticsShared";
-import { truncateName } from "./analyticsUtils";
 import { useOpenPerson, usePeopleNetwork } from "./peopleCanvasShared";
-import { ORG_CARD_H, ORG_CARD_W, layoutOrg } from "@/lib/people/layout";
+import { ORG_CARD_H, ORG_CARD_W, elbowPath, layoutOrg, layoutTree } from "@/lib/people/layout";
 import { buildOrgChart, deriveLinks, findMe, pathTo } from "@/lib/people/network";
 import { RELATIONSHIP_LABELS } from "@/components/people/people-model";
+import { PersonAvatar } from "@/components/people/PersonAvatar";
+import { groupByTeam, peopleUnder, teamForest, type TeamNode } from "../../../shared/people/teams";
 
-export function OrgChartCanvas() {
-  const fs = useFontScale();
+type OrgMode = "people" | "teams";
+const ZOOMS = [0.5, 0.67, 0.8, 1, 1.25, 1.5] as const;
+const teamKey = (t: string | undefined) => (t ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+
+/** Scrollable, zoomable stage: an SVG of links under absolutely placed cards. */
+function Stage({ width, height, zoom, scrollRef, onZoom, label, links, children }: {
+  width: number; height: number; zoom: number; scrollRef: React.RefObject<HTMLDivElement | null>; onZoom: (dir: 1 | -1) => void;
+  label: string; links: React.ReactNode; children: React.ReactNode;
+}) {
+  // ⌘/Ctrl + wheel zooms; a plain wheel scrolls as usual.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.metaKey && !e.ctrlKey) return;
+      e.preventDefault();
+      onZoom(e.deltaY < 0 ? 1 : -1);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [scrollRef, onZoom]);
+  return (
+    <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto" tabIndex={-1}>
+      <div style={{ width: width * zoom, height: height * zoom }}>
+        <div role="group" aria-label={label} className="relative origin-top-left" style={{ width, height, transform: `scale(${zoom})` }}>
+          <svg width={width} height={height} className="absolute inset-0 block" aria-hidden>{links}</svg>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function OrgChartCanvas({ onOpenTeam }: { onOpenTeam?: (name: string) => void } = {}) {
   const open = useOpenPerson();
   const scrollRef = useRef<HTMLDivElement>(null);
   const { people, network, loading } = usePeopleNetwork();
+  const teams = useCairnStore((s) => s.teams);
+  const [mode, setMode] = useState<OrgMode>("people");
+  const [highlight, setHighlight] = useState<string>("");
+  const [zoomIdx, setZoomIdx] = useState(3);
+  const zoom = ZOOMS[zoomIdx];
+  const step = useCallback((dir: 1 | -1) => setZoomIdx((i) => Math.max(0, Math.min(ZOOMS.length - 1, i + dir))), []);
 
   const links = useMemo(() => deriveLinks(people, network.edges, []), [people, network]);
   const chart = useMemo(() => buildOrgChart(people, links), [people, links]);
@@ -29,24 +81,108 @@ export function OrgChartCanvas() {
   const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
   const pos = useMemo(() => new Map(layout.nodes.map((n) => [n.id, n])), [layout]);
 
+  const groups = useMemo(() => groupByTeam(people, teams), [people, teams]);
+  const forest = useMemo(() => teamForest(groups), [groups]);
+  const teamLayout = useMemo(() => layoutTree<TeamNode>(forest, { id: (n) => teamKey(n.group.team), children: (n) => n.children }), [forest]);
+  const teamPos = useMemo(() => new Map(teamLayout.nodes.map((n) => [n.id, n])), [teamLayout]);
+  const teamNames = useMemo(() => groups.filter((g) => g.people.length > 0 && g.team !== "No team").map((g) => g.team).sort((a, b) => a.localeCompare(b)), [groups]);
+
+  const fit = () => {
+    const el = scrollRef.current;
+    const w = mode === "people" ? layout.width : teamLayout.width;
+    const h = mode === "people" ? layout.height : teamLayout.height;
+    if (!el || !w || !h) return;
+    const want = Math.min(1.5, el.clientWidth / w, el.clientHeight / h);
+    let best = 0;
+    ZOOMS.forEach((z, i) => { if (z <= want) best = i; });
+    setZoomIdx(best);
+  };
+
   // Bring the "me" card into view when the chart first has one.
   const meX = me ? pos.get(me.id)?.x : undefined;
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && meX !== undefined) el.scrollLeft = Math.max(0, meX + ORG_CARD_W / 2 - el.clientWidth / 2);
-  }, [meX, loading]);
+    if (el && meX !== undefined && mode === "people") el.scrollLeft = Math.max(0, (meX + ORG_CARD_W / 2) * zoom - el.clientWidth / 2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on first layout and mode switch, not on every zoom step
+  }, [meX, loading, mode]);
 
   if (loading) return null;
   if (people.length === 0) return <CanvasEmptyState message="No people yet. Add people in the People view and the reporting line shows up here." />;
 
-  const nameFont = 11 * fs;
-  const subFont = 9 * fs;
-  // Truncate by estimated width so text stays inside the fixed card at any font scale.
-  const nameMax = Math.max(8, Math.floor((ORG_CARD_W - 20) / (0.55 * nameFont)));
-  const subMax = Math.max(8, Math.floor((ORG_CARD_W - 20) / (0.52 * subFont)));
   const onlyMe = chart.roots.length === 1 && chart.roots[0].children.length === 0 && chart.roots[0].alsoReportsTo.length === 0;
+  const hl = teamKey(highlight);
+  const dims = (team: string | undefined) => !!hl && teamKey(team) !== hl;
+
+  const toolbar = (
+    <div className="flex min-h-12 flex-wrap items-center gap-2 px-3 py-2 border-b border-[var(--border-subtle)]">
+      <SegmentedControl<OrgMode>
+        ariaLabel="Org chart of" size="sm" value={mode} onChange={setMode}
+        options={[{ value: "people", label: "Reporting line" }, { value: "teams", label: "Teams" }]}
+      />
+      {mode === "people" && teamNames.length > 0 && (
+        <Select<string>
+          ariaLabel="Highlight a team" value={highlight} onChange={setHighlight}
+          options={[{ value: "", label: "All teams" }, ...teamNames.map((t) => ({ value: t, label: t }))]}
+        />
+      )}
+      <div className="ml-auto flex items-center gap-0.5">
+        <IconButton label="Zoom out" size="sm" onClick={() => step(-1)} disabled={zoomIdx === 0}><ZoomOut size={13} /></IconButton>
+        <span className="w-10 text-center text-2xs tabular-nums text-[var(--text-tertiary)]" aria-live="polite">{Math.round(zoom * 100)}%</span>
+        <IconButton label="Zoom in" size="sm" onClick={() => step(1)} disabled={zoomIdx === ZOOMS.length - 1}><ZoomIn size={13} /></IconButton>
+        <IconButton label="Fit to view" size="sm" onClick={fit}><Maximize2 size={12} /></IconButton>
+      </div>
+    </div>
+  );
+
+  if (mode === "teams") {
+    return (
+      <div className="flex flex-col flex-1 min-w-0 min-h-0">
+        {toolbar}
+        {forest.length === 0 ? (
+          <CanvasEmptyState message="No teams yet. Give people a team, or open Teams to start one and say which team it sits under." />
+        ) : (
+          <Stage
+            width={teamLayout.width} height={teamLayout.height} zoom={zoom} scrollRef={scrollRef} onZoom={step}
+            label={`Team chart of ${teamLayout.nodes.length} teams`}
+            links={teamLayout.links.map((l) => {
+              const a = teamPos.get(l.from); const b = teamPos.get(l.to);
+              if (!a || !b) return null;
+              return <path key={l.id} d={elbowPath(a.x + ORG_CARD_W / 2, a.y + ORG_CARD_H, b.x + ORG_CARD_W / 2, b.y)} fill="none" stroke="var(--border)" strokeWidth={1.25} />;
+            })}
+          >
+            {teamLayout.nodes.map(({ id, node, x, y }) => {
+              const g = node.group;
+              const lead = g.info?.leadPersonId ? byId.get(g.info.leadPersonId) : undefined;
+              const total = node.children.length ? peopleUnder(node).length : g.people.length;
+              const sub = [lead ? `Lead ${lead.name}` : null, `${total} ${total === 1 ? "person" : "people"}`].filter(Boolean).join(" · ");
+              const mine = me && g.people.some((p) => p.id === me.id);
+              const body = (
+                <>
+                  <span className="block truncate font-display text-base leading-tight text-[var(--text-primary)]">{g.team}</span>
+                  <span className="mt-0.5 block truncate text-2xs text-[var(--text-tertiary)]">{sub}</span>
+                </>
+              );
+              const cls = cn(
+                "absolute flex flex-col justify-center rounded-lg border px-3 text-left shadow-elev-1",
+                mine ? "border-[var(--accent)] bg-[var(--accent-dim)]" : "border-[var(--border-subtle)] bg-[var(--surface-2)]",
+              );
+              const style = { left: x, top: y, width: ORG_CARD_W, height: ORG_CARD_H };
+              return onOpenTeam ? (
+                <button key={id} type="button" style={style} onClick={() => onOpenTeam(g.team)} aria-label={`${g.team}, ${sub}. Open team`}
+                  className={cn(cls, "transition-shadow hover:shadow-elev-2", FOCUS_RING)}>{body}</button>
+              ) : (
+                <div key={id} style={style} className={cls} aria-label={`${g.team}, ${sub}`}>{body}</div>
+              );
+            })}
+          </Stage>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col flex-1 min-w-0 min-h-0">
+      {toolbar}
       {(onlyMe || chart.roots.length === 0) && (
         <p role="status" className="px-3 py-1.5 text-xs text-[var(--text-tertiary)] border-b border-[var(--border-subtle)]">
           No reporting lines yet. Set who manages whom on a person&apos;s page, or give people the Manager or Direct report relationship.
@@ -57,79 +193,79 @@ export function OrgChartCanvas() {
           {chart.cyclesBroken === 1 ? "A reporting loop" : `${chart.cyclesBroken} reporting loops`} in your data {chart.cyclesBroken === 1 ? "was" : "were"} cut so the chart can draw. Check the manager links.
         </p>
       )}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto" tabIndex={-1}>
-        {chart.roots.length > 0 && <svg
-          width={layout.width} height={layout.height} role="group"
-          aria-label={`Org chart of ${layout.nodes.length} people in ${chart.roots.length} ${chart.roots.length === 1 ? "tree" : "trees"}`}
-          className="block"
-        >
-          {layout.links.map((l) => {
+      {chart.roots.length > 0 ? (
+        <Stage
+          width={layout.width} height={layout.height} zoom={zoom} scrollRef={scrollRef} onZoom={step}
+          label={`Org chart of ${layout.nodes.length} people in ${chart.roots.length} ${chart.roots.length === 1 ? "tree" : "trees"}`}
+          links={layout.links.map((l) => {
             const a = pos.get(l.from); const b = pos.get(l.to);
             if (!a || !b) return null;
-            const x1 = a.x + ORG_CARD_W / 2; const y1 = a.y + ORG_CARD_H;
-            const x2 = b.x + ORG_CARD_W / 2; const y2 = b.y;
-            const midY = (y1 + y2) / 2;
             const onLine = myLine.has(l.from) && myLine.has(l.to);
+            const faded = dims(byId.get(l.to)?.team);
             return (
               <path
-                key={l.id} d={`M${x1},${y1} V${midY} H${x2} V${y2}`} fill="none"
-                stroke={onLine ? "var(--accent)" : "var(--border)"} strokeWidth={onLine ? 2 : 1.25}
+                key={l.id} d={elbowPath(a.x + ORG_CARD_W / 2, a.y + ORG_CARD_H, b.x + ORG_CARD_W / 2, b.y)} fill="none"
+                stroke={onLine ? "var(--accent)" : "var(--border)"} strokeWidth={onLine ? 2 : 1.25} opacity={faded ? 0.35 : 1}
               />
             );
           })}
+        >
           {layout.nodes.map(({ id, node, x, y }) => {
             const p = node.person;
             const isMe = me?.id === id;
             const rel = p.relationship[0] ? (p.relationship[0].label || RELATIONSHIP_LABELS[p.relationship[0].type]) : "";
             const extra = node.alsoReportsTo.map((m) => byId.get(m)?.name).filter(Boolean);
             const alsoText = extra.length ? `Also reports to ${extra.join(", ")}` : "";
-            const sub = isMe ? ["You", alsoText].filter(Boolean).join(" · ") : alsoText || rel;
             const reports = node.children.length;
+            // What the card shows: role and team; the accessible name keeps relationship and reports.
+            const shown = [p.title || (isMe ? "You" : rel), p.team].filter(Boolean).join(" · ");
+            const sub = isMe ? ["You", alsoText].filter(Boolean).join(" · ") : alsoText || rel;
             return (
-              <g
-                key={id} transform={`translate(${x},${y})`} role="button" tabIndex={0}
-                aria-label={`${p.name}${isMe ? " (you)" : ""}${isMe ? (alsoText ? `, ${alsoText}` : "") : sub ? `, ${sub}` : ""}${reports ? `, ${reports} direct ${reports === 1 ? "report" : "reports"}` : ""}${node.cycleBroken ? ", manager link cut to break a loop" : ""}. Open person`}
-                className="cursor-pointer outline-none [&:focus-visible>rect]:stroke-[var(--accent)] [&:focus-visible>rect]:stroke-[2.5]"
+              <button
+                key={id} type="button"
+                style={{ left: x, top: y, width: ORG_CARD_W, height: ORG_CARD_H }}
+                aria-label={`${p.name}${isMe ? " (you)" : ""}${isMe ? (alsoText ? `, ${alsoText}` : "") : sub ? `, ${sub}` : ""}${reports ? `, ${reports} direct ${reports === 1 ? "report" : "reports"}` : ""}${p.team ? `, ${p.team}` : ""}${node.cycleBroken ? ", manager link cut to break a loop" : ""}. Open person`}
+                title={node.cycleBroken ? "Their manager link was cut to break a loop" : undefined}
                 onClick={() => open(id)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(id); } }}
-              >
-                <rect
-                  width={ORG_CARD_W} height={ORG_CARD_H} rx={8}
-                  fill={isMe ? "var(--accent-dim)" : "var(--surface)"}
-                  stroke={isMe || myLine.has(id) ? "var(--accent)" : "var(--border)"} strokeWidth={isMe ? 2 : 1}
-                />
-                <text x={10} y={ORG_CARD_H / 2 - (sub ? 2 : -4)} fontSize={nameFont} fontWeight={500} fill="var(--text-primary)" pointerEvents="none">
-                  {truncateName(p.name, nameMax)}
-                </text>
-                {sub && (
-                  <text x={10} y={ORG_CARD_H / 2 + 11} fontSize={subFont} fill="var(--text-tertiary)" pointerEvents="none">
-                    {truncateName(sub, subMax)}
-                  </text>
+                className={cn(
+                  "absolute flex items-center gap-2.5 rounded-lg border px-2.5 text-left shadow-elev-1 transition-[box-shadow,opacity] hover:shadow-elev-2",
+                  FOCUS_RING,
+                  isMe ? "border-[var(--accent)] bg-[var(--accent-dim)]" : myLine.has(id) ? "border-[color-mix(in_srgb,var(--accent)_55%,var(--border))] bg-[var(--surface-2)]" : "border-[var(--border-subtle)] bg-[var(--surface-2)]",
+                  dims(p.team) && "opacity-35",
+                  !!hl && !dims(p.team) && !isMe && "border-[var(--text-secondary)]",
                 )}
-                {node.cycleBroken && <title>Their manager link was cut to break a loop</title>}
-              </g>
+              >
+                <PersonAvatar name={p.name} isMe={isMe} size="md" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-[var(--text-primary)]">{p.name}</span>
+                  {(shown || alsoText) && <span className="block truncate text-2xs text-[var(--text-tertiary)]">{alsoText || shown}</span>}
+                </span>
+                {reports > 0 && (
+                  <span className="self-start mt-2 rounded-full bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] px-1.5 text-2xs tabular-nums text-[var(--text-tertiary)]" aria-hidden>{reports}</span>
+                )}
+              </button>
             );
           })}
-        </svg>}
+        </Stage>
+      ) : <div className="flex-1" />}
 
-        {chart.unplaced.length > 0 && (
-          <div className="px-3 pb-3 pt-1 border-t border-[var(--border-subtle)]">
-            <p className="py-1.5 text-xs text-[var(--text-tertiary)]">Not in a reporting line ({chart.unplaced.length})</p>
-            <ul className="flex flex-wrap gap-1.5 max-h-40 overflow-auto">
-              {chart.unplaced.map((p) => (
-                <li key={p.id}>
-                  <button
-                    type="button" onClick={() => open(p.id)}
-                    className="px-2 py-1 rounded border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-                  >
-                    {p.name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
+      {chart.unplaced.length > 0 && (
+        <div className="px-3 pb-3 pt-1 border-t border-[var(--border-subtle)] flex-shrink-0">
+          <p className="py-1.5 text-xs text-[var(--text-tertiary)]">Not in a reporting line ({chart.unplaced.length})</p>
+          <ul className="flex flex-wrap gap-1.5 max-h-40 overflow-auto">
+            {chart.unplaced.map((p) => (
+              <li key={p.id}>
+                <button
+                  type="button" onClick={() => open(p.id)}
+                  className={cn("inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] py-0.5 pl-0.5 pr-2.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)]", FOCUS_RING, dims(p.team) && "opacity-40")}
+                >
+                  <PersonAvatar name={p.name} isMe={p.isMe} size="xs" />{p.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

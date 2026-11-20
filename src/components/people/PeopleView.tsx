@@ -2,9 +2,11 @@
 
 /**
  * People view (People layer, W5).
- * A list of the people you work with, grouped by their relationship to you,
- * with a suggestions tray for people capture proposed, and the selected
- * person's page beside it. Plan: docs/plans/people-layer.md ("People view").
+ * A list of the people you work with, grouped by their relationship to you
+ * (or by team, place, when you last met, or name), with a suggestions tray
+ * for people capture proposed, and the selected person's page beside it. The
+ * picture modes open a person or a team in their own side panel.
+ * Plan: docs/plans/people-layer.md ("People view").
  *
  * Left for later: live title/local time, next meeting and open items on each
  * row (W6/W4), and the first-use hint that offers to turn the view on.
@@ -30,7 +32,10 @@ import { formatRelative } from "../../../shared/format/date";
 import { cn } from "@/lib/utils";
 import { RELATIONSHIP_TYPES, type RelationshipType } from "../../../shared/types/people";
 import type { PersonSummary } from "../../../shared/types/people-view";
-import { PEOPLE_GROUPS, RELATIONSHIP_LABELS, groupPeople, type PeopleGroupKey } from "./people-model";
+import { PEOPLE_GROUPS, RELATIONSHIP_LABELS, type PeopleGroupKey } from "./people-model";
+import { LIST_GROUPINGS, groupPeopleBy, type ListGrouping } from "../../../shared/people/list-groups";
+import { PersonAvatar } from "./PersonAvatar";
+import { TeamPage } from "./TeamPage";
 import { PersonPage } from "./PersonPage";
 import { MigrationPanel } from "./MigrationPanel";
 import { PersonPanel } from "./PersonPanel";
@@ -55,29 +60,41 @@ const MODES = [
 
 // ── List ────────────────────────────────────────────────────────────────────
 
-export function PersonRow({ person, selected, onSelect }: { person: PersonSummary; selected: boolean; onSelect: () => void }) {
+export function PersonRow({ person, selected, onSelect, hideTeam = false }: { person: PersonSummary; selected: boolean; onSelect: () => void; hideTeam?: boolean }) {
+  const sub = [person.title, hideTeam ? null : person.team].filter(Boolean).join(" · ");
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-current={selected ? "true" : undefined}
       className={cn(
-        "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors",
+        "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors",
         FOCUS_RING,
         selected ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-primary)] hover:bg-[var(--surface-2)]",
       )}
     >
+      <PersonAvatar name={person.name} isMe={person.isMe} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm">{person.name}</span>
-        {person.title && <span className="block truncate text-2xs text-[var(--text-tertiary)]">{person.title}</span>}
+        {sub && <span className="block truncate text-2xs text-[var(--text-tertiary)]">{sub}</span>}
       </span>
       {person.agentPrivate && <Lock size={11} className="text-[var(--text-tertiary)] flex-shrink-0" aria-label="Private from agents" />}
-      {/* Slot (W6/W4): live title, local time, next meeting, open items. */}
       <span className="text-2xs text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">
         {person.lastMetAt ? formatRelative(person.lastMetAt, { absoluteAfterDays: 30 }) : ""}
       </span>
     </button>
   );
+}
+
+const GROUPING_KEY = "people.listGrouping";
+function readGrouping(): ListGrouping {
+  try {
+    const v = localStorage.getItem(GROUPING_KEY);
+    return LIST_GROUPINGS.some((g) => g.value === v) ? (v as ListGrouping) : "relationship";
+  } catch { return "relationship"; }
+}
+function writeGrouping(v: ListGrouping) {
+  try { localStorage.setItem(GROUPING_KEY, v); } catch { /* per-viewer convenience only */ }
 }
 
 function SuggestionsTray({ suggestions }: { suggestions: PersonSummary[] }) {
@@ -163,9 +180,14 @@ export function PeopleView() {
   const [creating, setCreating] = useState(false);
   const [finding, setFinding] = useState(false);
   const [mode, setMode] = useState<PeopleMode>("list");
-  // The picture views keep their own side panel; the list keeps the store selection.
-  const [panelId, setPanelId] = useState<string | null>(null);
-  const changeMode = (m: PeopleMode) => { setMode(m); setPanelId(null); };
+  const [grouping, setGroupingState] = useState<ListGrouping>(readGrouping);
+  const setGrouping = (g: ListGrouping) => { setGroupingState(g); writeGrouping(g); };
+  // The picture views keep their own side panel (a person or a team); the list keeps the store selection.
+  const [panel, setPanel] = useState<{ kind: "person" | "team"; id: string } | null>(null);
+  const panelId = panel?.kind === "person" ? panel.id : null;
+  const openPanelPerson = React.useCallback((id: string | null) => setPanel(id ? { kind: "person", id } : null), []);
+  const openPanelTeam = React.useCallback((name: string) => setPanel({ kind: "team", id: name }), []);
+  const changeMode = (m: PeopleMode) => { setMode(m); setPanel(null); };
   const inList = mode === "list";
 
   // Load on open and on workspace switch (people are workspace-wide). Don't clear the
@@ -187,8 +209,8 @@ export function PeopleView() {
   useEffect(() => onChangeFeed(() => { void refreshPeople(); }), [refreshPeople]);
 
   const groups = useMemo(
-    () => groupPeople(people, { query, only: only === "all" ? null : only }),
-    [people, query, only],
+    () => groupPeopleBy(people, grouping, { query, only: only === "all" ? null : only }),
+    [people, grouping, query, only],
   );
 
   const filtered = query.trim() !== "" || only !== "all";
@@ -212,29 +234,41 @@ export function PeopleView() {
       </ViewToolbar>
 
       {!inList && (
-        <OpenPersonContext.Provider value={setPanelId}>
+        <OpenPersonContext.Provider value={openPanelPerson}>
           <div className="flex flex-1 min-h-0">
             <div className="@container flex flex-1 min-w-0 min-h-0 flex-col">
-              {mode === "org" && <OrgChartCanvas />}
+              {mode === "org" && <OrgChartCanvas onOpenTeam={openPanelTeam} />}
               {mode === "relationships" && <RelationshipCanvas />}
-              {mode === "teams" && <TeamsCanvas people={people} selectedId={panelId} />}
+              {mode === "teams" && <TeamsCanvas people={people} selectedTeam={panel?.kind === "team" ? panel.id : null} onOpenTeam={openPanelTeam} />}
               {mode === "zones" && <TimeZonesCanvas people={people} selectedId={panelId} />}
               {mode === "rhythm" && <RhythmCanvas people={people} selectedId={panelId} />}
               {mode === "bridges" && <BridgesCanvas selectedId={panelId} />}
               {mode === "map" && <MapCanvas people={people} selectedId={panelId} />}
             </div>
-            {panelId && (
-              <aside aria-label="Person" className="w-[26rem] max-w-[45%] flex-shrink-0 border-l border-[var(--border)] bg-[var(--surface)] flex flex-col overflow-hidden">
+            {panel && (
+              <aside aria-label={panel.kind === "team" ? "Team" : "Person"} className="w-[26rem] max-w-[45%] flex-shrink-0 border-l border-[var(--border)] bg-[var(--surface)] flex flex-col overflow-hidden">
                 <div className="flex items-center justify-between px-3 h-10 border-b border-[var(--border)] flex-shrink-0">
-                  <span className="text-xs font-medium text-[var(--text-secondary)]">Person</span>
+                  <span className="text-xs font-medium text-[var(--text-secondary)]">{panel.kind === "team" ? "Team" : "Person"}</span>
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="xs" onClick={() => { const id = panelId; setMode("list"); setPanelId(null); selectPerson(id); }}>
-                      <ExternalLink size={11} /> Open in list
-                    </Button>
-                    <IconButton label="Close person" onClick={() => setPanelId(null)}><X size={13} /></IconButton>
+                    {panel.kind === "person" && (
+                      <Button variant="ghost" size="xs" onClick={() => { const id = panel.id; setMode("list"); setPanel(null); selectPerson(id); }}>
+                        <ExternalLink size={11} /> Open in list
+                      </Button>
+                    )}
+                    <IconButton label={panel.kind === "team" ? "Close team" : "Close person"} onClick={() => setPanel(null)}><X size={13} /></IconButton>
                   </div>
                 </div>
-                <div className="flex-1 min-h-0 overflow-auto"><PersonPanel key={panelId} personId={panelId} /></div>
+                <div className="flex-1 min-h-0 overflow-auto">
+                  {panel.kind === "person" ? (
+                    <PersonPanel key={panel.id} personId={panel.id} />
+                  ) : (
+                    <TeamPage
+                      key={panel.id} name={panel.id}
+                      onOpenPerson={openPanelPerson} onOpenTeam={openPanelTeam}
+                      onGone={(renamed) => setPanel(renamed ? { kind: "team", id: renamed } : null)}
+                    />
+                  )}
+                </div>
               </aside>
             )}
           </div>
@@ -254,13 +288,22 @@ export function PeopleView() {
                 className="pl-7 py-1 text-xs"
               />
             </div>
-            <Select<PeopleGroupKey | "all">
-              ariaLabel="Filter by relationship"
-              value={only}
-              className="w-full"
-              options={[{ value: "all", label: "Everyone" }, ...PEOPLE_GROUPS.map((g) => ({ value: g.key, label: g.label }))]}
-              onChange={setOnly}
-            />
+            <div className="grid grid-cols-2 gap-1.5">
+              <Select<ListGrouping>
+                ariaLabel="Group by"
+                value={grouping}
+                className="w-full"
+                options={LIST_GROUPINGS.map((g) => ({ value: g.value, label: `By ${g.label.toLowerCase()}` }))}
+                onChange={setGrouping}
+              />
+              <Select<PeopleGroupKey | "all">
+                ariaLabel="Filter by relationship"
+                value={only}
+                className="w-full"
+                options={[{ value: "all", label: "Everyone" }, ...PEOPLE_GROUPS.map((g) => ({ value: g.key, label: g.label }))]}
+                onChange={setOnly}
+              />
+            </div>
           </div>
           {creating && (
             <CreatePersonForm onDone={(id) => { setCreating(false); if (id) selectPerson(id); }} />
@@ -280,13 +323,14 @@ export function PeopleView() {
             <div className="space-y-4">
               {groups.map((g) => (
                 <section key={g.key} aria-label={g.label}>
-                  <div className="flex items-baseline gap-2 px-2.5 mb-1">
+                  <div className="flex items-baseline gap-2 px-2 mb-1">
                     <SectionLabel>{g.label}</SectionLabel>
                     <span className="text-2xs text-[var(--text-tertiary)] tabular-nums">{g.people.length}</span>
+                    {"note" in g && g.note && <span className="ml-auto text-2xs text-[var(--text-tertiary)] tabular-nums">{g.note} local</span>}
                   </div>
                   <div className="space-y-0.5">
                     {g.people.map((p) => (
-                      <PersonRow key={`${g.key}:${p.id}`} person={p} selected={p.id === selectedPersonId} onSelect={() => selectPerson(p.id)} />
+                      <PersonRow key={`${g.key}:${p.id}`} person={p} hideTeam={grouping === "team"} selected={p.id === selectedPersonId} onSelect={() => selectPerson(p.id)} />
                     ))}
                   </div>
                 </section>

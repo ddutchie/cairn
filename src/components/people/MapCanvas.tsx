@@ -5,15 +5,20 @@
  * tell who is probably offline. People are placed from their time zone (the
  * zone's principal city, see `ZONE_COORDS`); the slider moves time forward or
  * back to answer "who is online at 3pm tomorrow". Status is a dot and a word.
+ *
+ * Two projections: a flat map you can zoom and pan (buttons, ⌘/Ctrl + wheel,
+ * drag), and a globe you drag to turn, which starts facing you.
  */
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
-import { Globe } from "lucide-react";
+import { Globe, Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PeopleCanvasPage } from "./PeopleCanvasPage";
 import { PanelHeading } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-dot";
 import { Button, FOCUS_RING } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { OpenPersonContext } from "@/components/graph/peopleCanvasShared";
 import { useFontScale, useNow } from "@/lib/viz/hooks";
 import { findMe } from "@/lib/people/network";
@@ -30,6 +35,11 @@ const W = 960;
 const H = 500;
 const COLOR: Record<Availability, string> = { work: "var(--success)", edge: "var(--warning)", asleep: "var(--text-tertiary)" };
 const WORDS: Record<Availability, string> = { work: "At work", edge: "Early or late", asleep: "Probably asleep" };
+
+type Projection = "flat" | "globe";
+const MIN_K = 1;
+const MAX_K = 8;
+const clampK = (k: number) => Math.max(MIN_K, Math.min(MAX_K, k));
 
 const hhmm = (h: number) => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.floor((h % 1) * 60)).padStart(2, "0")}`;
 const cityOf = (tz: string) => tz.split("/").pop()!.replace(/_/g, " ");
@@ -56,10 +66,89 @@ export function MapCanvas({ people, selectedId }: { people: readonly PersonSumma
   const now = useNow(60_000);
   const [offset, setOffset] = useState(0);
   const [zone, setZone] = useState<string | null>(null);
+  const [kind, setKind] = useState<Projection>("flat");
+  // Flat: a zoom transform over the fitted map. Globe: where it faces and how close.
+  const [view, setView] = useState({ k: 1, x: 0, y: 0 });
+  const [rotate, setRotate] = useState<[number, number] | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const t = new Date(now + offset * 3_600_000);
 
-  const projection = useMemo(() => d3.geoNaturalEarth1().fitSize([W, H], { type: "Sphere" }), []);
+  const me = findMe(people);
+  // The globe starts facing you (your zone's city), else the zone this computer is in.
+  const homeCoords = useMemo(() => {
+    const tz = me?.timezone ?? systemZone();
+    return ZONE_COORDS[tz] ?? [20, 0];
+  }, [me?.timezone]);
+  const rot: [number, number] = rotate ?? [-homeCoords[1], -Math.max(-60, Math.min(60, homeCoords[0]))];
+
+  const projection = useMemo(() => {
+    if (kind === "globe") {
+      return d3.geoOrthographic().translate([W / 2, H / 2]).scale((H / 2 - 8) * view.k).rotate(rot).clipAngle(90).precision(0.5);
+    }
+    const base = d3.geoNaturalEarth1().fitSize([W, H], { type: "Sphere" });
+    const [tx, ty] = base.translate();
+    return base.scale(base.scale() * view.k).translate([tx * view.k + view.x, ty * view.k + view.y]);
+  }, [kind, view, rot[0], rot[1]]); // eslint-disable-line react-hooks/exhaustive-deps -- rot is a fresh tuple each render; its parts are the deps
   const path = useMemo(() => d3.geoPath(projection), [projection]);
+
+  // Keep a zoomed flat map over the map: the edges never pull in past the viewport.
+  const clampView = useCallback((v: { k: number; x: number; y: number }) => {
+    const k = clampK(v.k);
+    return { k, x: Math.min(0, Math.max(W - W * k, v.x)), y: Math.min(0, Math.max(H - H * k, v.y)) };
+  }, []);
+  /** Zoom by `factor` about a point in viewBox units (the centre by default). */
+  const zoomBy = useCallback((factor: number, cx = W / 2, cy = H / 2) => {
+    setView((v) => {
+      const k = clampK(v.k * factor);
+      if (kind === "globe") return { ...v, k: Math.min(k, 4) };
+      const f = k / v.k;
+      return clampView({ k, x: cx - (cx - v.x) * f, y: cy - (cy - v.y) * f });
+    });
+  }, [kind, clampView]);
+  const reset = () => { setView({ k: 1, x: 0, y: 0 }); setRotate(null); };
+  const switchKind = (k: Projection) => { setKind(k); setView({ k: 1, x: 0, y: 0 }); setRotate(null); };
+
+  // ⌘/Ctrl + wheel zooms about the pointer; a plain wheel scrolls the page.
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.metaKey && !e.ctrlKey) return;
+      e.preventDefault();
+      const box = el.getBoundingClientRect();
+      const sx = box.width ? W / box.width : 1;
+      zoomBy(e.deltaY < 0 ? 1.25 : 0.8, (e.clientX - box.left) * sx, (e.clientY - box.top) * sx);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [zoomBy, people.length === 0]); // eslint-disable-line react-hooks/exhaustive-deps -- re-attach once the svg first mounts
+
+  // Drag pans the flat map (when zoomed in) and turns the globe.
+  const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.button !== 0) return;
+    drag.current = { x: e.clientX, y: e.clientY, moved: false };
+  };
+  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const box = svgRef.current?.getBoundingClientRect();
+    const sx = box?.width ? W / box.width : 1;
+    const dx = (e.clientX - d.x) * sx; const dy = (e.clientY - d.y) * sx;
+    if (!d.moved && Math.hypot(dx, dy) < 3) return;
+    if (!d.moved) svgRef.current?.setPointerCapture(e.pointerId);
+    d.moved = true;
+    d.x = e.clientX; d.y = e.clientY;
+    if (kind === "globe") {
+      const speed = 0.35 / view.k;
+      setRotate([rot[0] + dx * speed, Math.max(-85, Math.min(85, rot[1] - dy * speed))]);
+    } else if (view.k > 1) {
+      setView((v) => clampView({ ...v, x: v.x + dx, y: v.y + dy }));
+    }
+  };
+  const onPointerUp = () => { drag.current = null; };
+  // A drag that moved must not also pick the marker it ended on.
+  const choose = (key: string) => { if (!drag.current?.moved) setZone(key); };
   const { groups, unplaced } = useMemo(() => {
     const map = new Map<string, Group>();
     const out: PersonSummary[] = [];
@@ -77,8 +166,9 @@ export function MapCanvas({ people, selectedId }: { people: readonly PersonSumma
 
   const sun = sunAt(t);
   const night = path(d3.geoCircle().center([sun.lon + 180, -sun.lat]).radius(90)()) ?? "";
-  const sunPt = projection([sun.lon, sun.lat]);
-  const me = findMe(people);
+  // On the globe, a point on the far side has no place on screen.
+  const facing = (lon: number, lat: number) => kind !== "globe" || d3.geoDistance([lon, lat], [-rot[0], -rot[1]]) < Math.PI / 2 - 0.02;
+  const sunPt = facing(sun.lon, sun.lat) ? projection([sun.lon, sun.lat]) : null;
   const myZone = me?.timezone && zoneOffsetMinutes(me.timezone, t) !== null ? me.timezone : systemZone();
   const when = new Intl.DateTimeFormat("en-GB", { timeZone: myZone, weekday: "short", hour: "2-digit", minute: "2-digit" }).format(t);
   const availOf = (g: Group): Availability => availabilityAt(localHourAt(g.tz, t) ?? 12);
@@ -98,9 +188,30 @@ export function MapCanvas({ people, selectedId }: { people: readonly PersonSumma
               aria-label="Hours from now" className="w-72 max-w-full accent-[var(--accent)]"
             />
             <span className="text-xs text-[var(--text-tertiary)]">Slide to see who is online later or earlier</span>
+            <div className="ml-auto flex items-center gap-1">
+              <SegmentedControl<Projection>
+                ariaLabel="Map projection" size="sm" value={kind} onChange={switchKind}
+                options={[{ value: "flat", label: "Map" }, { value: "globe", label: "Globe" }]}
+              />
+              <IconButton label="Zoom out" size="sm" onClick={() => zoomBy(0.8)} disabled={view.k <= MIN_K}><ZoomOut size={13} /></IconButton>
+              <IconButton label="Zoom in" size="sm" onClick={() => zoomBy(1.25)} disabled={view.k >= (kind === "globe" ? 4 : MAX_K)}><ZoomIn size={13} /></IconButton>
+              <IconButton label={kind === "globe" ? "Face me again" : "Show the whole map"} size="sm" onClick={reset} disabled={view.k === 1 && !rotate}><Maximize2 size={12} /></IconButton>
+            </div>
           </div>
-          <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="group" aria-label="World map with day and night">
-            <path d={path({ type: "Sphere" }) ?? ""} fill="var(--surface)" stroke="var(--border)" />
+          <svg
+            ref={svgRef} viewBox={`0 0 ${W} ${H}`} width="100%" role="group" aria-label={kind === "globe" ? "Globe with day and night" : "World map with day and night"}
+            className={cn("touch-none select-none overflow-hidden rounded-lg", kind === "globe" ? "cursor-grab active:cursor-grabbing" : view.k > 1 && "cursor-grab active:cursor-grabbing")}
+            onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+          >
+            {kind === "globe" && (
+              <defs>
+                <radialGradient id="people-globe-shade" cx="38%" cy="32%" r="75%">
+                  <stop offset="0%" stopColor="var(--surface)" />
+                  <stop offset="100%" stopColor="color-mix(in srgb, var(--text-primary) 7%, var(--surface))" />
+                </radialGradient>
+              </defs>
+            )}
+            <path d={path({ type: "Sphere" }) ?? ""} fill={kind === "globe" ? "url(#people-globe-shade)" : "var(--surface)"} stroke="var(--border)" />
             <path d={path(d3.geoGraticule10()) ?? ""} fill="none" stroke="var(--border)" strokeWidth={0.4} opacity={0.6} />
             <path d={path(land as unknown as d3.GeoPermissibleObjects) ?? ""} fill="color-mix(in srgb, var(--text-primary) 13%, var(--surface))" />
             <path d={night} fill="color-mix(in srgb, var(--text-primary) 16%, transparent)" pointerEvents="none" />
@@ -111,8 +222,8 @@ export function MapCanvas({ people, selectedId }: { people: readonly PersonSumma
               </g>
             )}
             {groups.map((g) => {
-              const pt = projection([g.lon, g.lat]);
-              if (!pt) return null;
+              const pt = facing(g.lon, g.lat) ? projection([g.lon, g.lat]) : null;
+              if (!pt || pt[0] < -12 || pt[0] > W + 12 || pt[1] < -12 || pt[1] > H + 12) return null;
               const a = availOf(g);
               const on = zone === g.key || g.people.some((p) => p.id === selectedId);
               return (
@@ -120,7 +231,7 @@ export function MapCanvas({ people, selectedId }: { people: readonly PersonSumma
                   key={g.key} transform={`translate(${pt[0]},${pt[1]})`} role="button" tabIndex={0}
                   aria-label={`${g.label}, ${g.people.length} ${g.people.length === 1 ? "person" : "people"}, ${WORDS[a].toLowerCase()}`}
                   className="cursor-pointer outline-none [&:focus-visible>circle]:stroke-[var(--accent)]"
-                  onClick={() => setZone(g.key)}
+                  onClick={() => choose(g.key)}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setZone(g.key); } }}
                 >
                   <circle r={g.people.length > 1 ? 10 : 7} fill={COLOR[a]} stroke={on ? "var(--text-primary)" : "var(--surface)"} strokeWidth={2} />
@@ -135,6 +246,7 @@ export function MapCanvas({ people, selectedId }: { people: readonly PersonSumma
               <span key={k} className="inline-flex items-center gap-1.5"><StatusDot color={COLOR[k]} />{k === "work" ? "At work, 9 to 17 local" : k === "edge" ? "Early or late" : "Probably asleep, 22 to 07"}</span>
             ))}
             <span>Shaded area is night. The sun marks where it is overhead.</span>
+            <span className="text-[var(--text-tertiary)]">{kind === "globe" ? "Drag to turn the globe." : "Drag to move a zoomed map."} ⌘ or Ctrl and scroll to zoom.</span>
           </div>
         </div>
       </section>

@@ -17,11 +17,39 @@
 /** The people tables the sync engine replicates, in FK-safe replay order. */
 export const PEOPLE_SYNC_TABLES = [
   "people",
+  "teams",
   "person_edges",
   "meetings",
   "meeting_attendees",
   "note_mentions",
 ] as const;
+
+/**
+ * Teams (sync protocol 7): what you know about a team (what it owns, who leads
+ * it, the team it sits under, where to reach it). Membership stays on
+ * `people.team`, matched to `teams.name` ignoring case, so a person's team is
+ * one field on every device and a team row only adds information to a name
+ * people already carry. Added after v66, so its own migrations create it on
+ * existing installs; it is also part of {@link PEOPLE_SYNC_TABLES_SQL} for
+ * fresh ones.
+ */
+export const TEAMS_SYNC_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS teams (
+  id             TEXT NOT NULL PRIMARY KEY,
+  workspace_id   TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  description    TEXT,
+  lead_person_id TEXT,
+  parent_team_id TEXT,
+  channel        TEXT,
+  links          TEXT NOT NULL DEFAULT '[]',
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL,
+  hlc            TEXT,
+  deleted_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_teams_ws ON teams(workspace_id);
+`;
 
 export const PEOPLE_SYNC_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS people (
@@ -116,7 +144,7 @@ CREATE TABLE IF NOT EXISTS note_mentions (
 );
 CREATE INDEX IF NOT EXISTS idx_note_mentions_note ON note_mentions(note_id);
 CREATE INDEX IF NOT EXISTS idx_note_mentions_person ON note_mentions(person_id);
-`;
+${TEAMS_SYNC_TABLE_SQL}`;
 
 /**
  * Columns the people layer adds to existing synced tables. Older peers ignore

@@ -88,6 +88,16 @@ describe("people tool", () => {
     expect(getPerson(db, gone.id)?.status).toBe("dismissed");
   });
 
+  it("an explicit upsert confirms a suggested stub (an attendee capture made), an inferred one leaves it suggested", async () => {
+    await run("ensure_note", { projectId: "p", title: "Kickoff", content: "x", attendees: ["Robin Vale"] });
+    const stub = listPeople(db, "ws", { statuses: ["suggested"] }).find((p) => p.name === "Robin Vale")!;
+    expect(stub).toBeDefined();
+    await run("people", { action: "upsert", name: "Robin Vale", provenance: "inferred", title: "Designer" });
+    expect(getPerson(db, stub.id)?.status).toBe("suggested");
+    await run("people", { action: "upsert", name: "Robin Vale", team: "Design" });
+    expect(getPerson(db, stub.id)).toMatchObject({ status: "confirmed", team: "Design" });
+  });
+
   it("query filters by relationship and name; ambiguous names are an error", async () => {
     person("Ana Ruiz", { relationship: [{ type: "direct_report", provenance: "explicit" }] });
     person("Ben Ito", { relationship: [{ type: "peer", provenance: "explicit" }] });

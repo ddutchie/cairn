@@ -13,7 +13,7 @@
  */
 
 import type Database from "better-sqlite3";
-import { PEOPLE_ADDED_COLUMNS, PEOPLE_SYNC_TABLES, PEOPLE_SYNC_TABLES_SQL } from "../../shared/sync/people-schema";
+import { PEOPLE_ADDED_COLUMNS, PEOPLE_SYNC_TABLES, PEOPLE_SYNC_TABLES_SQL, TEAMS_SYNC_TABLE_SQL } from "../../shared/sync/people-schema";
 
 /**
  * The tables replicated by Device Sync, as of migrations v25/v26. Hoisted to a
@@ -1815,6 +1815,35 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE meeting_attendees ADD COLUMN sources TEXT NOT NULL DEFAULT '{}'");
     }
     db.exec("UPDATE meeting_attendees SET sources = json_object(source, json_object('on', json('true'), 'at', updated_at)) WHERE sources = '{}' OR sources = '[]'");
+  },
+
+  // v68: teams (sync protocol 7), what you know about a team beyond its name.
+  // Fresh databases get it from the v66 DDL (PEOPLE_SYNC_TABLES_SQL includes
+  // it); this adds the table and its capture triggers to v66+ databases. No
+  // rows to stage: nothing wrote teams before this migration.
+  (db) => {
+    db.exec(TEAMS_SYNC_TABLE_SQL);
+    const suppressGuard = `(SELECT COALESCE((SELECT value FROM sync_state WHERE key='suppress'),'0')) = '0'`;
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_sync_teams_ins AFTER INSERT ON teams
+      WHEN ${suppressGuard}
+      BEGIN
+        INSERT INTO sync_pending (entity, entity_id, op) VALUES ('teams', NEW.id, 'put');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_sync_teams_upd AFTER UPDATE ON teams
+      WHEN ${suppressGuard}
+      BEGIN
+        INSERT INTO sync_pending (entity, entity_id, op)
+        VALUES ('teams', NEW.id, CASE WHEN NEW.deleted_at IS NOT NULL THEN 'delete' ELSE 'put' END);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_sync_teams_del AFTER DELETE ON teams
+      WHEN ${suppressGuard}
+      BEGIN
+        INSERT INTO sync_pending (entity, entity_id, op) VALUES ('teams', OLD.id, 'delete');
+      END;
+    `);
   },
 ];
 

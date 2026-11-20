@@ -14,7 +14,7 @@
 import * as z from "zod";
 
 import { isCairnReadTool } from "../../shared/agent/tool-names";
-import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION_DESKTOP, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION } from "../../shared/agent/people-tools";
+import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION_DESKTOP, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION, TEAM_INFO_DESCRIPTION } from "../../shared/agent/people-tools";
 
 // ── Shared field shapes ────────────────────────────────────────────────────────
 
@@ -228,7 +228,7 @@ export const TOOL_SCHEMAS = {
   people: {
     description: PEOPLE_TOOL_DESCRIPTION_DESKTOP,
     schema: z.object({
-      action:       z.enum(["query", "get", "timeline", "relationships", "inventory", "upsert", "link"]),
+      action:       z.enum(["query", "get", "timeline", "relationships", "inventory", "teams", "upsert", "link", "team_upsert"]),
       personId:     sIdOpt.describe("get/timeline/relationships/upsert: the person (or pass name)"),
       name:         sStrOpt.describe("query: name filter; get/upsert: the person's name"),
       relationship: sStrOpt.describe("query: only people with this relationship to the user (e.g. direct_report, manager, peer, stakeholder, mentor)"),
@@ -243,6 +243,15 @@ export const TOOL_SCHEMAS = {
       cadence:      z.enum(["weekly", "biweekly", "monthly", ""]).optional().describe("upsert: 1:1 cadence, empty to clear"),
       title:        sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.title),
       team:         sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.team),
+      teamInfo:     z.object({
+        description: sStrOpt,
+        lead:        sStrOpt,
+        parentTeam:  sStrOpt,
+        channel:     sStrOpt,
+        links:       z.array(z.object({ label: sStrOpt, url: z.string() })).optional(),
+        members:     z.array(z.string()).optional(),
+        rename:      sStrOpt,
+      }).optional().describe(TEAM_INFO_DESCRIPTION),
       location:     sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.location),
       timezone:     sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.timezone),
       slackId:      sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.slackId),

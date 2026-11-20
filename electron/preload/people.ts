@@ -2,7 +2,7 @@
 
 import { invokeContract, onIpcEvent } from "./ipc";
 import type { IpcEvents } from "../../shared/ipc/contract";
-import type { PeopleStatus, PersonCreateInput, PersonPatch } from "../../shared/types/people";
+import type { PeopleStatus, PersonCreateInput, PersonPatch, TeamCreateInput, TeamPatch } from "../../shared/types/people";
 import type { MigrationApprovals } from "../../shared/types/people-migration";
 import type { AttendeeInput, PeopleListFilter, PersonEdgeInput, PersonEdgePatch } from "../../shared/types/people-view";
 
@@ -22,6 +22,12 @@ export const peopleApi = {
       add:    (input: PersonEdgeInput) => invokeContract("db:people:edge:add", input),
       update: (id: string, patch: PersonEdgePatch) => invokeContract("db:people:edge:update", { id, patch }),
       remove: (id: string) => invokeContract("db:people:edge:remove", { id }),
+    },
+    teams: {
+      list:   (workspaceId: string) => invokeContract("db:people:teams:list", { workspaceId }),
+      create: (input: TeamCreateInput) => invokeContract("db:people:team:create", input),
+      update: (id: string, patch: TeamPatch) => invokeContract("db:people:team:update", { id, patch }),
+      delete: (id: string, keepMembers?: boolean) => invokeContract("db:people:team:delete", { id, keepMembers }),
     },
     meetings:       (personId: string, limit?: number) => invokeContract("db:people:meetings", { personId, limit }),
     mentionNoteIds: (personId: string) => invokeContract("db:people:mentionNoteIds", { personId }),

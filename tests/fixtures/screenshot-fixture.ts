@@ -1188,6 +1188,7 @@ export function buildScreenshotMock(opts?: {
       delete:    noop,
       relations: () => Promise.resolve([]),
       edge:      { add: noop, update: noop, remove: noop },
+      teams:     { list: () => Promise.resolve(peopleData ? peopleData.teams || [] : []), create: noop, update: noop, delete: noop },
       meetings:  () => Promise.resolve([]),
       mentionNoteIds: () => Promise.resolve([]),
       ownedCardIds:   () => Promise.resolve([]),
