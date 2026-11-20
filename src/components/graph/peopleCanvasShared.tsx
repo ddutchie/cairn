@@ -3,9 +3,9 @@
 /**
  * Shared pieces of the two People canvases in Insights (relationship canvas,
  * org chart): the data hook, link colours, the filter chips and "open person".
- * Only mounted while `feature.people` is on (InsightsView gates the layouts).
+ * Mounted by InsightsView.
  */
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -52,14 +52,18 @@ export function usePeopleNetwork() {
   }, [workspaceId, people]);
 
   const data = network && network.workspaceId === workspaceId ? network.data : EMPTY_NETWORK;
-  return { people: peopleLoaded ? people : EMPTY_PEOPLE, network: data, loading: !peopleLoaded || (hasElectron("people") && network?.workspaceId !== workspaceId) };
+  return { people: peopleLoaded ? people : EMPTY_PEOPLE, network: data, loading: hasElectron("people") && (!peopleLoaded || network?.workspaceId !== workspaceId) };
 }
 const EMPTY_PEOPLE: never[] = [];
 
-/** Open a person in the Insights side panel. */
+/** Where a click on a person goes. Insights uses its side panel; the People view mounts a provider to use its own. */
+export const OpenPersonContext = createContext<((id: string) => void) | null>(null);
+
+/** Open a person: through the nearest `OpenPersonContext`, else in the Insights side panel. */
 export function useOpenPerson() {
+  const override = useContext(OpenPersonContext);
   const setPeoplePanel = useCairnStore((s) => s.setPeoplePanel);
-  return useCallback((id: string) => setPeoplePanel(id), [setPeoplePanel]);
+  return useCallback((id: string) => (override ?? setPeoplePanel)(id), [override, setPeoplePanel]);
 }
 
 interface KindChipProps {

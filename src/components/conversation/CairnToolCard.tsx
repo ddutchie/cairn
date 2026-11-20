@@ -51,6 +51,7 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
     <ToolCard
       testId="cairn-tool-card"
       summaryTestId="cairn-tool-summary"
+      persistKey={toolCall.callId}
       ok={toolCall.ok}
       icon={<Mountain size={13} className="shrink-0 text-[var(--accent)]" />}
       brand="Cairn"

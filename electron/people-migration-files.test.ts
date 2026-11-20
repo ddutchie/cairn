@@ -11,7 +11,6 @@ import matter from "gray-matter";
 import type Database from "better-sqlite3";
 import { makeDb, seedProject, seedWorkspace } from "./test-support/db";
 import { createNote } from "./db/notes-queries";
-import { setPeopleEnabled } from "./db/people-queries";
 import { applyMigration, buildInventory } from "./db/people-migration";
 import { findNoteFilePath, writeNoteFile } from "./host-shared/notes-io";
 import { makeFrontmatterReader, refreshMeetingFrontmatter } from "./people-files";
@@ -56,7 +55,6 @@ describe("migration with note files", () => {
     ]);
     expect(inv.meetings.map((m) => m.noteId)).toEqual(["mt"]);
 
-    setPeopleEnabled(db, true);
     const filesBefore = new Map([personaFile, benFile, meetingFile, journalFile].map((f) => [f, fs.readFileSync(f, "utf-8")]));
     const approvals = { personas: inv.personas.map((p) => ({ noteId: p.noteId })), meetings: ["mt"] };
     const refresh = (ids: string[]) => refreshMeetingFrontmatter(db, ws, ids);
@@ -77,13 +75,5 @@ describe("migration with note files", () => {
     const again = applyMigration(db, "ws1", approvals, { readFrontmatter, refreshFrontmatter: refresh });
     expect(again.frontmatterNotes).toEqual([]);
     expect(fs.readFileSync(meetingFile, "utf-8")).toBe(afterFirst);
-  });
-
-  it("writes no file while the flag is off", () => {
-    const meetingFile = noteFile("mt", "Sync", "Meetings", "**Attendees:** Ana Ruiz\n");
-    const before = fs.readFileSync(meetingFile, "utf-8");
-    const r = applyMigration(db, "ws1", { meetings: ["mt"] }, { refreshFrontmatter: (ids) => refreshMeetingFrontmatter(db, ws, ids) });
-    expect(r.applied).toBe(false);
-    expect(fs.readFileSync(meetingFile, "utf-8")).toBe(before);
   });
 });

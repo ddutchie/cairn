@@ -4,7 +4,7 @@
  * (`computeAutoRelationships`). Plan: docs/plans/people-layer.md ("Capture",
  * "Data model", "Graph and Insights").
  *
- * Three passes per note, all no-ops while the `feature.people` flag is off:
+ * Three passes per note, run on every note write:
  *   - Mentions: `[[Persona note]]` → a `note_mentions` row (source `wikilink`)
  *     for each person whose persona note that is. Wikilink mentions that are
  *     gone from the body are removed; manual and owner mentions are not touched.
@@ -36,7 +36,7 @@ import { foldName, parseAttendeeValue, parseBodyMeetingLines, withoutCode } from
 import { ownedItemsIn } from "../../shared/people/action-items";
 import { parseClaims, serializeClaims } from "../../shared/people/claims";
 import { mentionRowId } from "../../shared/people/ids";
-import { addMention, attendeeIdsFromSource, getMeeting, isPeopleEnabled } from "./people-queries";
+import { addMention, attendeeIdsFromSource, getMeeting } from "./people-queries";
 import { captureNoteMeeting, loadCandidates, resolveIn, type Candidate } from "./people-capture";
 
 type Db = Database.Database;
@@ -61,7 +61,6 @@ export function indexNotePeople(
   /** `bodyMeetings: false` leaves the `**Attendees:**` pass out (the migration attaches meetings only for notes the user approved). */
   opts: { bodyMeetings?: boolean } = {},
 ): void {
-  if (!isPeopleEnabled(db)) return;
   const notes = noteIds ? liveNotes(db, workspaceId, noteIds) : (db.prepare(
     "SELECT id, content FROM notes WHERE workspace_id = ? AND archived_at IS NULL AND deleted_at IS NULL",
   ).all(workspaceId) as NoteRow[]);
@@ -100,11 +99,11 @@ export function indexNotePeople(
 /**
  * Re-index these notes wherever they live (the file watcher and sync call this
  * for notes that changed outside the app's save path). Groups by workspace.
- * No-op while the flag is off; never throws.
+ * Never throws.
  */
 export function indexNotesPeople(db: Db, noteIds: readonly string[]): void {
   try {
-    if (noteIds.length === 0 || !isPeopleEnabled(db)) return;
+    if (noteIds.length === 0) return;
     const byWorkspace = new Map<string, string[]>();
     for (let i = 0; i < noteIds.length; i += ID_CHUNK) {
       const chunk = noteIds.slice(i, i + ID_CHUNK);

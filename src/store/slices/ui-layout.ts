@@ -33,6 +33,19 @@ export const FIRST_RUN_HIDDEN_VIEWS: readonly ToggleableView[] = FIRST_RUN_HIDDE
 export const FIRST_RUN_HIDDEN_APPLIED_KEY = "firstRunHiddenViewsApplied";
 
 /**
+ * People was a hidden preview view until 3.3.0 and was hidden by the first-run
+ * rule on every install. Show it once; after that the user's own switch rules.
+ */
+export const PEOPLE_SHOWN_KEY = "peopleViewShown";
+
+/** Pure: the hidden list without "people" the first time (`shown` false), and whether to save. */
+export function showPeopleOnce(saved: readonly ToggleableView[] | null | undefined, shown: boolean | null | undefined): { hidden: ToggleableView[]; changed: boolean } {
+  const hidden = [...(saved ?? [])];
+  if (shown) return { hidden, changed: false };
+  return { hidden: hidden.filter((v) => v !== "people"), changed: true };
+}
+
+/**
  * Hide every first-run view this install hasn't applied yet. Pure: returns the
  * new hidden list and applied list, and whether either needs saving.
  */
@@ -374,7 +387,7 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
       // People data is per workspace: clear it so the old one can't show.
       people: [], peopleSuggestions: [], peopleLoaded: false, selectedPersonId: null, personPage: null, personaNoteIds: [],
     });
-    if (get().peopleEnabled) void get().loadPersonaNoteIds();
+    void get().loadPersonaNoteIds();
     // Pull this workspace's chat threads/messages from SQLite (the durable
     // store) so switching workspaces surfaces their conversations.
     get().loadChatFromDb?.(wsId);
@@ -386,8 +399,6 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
   },
 
   setView(view) {
-    // The People view is unreachable while its feature flag is off.
-    if (view === "people" && !get().peopleEnabled) return;
     // Every route into the calendar (sidebar, shortcut, the scope switch)
     // records its scope, so openCalendar reopens whichever was used last.
     if (view === "calendar" || view === "calendar-all") {

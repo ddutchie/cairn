@@ -11,7 +11,6 @@ import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { haptics } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { loadPersonPage, saveProfile, type ProfileEdit, saveRelationship, setActionItemDone, type OpenItem, type OpenItems } from "@/db/people";
-import { usePeopleEnabled } from "@/people/flag";
 import { cleanProfileField, PROFILE_FIELDS, type ProfileField } from "@cairn/shared/people/parse";
 import { CADENCE_LABELS, RELATIONSHIP_LABELS, describeRelation } from "@cairn/shared/people/model";
 import { formatDate, formatRelative } from "@cairn/shared/format/date";
@@ -31,7 +30,6 @@ export function PersonScreen() {
   const t = useTheme();
   const s = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
-  const on = usePeopleEnabled();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [page, setPage] = useState<Page | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -48,7 +46,6 @@ export function PersonScreen() {
   }, [id]);
   useRefreshOnFocus(load);
 
-  if (!on) return null;
   if (loaded && !page) return <NotFound label="Person" />;
   if (!page) return <View style={s.root} />;
 

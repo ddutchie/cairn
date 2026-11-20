@@ -5,10 +5,9 @@
  * person notes"; the playbook's inventory, person-entity and meeting-backlink
  * phases).
  *
- *  - `buildInventory` only reads. It runs whether or not the `feature.people`
- *    flag is on, so the user can look before turning anything on.
+ *  - `buildInventory` only reads. The user can look before approving anything.
  *  - `applyMigration` writes, and only what the caller lists in `approvals`.
- *    It does nothing while the flag is off. It never edits a note body, never
+ *    It never edits a note body, never
  *    deletes, and is safe to re-run: person ids are deterministic
  *    (`migratedPersonId`), every other write goes through the existing
  *    idempotent paths (`createPerson`/`updatePerson`, `captureNoteMeeting`,
@@ -35,7 +34,7 @@ import type {
   AmbiguousShortName, MeetingCandidate, MigrationAction, MigrationApprovals, MigrationInventory, MigrationResult,
   MigrationSkipReason, NameResolution, OwnerUse, PersonaCandidate, ResolvedName,
 } from "../../shared/types/people-migration";
-import { createPerson, getMeeting, getPerson, isPeopleEnabled, listAttendees, updatePerson } from "./people-queries";
+import { createPerson, getMeeting, getPerson, listAttendees, updatePerson } from "./people-queries";
 import { captureNoteMeeting, loadCandidates, resolveIn, type Candidate } from "./people-capture";
 import { indexNotePeople } from "./people-indexing";
 
@@ -380,10 +379,6 @@ function attendanceSignature(db: Db, meetingId: string | null): string {
  */
 export function applyMigration(db: Db, workspaceId: string, approvals: MigrationApprovals, opts: ApplyOptions = {}): MigrationResult {
   const dryRun = opts.dryRun === true;
-  const zero = { mentionsBefore: 0, mentionsAfter: 0, ownedItemsBefore: 0, ownedItemsAfter: 0 };
-  if (!isPeopleEnabled(db)) {
-    return { dryRun, applied: false, reason: "flag_off", personas: [], meetings: [], index: zero, frontmatterNotes: [] };
-  }
   approvals = sanitize(approvals);
   const notes = loadNotes(db, workspaceId, opts.readFrontmatter);
   let result!: MigrationResult;

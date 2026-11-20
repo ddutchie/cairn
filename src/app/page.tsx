@@ -45,7 +45,7 @@ import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
 import { completeOnboarding } from "@/lib/complete-onboarding";
 import { clearOnboardingInProgress, isOnboardingInProgress, readPendingImport } from "@/lib/onboarding-progress";
 import { QuickCapture } from "@/components/layout/QuickCapture";
-import { gateHiddenViews, visibleNumberedViews } from "@/components/layout/sidebar-utils";
+import { visibleNumberedViews } from "@/components/layout/sidebar-utils";
 import { persist, reportIpcError } from "@/lib/ipc/client";
 import { appClient } from "@/lib/ipc/app";
 import { hasElectron } from "@/lib/ipc/client";
@@ -66,7 +66,6 @@ export default function Home() {
     createNote,
     activeProjectId,
     hiddenViews,
-    peopleEnabled,
     chatPanelWidth,
     chatPanelResizing,
     lastContentView,
@@ -92,7 +91,6 @@ export default function Home() {
     createNote:          s.createNote,
     activeProjectId:     s.activeProjectId,
     hiddenViews:         s.hiddenViews,
-    peopleEnabled:       s.peopleEnabled,
     chatPanelWidth:      s.chatPanelWidth,
     chatPanelResizing:   s.chatPanelResizing,
     lastContentView:     s.lastContentView,
@@ -105,7 +103,7 @@ export default function Home() {
     stopRunCountPolling:  s.stopRunCountPolling,
   })));
   // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
-  const ORDERED_VIEWS = visibleNumberedViews(gateHiddenViews(hiddenViews as { has(view: string): boolean }, { peopleEnabled }));
+  const ORDERED_VIEWS = visibleNumberedViews(hiddenViews as { has(view: string): boolean });
 
   // null = still loading
   // "workspace" = needs workspace folder setup (existing or new user)
@@ -407,12 +405,6 @@ export default function Home() {
     };
   }, [toggleSearch, toggleChat, toggleSidebar, setView, openCalendar, activeProjectId, createNote, chatOpen, hiddenViews, ORDERED_VIEWS, activeView, lastContentView]);
 
-  // The People view can't stay open once its flag is off (another window or a
-  // workspace switch turned it off).
-  useEffect(() => {
-    if (!peopleEnabled && lastContentView === "people") setView("overview");
-  }, [peopleEnabled, lastContentView, setView]);
-
   // Auto-activate Cairn Agent tab and auto-open right panel drawer if we switch to Agent view
   useEffect(() => {
     if (isView(activeView, "agent")) {
@@ -515,7 +507,7 @@ export default function Home() {
       {lastContentView === "today" && <TodayView />}
       {lastContentView === "automations" && <AutomationsView />}
       {lastContentView === "usage" && <UsageView />}
-      {lastContentView === "people" && peopleEnabled && <PeopleView />}
+      {lastContentView === "people" && <PeopleView />}
       {lastContentView === "settings"  && <SettingsView />}
      {/* AgentView stays mounted to preserve terminal sessions and agent state.
          CSS-hidden when inactive so xterm + AgentChatPane refs survive view switches. */}

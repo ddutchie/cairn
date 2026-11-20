@@ -1,5 +1,5 @@
 /**
- * Typed client for the People layer channels (`people:flag:*`, `db:people:*`).
+ * Typed client for the People layer channels (`people:*`, `db:people:*`).
  * Plan: docs/plans/people-layer.md. The view is gated on the flag; the data
  * channels answer either way.
  */
@@ -18,8 +18,6 @@ import { domainCall, type ElectronApi } from "./client";
 const people = <T>(fn: (api: ElectronApi["people"]) => Promise<T>) => domainCall("people", fn);
 
 export const peopleClient = {
-  isEnabled: (): Promise<boolean> => people((p) => p.flag.get()),
-  setEnabled: (on: boolean): Promise<boolean> => people((p) => p.flag.set(on)),
   list: (filter: PeopleListFilter): Promise<Person[]> => people((p) => p.list(filter)),
   summaries: (filter: PeopleListFilter): Promise<PersonSummary[]> => people((p) => p.summaries(filter)),
   network: (workspaceId: string): Promise<PeopleNetwork> => people((p) => p.network(workspaceId)),

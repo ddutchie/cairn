@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { makeDb, seedWorkspace } from "../../test-support/db";
-import { addAttendee, createMeeting, createPerson, setPeopleEnabled } from "../../db/people-queries";
+import { addAttendee, createMeeting, createPerson } from "../../db/people-queries";
 import { localDate } from "../../../shared/today/brief";
 import { ensurePrepAutomation, markPrepDone, markPrepRunning, savePrepBrief, startingBrief } from "./prep";
 import { AUTO_PREPS_PER_DAY, resetPrepWatch, tickMeetingPreps } from "./prep-watch";
@@ -13,7 +13,7 @@ vi.mock("../heartbeat-runner", () => ({ runPrepNow: vi.fn() }));
 
 let db: Database.Database;
 let root: string;
-beforeEach(() => { db = makeDb(); seedWorkspace(db); setPeopleEnabled(db, true); resetPrepWatch(); root = fs.mkdtempSync(path.join(os.tmpdir(), "prepwatch-")); });
+beforeEach(() => { db = makeDb(); seedWorkspace(db); resetPrepWatch(); root = fs.mkdtempSync(path.join(os.tmpdir(), "prepwatch-")); });
 afterEach(() => { db.close(); fs.rmSync(root, { recursive: true, force: true }); });
 
 const now = Date.parse("2026-11-18T12:00:00Z");
@@ -35,13 +35,10 @@ describe("tickMeetingPreps", () => {
     expect(run).toHaveBeenCalledTimes(1);
   });
 
-  it("does nothing while the preview is off, for no cadence, or far-off meetings", () => {
+  it("does nothing for no cadence or far-off meetings", () => {
     meetingSoon(45, null);
     meetingSoon(600);
     const run = vi.fn(() => ({ runId: "r1" }));
-    expect(tickMeetingPreps(ctx(), now, { run })).toBe(0);
-    setPeopleEnabled(db, false);
-    meetingSoon();
     expect(tickMeetingPreps(ctx(), now, { run })).toBe(0);
     expect(run).not.toHaveBeenCalled();
   });

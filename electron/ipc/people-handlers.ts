@@ -1,10 +1,9 @@
 /**
- * Cairn — IPC handlers for the People layer (channels `people:flag:*` and
+ * Cairn — IPC handlers for the People layer (channels `people:*` and
  * `db:people:*`). Thin wrappers over `db/people-queries.ts` (writes, entity
  * reads) and `db/people-view-queries.ts` (the People view's read models).
  *
- * The data layer answers whether or not the `feature.people` flag is on (plan:
- * docs/plans/people-layer.md); the renderer gates the view on the flag.
+ * Plan: docs/plans/people-layer.md.
  */
 
 import { registerContractHandle, broadcastEvent } from "./registry";
@@ -20,16 +19,6 @@ import { makeFrontmatterReader, refreshMeetingFrontmatter } from "../people-file
 import { suppressNextChange } from "../file-watcher";
 
 export function registerPeopleHandlers(ctx: DbContext): void {
-  registerContractHandle("people:flag:get", () => handle(() => pq.isPeopleEnabled(ctx.db)));
-  registerContractHandle("people:flag:set", (_e, { on }) =>
-    handle(() => {
-      pq.setPeopleEnabled(ctx.db, on === true);
-      // Other windows re-read the flag on db:changed (see runChangeFeedRefresh).
-      broadcastEvent("db:changed", null);
-      return pq.isPeopleEnabled(ctx.db);
-    }),
-  );
-
   registerContractHandle("db:people:list", (_e, { workspaceId, ...opts }) => handle(() => pq.listPeople(ctx.db, workspaceId, opts)));
   registerContractHandle("db:people:summaries", (_e, { workspaceId, ...opts }) =>
     handle(() => pv.listPersonSummaries(ctx.db, workspaceId, opts)),
@@ -58,19 +47,18 @@ export function registerPeopleHandlers(ctx: DbContext): void {
   );
 
   // ── 1:1 loop ─────────────────────────────────
-  // Profile fields and prep briefs are read-time and device-local: the flag gates them like the rest.
+  // Profile fields and prep briefs are read-time and device-local.
   registerContractHandle("people:profile:get", (_e, { personId }) =>
-    handle(() => (pq.isPeopleEnabled(ctx.db) ? getCachedProfile(ctx.db, personId) : { fields: {}, stale: false })),
+    handle(() => getCachedProfile(ctx.db, personId)),
   );
   registerContractHandle("people:profile:refresh", (_e, { personId }) =>
-    handle(() => (pq.isPeopleEnabled(ctx.db) ? refreshProfile(ctx.db, personId) : { fields: {}, stale: false })),
+    handle(() => refreshProfile(ctx.db, personId)),
   );
   registerContractHandle("people:autofill:propose", (_e, { personId }) =>
-    handle(() => (pq.isPeopleEnabled(ctx.db) ? proposeProfileFields(ctx.db, personId) : { skipped: "off" as const })),
+    handle(() => proposeProfileFields(ctx.db, personId)),
   );
   registerContractHandle("people:prep:get", (_e, { workspaceId, personId }) =>
     handle(() => {
-      if (!pq.isPeopleEnabled(ctx.db)) return { brief: null, running: false };
       const automation = findPrepAutomation(ctx.db, workspaceId);
       if (!automation) return { brief: null, running: false };
       const brief = loadLatestPrepBrief(ctx.workspacePath, automation, personId);

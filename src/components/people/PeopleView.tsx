@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * People view (People layer, W5; behind the `feature.people` flag).
+ * People view (People layer, W5).
  * A list of the people you work with, grouped by their relationship to you,
  * with a suggestions tray for people capture proposed, and the selected
  * person's page beside it. Plan: docs/plans/people-layer.md ("People view").
@@ -11,7 +11,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Lock, Plus, Search, Users, X } from "lucide-react";
+import { CalendarClock, Check, ExternalLink, Globe, List, Lock, Map as MapIcon, Network, Plus, Search, Share2, Users, UsersRound, X, Workflow } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { onChangeFeed } from "@/store/change-feed";
@@ -20,6 +20,10 @@ import { Button, FOCUS_RING } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { OpenPersonContext } from "@/components/graph/peopleCanvasShared";
+import { OrgChartCanvas } from "@/components/graph/OrgChartCanvas";
+import { RelationshipCanvas } from "@/components/graph/RelationshipCanvas";
 import { SectionLabel } from "@/components/ui/labels";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatRelative } from "../../../shared/format/date";
@@ -29,6 +33,25 @@ import type { PersonSummary } from "../../../shared/types/people-view";
 import { PEOPLE_GROUPS, RELATIONSHIP_LABELS, groupPeople, type PeopleGroupKey } from "./people-model";
 import { PersonPage } from "./PersonPage";
 import { MigrationPanel } from "./MigrationPanel";
+import { PersonPanel } from "./PersonPanel";
+import { TeamsCanvas } from "./TeamsCanvas";
+import { TimeZonesCanvas } from "./TimeZonesCanvas";
+import { RhythmCanvas } from "./RhythmCanvas";
+import { BridgesCanvas } from "./BridgesCanvas";
+import { MapCanvas } from "./MapCanvas";
+
+export type PeopleMode = "list" | "org" | "relationships" | "teams" | "zones" | "rhythm" | "bridges" | "map";
+
+const MODES = [
+  { value: "list" as const, label: "List", icon: <List size={12} /> },
+  { value: "org" as const, label: "Org chart", icon: <Workflow size={12} /> },
+  { value: "relationships" as const, label: "Relationships", icon: <Network size={12} /> },
+  { value: "teams" as const, label: "Teams", icon: <UsersRound size={12} /> },
+  { value: "zones" as const, label: "Time zones", icon: <Globe size={12} /> },
+  { value: "rhythm" as const, label: "Rhythm", icon: <CalendarClock size={12} /> },
+  { value: "bridges" as const, label: "Bridges", icon: <Share2 size={12} /> },
+  { value: "map" as const, label: "Map", icon: <MapIcon size={12} /> },
+];
 
 // ── List ────────────────────────────────────────────────────────────────────
 
@@ -139,12 +162,25 @@ export function PeopleView() {
   const [only, setOnly] = useState<PeopleGroupKey | "all">("all");
   const [creating, setCreating] = useState(false);
   const [finding, setFinding] = useState(false);
+  const [mode, setMode] = useState<PeopleMode>("list");
+  // The picture views keep their own side panel; the list keeps the store selection.
+  const [panelId, setPanelId] = useState<string | null>(null);
+  const changeMode = (m: PeopleMode) => { setMode(m); setPanelId(null); };
+  const inList = mode === "list";
 
-  // Load on open and on workspace switch (people are workspace-wide).
+  // Load on open and on workspace switch (people are workspace-wide). Don't clear the
+  // selection here: openPerson sets it before this view mounts, and a workspace switch
+  // already clears it in the store.
   useEffect(() => {
-    selectPerson(null);
     void loadPeople();
-  }, [activeWorkspaceId, loadPeople, selectPerson]);
+  }, [activeWorkspaceId, loadPeople]);
+
+  // Reopening People from the sidebar starts at the list, not at the last person. Clear on the
+  // move away, not in an effect cleanup: Strict Mode runs that cleanup on mount and would drop
+  // the person openPerson just selected.
+  useEffect(() => useCairnStore.subscribe((state, prev) => {
+    if (prev.activeView === "people" && state.activeView !== "people") selectPerson(null);
+  }), [selectPerson]);
 
   // People tables aren't in the change feed's entity set, so refresh on any
   // change (sync, an agent over MCP). Both reads are cheap.
@@ -166,13 +202,14 @@ export function PeopleView() {
         actions={
           <>
             <Button size="sm" variant="ghost" onClick={() => setFinding(true)}>Find in notes</Button>
-            <Button size="sm" variant="outline" onClick={() => setCreating(true)} disabled={creating}>
+            <Button size="sm" variant="outline" onClick={() => { changeMode("list"); setCreating(true); }} disabled={creating && inList}>
               <Plus size={12} /> Add person
             </Button>
           </>
         }
       >
-        <div className="relative w-56 max-w-full">
+        <SegmentedControl<PeopleMode> ariaLabel="People view" size="sm" options={MODES} value={mode} onChange={changeMode} />
+        {inList && <div className="relative w-56 max-w-full">
           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] pointer-events-none" aria-hidden />
           <Input
             aria-label="Search people"
@@ -181,16 +218,46 @@ export function PeopleView() {
             onChange={(e) => setQuery(e.target.value)}
             className="pl-7 py-1 text-xs"
           />
-        </div>
-        <Select<PeopleGroupKey | "all">
+        </div>}
+        {inList && <Select<PeopleGroupKey | "all">
           ariaLabel="Filter by relationship"
           value={only}
           options={[{ value: "all", label: "Everyone" }, ...PEOPLE_GROUPS.map((g) => ({ value: g.key, label: g.label }))]}
           onChange={setOnly}
-        />
+        />}
       </ViewToolbar>
 
-      <div className="flex flex-1 min-h-0">
+      {!inList && (
+        <OpenPersonContext.Provider value={setPanelId}>
+          <div className="flex flex-1 min-h-0">
+            <div className="@container flex flex-1 min-w-0 min-h-0 flex-col">
+              {mode === "org" && <OrgChartCanvas />}
+              {mode === "relationships" && <RelationshipCanvas />}
+              {mode === "teams" && <TeamsCanvas people={people} selectedId={panelId} />}
+              {mode === "zones" && <TimeZonesCanvas people={people} selectedId={panelId} />}
+              {mode === "rhythm" && <RhythmCanvas people={people} selectedId={panelId} />}
+              {mode === "bridges" && <BridgesCanvas selectedId={panelId} />}
+              {mode === "map" && <MapCanvas people={people} selectedId={panelId} />}
+            </div>
+            {panelId && (
+              <aside aria-label="Person" className="w-[26rem] max-w-[45%] flex-shrink-0 border-l border-[var(--border)] bg-[var(--surface)] flex flex-col overflow-hidden">
+                <div className="flex items-center justify-between px-3 h-10 border-b border-[var(--border)] flex-shrink-0">
+                  <span className="text-xs font-medium text-[var(--text-secondary)]">Person</span>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="xs" onClick={() => { const id = panelId; setMode("list"); setPanelId(null); selectPerson(id); }}>
+                      <ExternalLink size={11} /> Open in list
+                    </Button>
+                    <IconButton label="Close person" onClick={() => setPanelId(null)}><X size={13} /></IconButton>
+                  </div>
+                </div>
+                <div className="flex-1 min-h-0 overflow-auto"><PersonPanel key={panelId} personId={panelId} /></div>
+              </aside>
+            )}
+          </div>
+        </OpenPersonContext.Provider>
+      )}
+
+      {inList && <div className="flex flex-1 min-h-0">
         <aside aria-label="People" className="w-72 flex-shrink-0 overflow-y-auto border-r border-[var(--border)] p-3">
           {creating && (
             <CreatePersonForm onDone={(id) => { setCreating(false); if (id) selectPerson(id); }} />
@@ -237,7 +304,7 @@ export function PeopleView() {
             />
           )}
         </main>
-      </div>
+      </div>}
     </div>
   );
 }

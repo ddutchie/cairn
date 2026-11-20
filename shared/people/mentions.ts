@@ -79,7 +79,7 @@ export function personMentionContext(
   hidden: ReadonlySet<string>,
   chosen?: ReadonlyMap<string, string>,
 ): string | undefined {
-  if (!ctx.enabled || !workspaceId || !text.includes("@")) return undefined;
+  if (!workspaceId || !text.includes("@")) return undefined;
   const { matched, ambiguous } = findMentions(text, listPeople(db, workspaceId), chosen);
   if (matched.length === 0 && ambiguous.length === 0) return undefined;
 

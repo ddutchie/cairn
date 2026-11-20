@@ -5,8 +5,6 @@
  * `attendees` / `date` arguments of the note tools and `owner` on task tools.
  *
  * Handlers return `{ error }` instead of throwing, like the other tools here.
- * Everything answers "People is not turned on" while the flag is off; the
- * tool and arguments aren't advertised then either (`toolSchemasFor`).
  * Private persona notes are removed from the results by the dispatcher
  * (`scrubAgentPrivate`), not here.
  */
@@ -29,17 +27,13 @@ type Args = Record<string, any>;
 type Db = SyncDb;
 
 /**
- * What differs between platforms. `enabled` is the `feature.people` flag (an
- * `app_kv` row on desktop, a device setting on mobile); `meetingsChanged` runs
- * after attendee writes (the desktop rewrites the note files' frontmatter;
- * mobile has no files, so it does nothing).
+ * What differs between platforms: `meetingsChanged` runs after attendee
+ * writes (the desktop rewrites the note files' frontmatter; mobile has no
+ * files, so it does nothing).
  */
 export interface PeopleToolContext {
-  enabled: boolean;
   meetingsChanged?: (noteIds: string[]) => void;
 }
-
-const OFF = { error: "People is not turned on in this workspace." };
 
 const errMsg = (err: unknown) => (err instanceof Error ? err.message : String(err));
 const strList = (x: unknown): string[] => (Array.isArray(x) ? x.filter((v): v is string => typeof v === "string" && v.trim().length > 0) : []);
@@ -99,7 +93,6 @@ function noteTitle(db: Db, id: string): string | undefined {
 
 /** The `people` tool. `workspaceId` is resolved by the dispatcher. */
 export function peopleTool(db: Db, ctx: PeopleToolContext, args: Args): unknown {
-  if (!ctx.enabled) return OFF;
   const workspaceId = String(args.workspaceId ?? "");
   if (!workspaceId) return { error: "No workspace found" };
   try {
@@ -376,7 +369,6 @@ function link(db: Db, ctx: PeopleToolContext, workspaceId: string, args: Args) {
  * (ambiguous names become suggestions, unknown ones suggested stubs).
  */
 export function setNoteAttendees(db: Db, ctx: PeopleToolContext, args: Args): unknown {
-  if (!ctx.enabled) return OFF;
   const noteId = String(args.noteId ?? "");
   const note = db.prepare("SELECT workspace_id AS ws, meeting_id AS meetingId FROM notes WHERE id = ? AND deleted_at IS NULL")
     .get(noteId) as { ws: string; meetingId: string | null } | undefined;
@@ -429,7 +421,6 @@ export function setNoteAttendees(db: Db, ctx: PeopleToolContext, args: Args): un
 
 /** `owner` on `create_task` / `update_tasks`: a person id, email or exact name; empty clears. */
 export function setCardOwnerArg(db: Db, ctx: PeopleToolContext, args: Args): unknown {
-  if (!ctx.enabled) return OFF;
   const cardId = String(args.cardId ?? "");
   const card = db.prepare("SELECT workspace_id AS ws FROM task_cards WHERE id = ? AND deleted_at IS NULL").get(cardId) as { ws: string } | undefined;
   if (!card) return { error: `No task with id "${cardId}"` };

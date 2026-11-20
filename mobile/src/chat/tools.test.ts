@@ -9,9 +9,15 @@ import { encode } from "gpt-tokenizer";
 import BetterSqlite3 from "../../../vitest-sqlite-shim.cjs";
 import type Database from "better-sqlite3";
 import { MOBILE_SCHEMA_SQL, MOBILE_TRIGGERS_SQL } from "../db/schema";
-import { TOOL_SCHEMAS, toolSchemasFor } from "../../../electron/lib/tool-schemas";
+import { TOOL_SCHEMAS } from "../../../electron/lib/tool-schemas";
 import { createExpoSyncDb } from "../db/expo-sync-db";
-import { PEOPLE_TOOL_ARGS } from "../../../shared/agent/people-tools";
+/** Arguments of other tools that carry the People layer. */
+const PEOPLE_TOOL_ARGS: Readonly<Record<string, readonly string[]>> = {
+  ensure_note: ["attendees", "date"],
+  update_notes: ["attendees", "date"],
+  create_task: ["owner"],
+  update_tasks: ["owner"],
+};
 
 const q = vi.hoisted(() => ({
   getNote: vi.fn(), getNoteForAgent: vi.fn(), getNoteRange: vi.fn(), getCard: vi.fn(),
@@ -26,11 +32,10 @@ const q = vi.hoisted(() => ({
   workspaceIdForPerson: vi.fn((): string | undefined => undefined),
   searchNotes: vi.fn((): Record<string, unknown>[] => []), listNotes: vi.fn((): Record<string, unknown>[] => []),
 }));
-// The People layer: a real SQLite database (the mobile schema) behind the shared queries, and a switchable flag.
-const people = vi.hoisted(() => ({ db: null as unknown, enabled: true }));
+// The People layer: a real SQLite database (the mobile schema) behind the shared queries.
+const people = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock("@/db/queries", () => q);
 vi.mock("@/db/people", () => ({ peopleDb: () => people.db, peopleWorkspaceId: () => "ws1" }));
-vi.mock("@/people/flag", () => ({ isPeopleEnabled: () => people.enabled }));
 vi.mock("@/sync/write-signal", () => ({ notifyLocalWrite: () => {} }));
 vi.mock("@/notes/embeddings", () => ({}));
 vi.mock("@modules/apple-embeddings", () => ({ isAppleEmbeddingsSupported: () => false }));
@@ -150,37 +155,17 @@ const props = (t: AnyTool) => Object.keys((t.jsonSchema as { properties: Record<
 type AnyTool = { name: string; description: string; params: string; jsonSchema: Record<string, unknown>; run: (a: Record<string, unknown>) => unknown };
 const toolByName = (list: readonly { name: string }[], name: string) => list.find((t) => t.name === name) as AnyTool | undefined;
 
-describe("People layer: the flag decides what the model sees", () => {
-  it("leaves out the people tool and every People argument while the flag is off", () => {
-    const off = builtinTools(false);
-    expect(toolByName(off, "people")).toBeUndefined();
+describe("People layer: what the model sees", () => {
+  it("offers the people tool and every People argument", () => {
+    const all = builtinTools();
+    expect(toolByName(all, "people")).toBeDefined();
     for (const [tool, args] of Object.entries(PEOPLE_TOOL_ARGS)) {
-      const t = toolByName(off, tool)!;
-      for (const a of args) {
-        expect(props(t), `${tool}.${a} in schema`).not.toContain(a);
-        expect(t.params, `${tool}.${a} in hint`).not.toContain(`"${a}"`);
-      }
-    }
-    expect(JSON.stringify(off)).not.toMatch(/attendee|persona|person/i);
-  });
-
-  it("offers them when the flag is on", () => {
-    const on = builtinTools(true);
-    expect(toolByName(on, "people")).toBeDefined();
-    for (const [tool, args] of Object.entries(PEOPLE_TOOL_ARGS)) {
-      const t = toolByName(on, tool)!;
+      const t = toolByName(all, tool)!;
       for (const a of args) {
         expect(props(t)).toContain(a);
         expect(t.params).toContain(`"${a}"`);
       }
     }
-  });
-
-  it("reads the flag per call by default", () => {
-    people.enabled = false;
-    expect(builtinTools().some((t) => t.name === "people")).toBe(false);
-    people.enabled = true;
-    expect(builtinTools().some((t) => t.name === "people")).toBe(true);
   });
 
   it("matches the desktop schema field for field", () => {
@@ -192,11 +177,9 @@ describe("People layer: the flag decides what the model sees", () => {
     expect(action).toEqual(desktop.action.options.filter((o) => o !== "inventory"));
     expect(mobile.description).toBe(TOOL_SCHEMAS.people.description.replace(/, 'inventory' \([^)]*\)/, ""));
     // The arguments on other tools exist on both, with the same words.
-    const desktopOff = toolSchemasFor({ people: false });
     for (const [tool, args] of Object.entries(PEOPLE_TOOL_ARGS)) {
       for (const a of args) {
         const d = (TOOL_SCHEMAS as Record<string, { schema: { shape: Record<string, { description?: string }> } }>)[tool].schema.shape[a];
-        expect(Object.keys(desktopOff[tool].schema.shape)).not.toContain(a);
         expect((toolByName(TOOLS, tool)!.jsonSchema as { properties: Record<string, { description?: string }> }).properties[a].description).toBe(d.description);
       }
     }
@@ -209,13 +192,12 @@ describe("People layer: the flag decides what the model sees", () => {
 
 describe("People layer: the tools write through the shared code", () => {
   let db: Database.Database;
-  const call = (name: string, args: Record<string, unknown>) => toolByName(builtinTools(true), name)!.run(args) as Promise<Record<string, unknown>>;
+  const call = (name: string, args: Record<string, unknown>) => toolByName(builtinTools(), name)!.run(args) as Promise<Record<string, unknown>>;
   const people_ = (args: Record<string, unknown>) => call("people", args);
 
   beforeEach(() => {
     db = seedPeopleDb();
     people.db = db;
-    people.enabled = true;
     q.getNote.mockImplementation((id: string) => (db.prepare("SELECT id, title FROM notes WHERE id = ?").get(id) ?? null));
   });
 
@@ -353,14 +335,6 @@ describe("People layer: the tools write through the shared code", () => {
     const bad = await call("update_tasks", { cardIds: ["c1"], owner: "Nobody Here" });
     expect(String(bad.error)).toMatch(/owner/);
   });
-
-  it("ignores the People arguments while the flag is off", async () => {
-    people.enabled = false;
-    q.ensureNote.mockReturnValue("n1");
-    const r = await toolByName(builtinTools(false), "ensure_note")!.run({ projectId: "p1", title: "Weekly sync", content: "x", attendees: ["Ana Ruiz"] }) as Record<string, unknown>;
-    expect(r).toEqual({ id: "n1" });
-    expect(db.prepare("SELECT COUNT(*) AS n FROM meetings").get()).toEqual({ n: 0 });
-  });
 });
 
 describe("People layer: private persona notes stay out of agent reads", () => {
@@ -371,33 +345,28 @@ describe("People layer: private persona notes stay out of agent reads", () => {
     q.getNote.mockImplementation((id: string) => (db.prepare("SELECT id, title FROM notes WHERE id = ?").get(id) ?? null));
     q.searchNotes.mockReset();
   });
-  const tool = (flag: boolean, name: string) => toolByName(builtinTools(flag), name)!;
+  const tool = (name: string) => toolByName(builtinTools(), name)!;
 
-  for (const flag of [true, false]) {
-    it(`drops the private persona note from search results and answers "Not found" for it (flag ${flag ? "on" : "off"})`, async () => {
-      people.enabled = flag;
-      q.searchNotes.mockReturnValue([
-        { id: "persona-chris", title: "Chris Sponagle", folder: "", project_id: "p1" },
-        { id: "persona-ana", title: "Ana Ruiz", folder: "", project_id: "p1" },
-      ]);
-      const hits = await tool(flag, "search_notes").run({ query: "persona" }) as { id: string }[];
-      expect(hits.map((h) => h.id)).toEqual(["persona-ana"]);
-      expect(await tool(flag, "get_item").run({ id: "persona-chris" })).toEqual({ error: "Not found" });
-    });
-  }
+  it('drops the private persona note from search results and answers "Not found" for it', async () => {
+    q.searchNotes.mockReturnValue([
+      { id: "persona-chris", title: "Chris Sponagle", folder: "", project_id: "p1" },
+      { id: "persona-ana", title: "Ana Ruiz", folder: "", project_id: "p1" },
+    ]);
+    const hits = await tool("search_notes").run({ query: "persona" }) as { id: string }[];
+    expect(hits.map((h) => h.id)).toEqual(["persona-ana"]);
+    expect(await tool("get_item").run({ id: "persona-chris" })).toEqual({ error: "Not found" });
+  });
 
   it("refuses to edit or re-create a private persona note", async () => {
-    people.enabled = true;
-    expect(await tool(true, "edit_note").run({ noteId: "persona-chris", newString: "x" })).toEqual({ error: "Not found" });
+    expect(await tool("edit_note").run({ noteId: "persona-chris", newString: "x" })).toEqual({ error: "Not found" });
     expect(q.appendToNote).not.toHaveBeenCalled();
     q.findNoteByTitle.mockReturnValue({ id: "persona-chris" });
-    expect(String(((await tool(true, "ensure_note").run({ projectId: "p1", title: "Chris Sponagle", content: "x" })) as { error: string }).error)).toMatch(/can't be used/);
+    expect(String(((await tool("ensure_note").run({ projectId: "p1", title: "Chris Sponagle", content: "x" })) as { error: string }).error)).toMatch(/can't be used/);
     expect(q.ensureNote).not.toHaveBeenCalled();
   });
 
   it("keeps the persona note id out of the people tool, for every read action", async () => {
-    people.enabled = true;
-    const run = (args: Record<string, unknown>) => tool(true, "people").run(args);
+    const run = (args: Record<string, unknown>) => tool("people").run(args);
     for (const args of [
       { action: "query", name: "chris" },
       { action: "get", personId: "chris" },

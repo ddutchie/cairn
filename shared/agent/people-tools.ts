@@ -1,21 +1,8 @@
 /**
  * What the People layer adds to the agent toolset, in one place for desktop
- * (`electron/lib/tool-schemas.ts`, `toolSchemasFor`) and mobile
- * (`mobile/src/chat/tools.ts`). Both leave these out while `feature.people` is
- * off, so the feature is invisible until launch. The list is read once when a
- * session starts: a session's tool list never changes (prompt-cache rule).
+ * (`electron/lib/tool-schemas.ts`) and mobile (`mobile/src/chat/tools.ts`):
+ * the `people` tool's words and the descriptions of its arguments.
  */
-
-/** Tools that exist only while the People layer is on. */
-export const PEOPLE_TOOLS: ReadonlySet<string> = new Set(["people"]);
-
-/** Arguments of other tools that exist only while the People layer is on. */
-export const PEOPLE_TOOL_ARGS: Readonly<Record<string, readonly string[]>> = {
-  ensure_note:  ["attendees", "date"],
-  update_notes: ["attendees", "date"],
-  create_task:  ["owner"],
-  update_tasks: ["owner"],
-};
 
 /** What the three argument kinds say to the model (same words on every surface). */
 export const PEOPLE_ARG_DESCRIPTIONS = {

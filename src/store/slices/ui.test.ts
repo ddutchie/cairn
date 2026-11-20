@@ -27,7 +27,7 @@ describe("createUISlice", () => {
     };
     const mockGet = () => state;
     const slice = createUISlice(mockSet, mockGet, {} as any);
-    state = { ...state, ...slice };
+    state = { ...state, ...slice, loadPersonaNoteIds: vi.fn() };
   });
 
   it("initializes with overview as activeView and lastContentView", () => {

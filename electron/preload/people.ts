@@ -1,4 +1,4 @@
-/** People layer (behind the `feature.people` flag). */
+/** People layer. */
 
 import { invokeContract, onIpcEvent } from "./ipc";
 import type { IpcEvents } from "../../shared/ipc/contract";
@@ -8,10 +8,6 @@ import type { AttendeeInput, PeopleListFilter, PersonEdgeInput, PersonEdgePatch 
 
 export const peopleApi = {
   people: {
-    flag: {
-      get: () => invokeContract("people:flag:get"),
-      set: (on: boolean) => invokeContract("people:flag:set", { on }),
-    },
     list:       (filter: PeopleListFilter) => invokeContract("db:people:list", filter),
     summaries:  (filter: PeopleListFilter) => invokeContract("db:people:summaries", filter),
     network:    (workspaceId: string) => invokeContract("db:people:network", { workspaceId }),

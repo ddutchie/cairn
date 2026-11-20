@@ -3,7 +3,7 @@ import { useCairnStore } from "@/store";
 
 describe("openPerson", () => {
   beforeEach(() => {
-    useCairnStore.setState({ activeView: "overview", selectedPersonId: null, activePreviewItem: null, activeContextPanel: null, sessionPresentation: "drawer", peopleEnabled: true });
+    useCairnStore.setState({ activeView: "overview", selectedPersonId: null, activePreviewItem: null, activeContextPanel: null, sessionPresentation: "drawer" });
   });
 
   it("opens the People view on that person from anywhere else", () => {

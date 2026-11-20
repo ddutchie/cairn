@@ -16,13 +16,12 @@ import { getCachedMcpToolDefs, getInstalledMcpServer, toRuntimeConfig } from "./
 import * as mcpClient from "./mcp-client";
 import { parseToolName } from "@cairn/shared/chat/mcp-namespace";
 import { isOverdue, isDueWithin } from "@cairn/shared/notes/due";
-import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOLS, PEOPLE_TOOL_ARGS, PEOPLE_TOOL_DESCRIPTION, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION } from "@cairn/shared/agent/people-tools";
+import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION } from "@cairn/shared/agent/people-tools";
 import { isReadCall, refusesHiddenNoteWrite, scrubHidden } from "@cairn/shared/agent/people-privacy";
 import { peopleTool, setCardOwnerArg, setNoteAttendees, type PeopleToolContext } from "@cairn/shared/people/tool";
 import { agentHiddenNoteIds } from "@cairn/shared/people/queries";
 import { CADENCES, PEOPLE_STATUSES, PERSON_EDGE_TYPES, PROVENANCES, RELATIONSHIP_TYPES } from "@cairn/shared/types/people";
 import { peopleDb, peopleWorkspaceId } from "@/db/people";
-import { isPeopleEnabled } from "@/people/flag";
 import { notifyLocalWrite } from "@/sync/write-signal";
 
 export interface ToolDef {
@@ -100,16 +99,16 @@ async function semanticHits(kind: "notes" | "tasks", query: string, limit: numbe
   return hits.slice(0, limit).map((h) => ({ id: h.noteId, title: h.title, section: h.sectionTitle, score: h.score }));
 }
 
-// ── People layer (hidden while `feature.people` is off) ──────────────────────
+// ── People layer ──────────────────────────────────────────────────────────────
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
-/** What the shared People handlers need from this device: the flag; mobile has no files to rewrite. */
-const peopleContext = (): PeopleToolContext => ({ enabled: isPeopleEnabled() });
+/** What the shared People handlers need from this device; mobile has no files to rewrite. */
+const peopleContext = (): PeopleToolContext => ({});
 
 /** Apply `attendees` / `date` to notes a note tool just wrote. Returns the meeting summary (or undefined). */
 function applyNoteMeeting(noteIds: string[], a: Record<string, unknown>, errors: string[]): unknown {
-  if ((a.attendees === undefined && a.date === undefined) || !isPeopleEnabled()) return undefined;
+  if (a.attendees === undefined && a.date === undefined) return undefined;
   let last: unknown;
   for (const noteId of noteIds) {
     // The note is already written; a People failure is reported, never thrown past it.
@@ -126,7 +125,7 @@ function applyNoteMeeting(noteIds: string[], a: Record<string, unknown>, errors:
 
 /** Apply `owner` to cards a task tool just wrote. Returns the owner (or undefined). */
 function applyCardOwner(cardIds: string[], a: Record<string, unknown>, errors: string[]): unknown {
-  if (a.owner === undefined || !isPeopleEnabled()) return undefined;
+  if (a.owner === undefined) return undefined;
   let last: unknown;
   for (const cardId of cardIds) {
     try {
@@ -188,16 +187,6 @@ const PEOPLE_TOOL_DEF: ToolDef = {
     return result;
   },
 };
-
-/** Drop the People arguments from a tool's schema and hint (flag off). */
-function withoutPeopleArgs(t: ToolDef): ToolDef {
-  const drop = PEOPLE_TOOL_ARGS[t.name];
-  if (!drop) return t;
-  const schema = t.jsonSchema as { properties?: Record<string, unknown> };
-  const properties = Object.fromEntries(Object.entries(schema.properties ?? {}).filter(([k]) => !drop.includes(k)));
-  const params = drop.reduce((acc, k) => acc.replace(new RegExp(`,\\s*"${k}"\\?: [^,}]+`), ""), t.params);
-  return { ...t, params, jsonSchema: { ...t.jsonSchema, properties } };
-}
 
 const BASE_TOOLS: ToolDef[] = [
   {
@@ -535,14 +524,12 @@ export const TOOLS: ToolDef[] = [...BASE_TOOLS, PEOPLE_TOOL_DEF];
 export const TOOL_MAP = new Map(TOOLS.map((t) => [t.name, t]));
 
 /**
- * The built-in tools for this device. With the People layer off, the `people`
- * tool and the People arguments (`attendees`/`date`, `owner`) are left out, so
- * the feature is invisible until launch. Every tool is wrapped in the privacy
- * filter, flag or not: a person marked private from agents on the desktop
- * syncs here, and their persona note must stay out of reads either way.
+ * The built-in tools for this device, each wrapped in the privacy filter: a
+ * person marked private from agents on the desktop syncs here, and their
+ * persona note must stay out of reads.
  */
-export function builtinTools(people: boolean = isPeopleEnabled()): ToolDef[] {
-  return TOOLS.filter((t) => people || !PEOPLE_TOOLS.has(t.name)).map((t) => guardPrivate(people ? t : withoutPeopleArgs(t)));
+export function builtinTools(): ToolDef[] {
+  return TOOLS.map(guardPrivate);
 }
 
 /** Wrap a tool so private persona notes never reach (or get edited by) the model. */

@@ -29,12 +29,11 @@ const note = (id: string, title: string): Note => ({
   version: 1,
 });
 
-function seed(peopleEnabled: boolean) {
+function seed() {
   useCairnStore.setState({
     activeWorkspaceId: "ws1",
     activeProjectId: "pr1",
     notes: [note("n1", "Roadmap draft"), note("n2", "Ada Report persona")],
-    peopleEnabled,
     personaNoteIds: ["n2"],
     showPersonaNotes: false,
   });
@@ -44,9 +43,9 @@ const renderView = () => render(<NotesView />, { wrapper: TooltipProvider });
 const listed = (title: string) => screen.queryAllByText(title).length > 0;
 
 describe("NotesView: persona notes", () => {
-  beforeEach(() => seed(true));
+  beforeEach(() => seed());
 
-  it("hides a person's persona note when the People layer is on", () => {
+  it("hides a person's persona note", () => {
     renderView();
     expect(listed("Roadmap draft")).toBe(true);
     expect(listed("Ada Report persona")).toBe(false);
@@ -60,10 +59,4 @@ describe("NotesView: persona notes", () => {
     expect(listed("Ada Report persona")).toBe(false);
   });
 
-  it("leaves the list unchanged, with no toggle, when the flag is off", () => {
-    seed(false);
-    renderView();
-    expect(listed("Ada Report persona")).toBe(true);
-    expect(screen.queryByRole("switch", { name: "Show people's notes" })).toBeNull();
-  });
 });

@@ -1,5 +1,5 @@
 /**
- * People slice (People layer, W5): the `feature.people` flag, the people list
+ * People slice (People layer, W5): the people list
  * with its suggestions tray, and the selected person's page (relations,
  * timeline, persona note). Plan: docs/plans/people-layer.md.
  *
@@ -17,8 +17,6 @@ import { peopleClient } from "@/lib/ipc/people";
 import { hasElectron, reportIpcError } from "@/lib/ipc/client";
 
 export interface PeopleSlice {
-  /** The `feature.people` flag. While false the People view is unreachable. */
-  peopleEnabled: boolean;
   /** Confirmed people in the active workspace. */
   people: PersonSummary[];
   /** People proposed by capture or an agent (status `suggested`), for the tray. */
@@ -32,8 +30,6 @@ export interface PeopleSlice {
   /** Notes view toggle: bring persona notes back into the list and pickers. Session-only, default off. */
   showPersonaNotes: boolean;
 
-  fetchPeopleFlag: () => Promise<void>;
-  setPeopleEnabled: (on: boolean) => Promise<void>;
   loadPeople: () => Promise<void>;
   loadPersonaNoteIds: () => Promise<void>;
   setShowPersonaNotes: (on: boolean) => void;
@@ -74,7 +70,6 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
   }
 
   return {
-    peopleEnabled: false,
     people: [],
     peopleSuggestions: [],
     peopleLoaded: false,
@@ -82,29 +77,6 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
     personPage: null,
     personaNoteIds: [],
     showPersonaNotes: false,
-
-    async fetchPeopleFlag() {
-      if (!hasElectron("people")) return;
-      try {
-        const enabled = await peopleClient.isEnabled();
-        set({ peopleEnabled: enabled });
-        if (enabled) void get().loadPersonaNoteIds();
-      } catch (err) {
-        console.warn("[people] flag read failed", err);
-      }
-    },
-
-    async setPeopleEnabled(on) {
-      if (!hasElectron("people")) return;
-      try {
-        const enabled = await peopleClient.setEnabled(on);
-        set({ peopleEnabled: enabled });
-        // Turning the layer off must not leave the user on an unreachable view.
-        if (!enabled && get().lastContentView === "people") get().setView("overview");
-      } catch (err) {
-        reportIpcError(err, "Couldn't change the People setting");
-      }
-    },
 
     async loadPeople() {
       const workspaceId = get().activeWorkspaceId;

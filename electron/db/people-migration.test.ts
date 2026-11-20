@@ -4,7 +4,7 @@ import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
 import { seedPeopleCorpus, type PeopleCorpus } from "../test-support/people-corpus";
 import { applyMigration, buildInventory } from "./people-migration";
 import { indexNotePeople } from "./people-indexing";
-import { deletePerson, getPerson, listAttendees, listPeople, setPeopleEnabled, updatePerson } from "./people-queries";
+import { deletePerson, getPerson, listAttendees, listPeople, updatePerson } from "./people-queries";
 import { migratedPersonId } from "../../shared/people/ids";
 import type { MigrationApprovals, PersonaCandidate } from "../../shared/types/people-migration";
 
@@ -133,15 +133,8 @@ describe("inventory", () => {
 });
 
 describe("apply: gates", () => {
-  it("does nothing while the People flag is off", () => {
-    const before = snapshot();
-    const r = apply(approveAll());
-    expect(r).toMatchObject({ applied: false, reason: "flag_off", personas: [], meetings: [] });
-    expect(snapshot()).toEqual(before);
-  });
 
   it("does nothing without approvals", () => {
-    setPeopleEnabled(db, true);
     const before = snapshot();
     const r = apply({});
     expect(r).toMatchObject({ applied: true, personas: [], meetings: [] });
@@ -149,7 +142,6 @@ describe("apply: gates", () => {
   });
 
   it("a dry run reports what a real run does and writes nothing", () => {
-    setPeopleEnabled(db, true);
     const approvals = approveAll();
     const before = snapshot();
     const preview = apply(approvals, true);
@@ -160,7 +152,6 @@ describe("apply: gates", () => {
   });
 
   it("only touches what was approved", () => {
-    setPeopleEnabled(db, true);
     const r = apply({ personas: [{ noteId: c.n.ana }] });
     expect(r.personas).toEqual([{ noteId: c.n.ana, outcome: "created", personId: migratedPersonId("ws1", c.n.ana) }]);
     expect(listPeople(db, "ws1", { statuses: ["confirmed", "suggested"] }).map((p) => p.name).sort()).toEqual(["Ana Ruiz", "Iris Novak", "J. Weber"]);
@@ -171,8 +162,7 @@ describe("apply: gates", () => {
 });
 
 describe("apply: people", () => {
-  beforeEach(() => setPeopleEnabled(db, true));
-
+  
   it("creates a confirmed person linked to the persona note, with a deterministic id", () => {
     const r = apply({ personas: [{ noteId: c.n.dima }, { noteId: c.n.farid }] });
     const dima = getPerson(db, migratedPersonId("ws1", c.n.dima))!;
@@ -258,8 +248,7 @@ describe("apply: people", () => {
 });
 
 describe("apply: meetings, mentions and action items", () => {
-  beforeEach(() => setPeopleEnabled(db, true));
-
+  
   const attendeeNames = (noteKey: string) => {
     const meetingId = (db.prepare("SELECT meeting_id FROM notes WHERE id = ?").get(c.n[noteKey]) as { meeting_id: string | null }).meeting_id;
     return meetingId ? listAttendees(db, meetingId).map((a) => `${getPerson(db, a.personId)!.name}:${a.status}`).sort() : [];
@@ -338,8 +327,7 @@ describe("apply: meetings, mentions and action items", () => {
 });
 
 describe("apply: safety", () => {
-  beforeEach(() => setPeopleEnabled(db, true));
-
+  
   it("never changes a note: not the persona notes, not the meeting notes", () => {
     const notes = () => db.prepare("SELECT id, title, content, folder, tag_ids, archived_at, deleted_at, version, updated_at FROM notes ORDER BY id").all();
     const before = notes();

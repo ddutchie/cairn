@@ -17,7 +17,6 @@
  * constructed here.
  */
 import type Database from "better-sqlite3";
-import { isPeopleEnabled } from "../../db/people-queries";
 import { refusesHiddenWrite, scrubAgentPrivate } from "./people-privacy";
 import { isReadCall } from "../../../shared/agent/people-privacy";
 
@@ -187,9 +186,9 @@ async function ensureNote(args: Args, call: HandlerCall): Promise<unknown> {
 
 // ── People arguments ───────────────────────────────────────────────────────
 
-/** Apply `attendees` / `date` to the notes a note tool just wrote (People layer on only). */
+/** Apply `attendees` / `date` to the notes a note tool just wrote . */
 async function applyNoteMeeting(db: Database.Database, call: HandlerCall, noteIds: string[], args: Args, errors: string[]): Promise<unknown> {
-  if ((args.attendees === undefined && args.date === undefined) || !isPeopleEnabled(db)) return undefined;
+  if (args.attendees === undefined && args.date === undefined) return undefined;
   let last: unknown;
   for (const noteId of noteIds) {
     last = await call("set_note_attendees", { noteId, attendees: args.attendees, date: args.date });
@@ -198,9 +197,9 @@ async function applyNoteMeeting(db: Database.Database, call: HandlerCall, noteId
   return isErr(last) ? undefined : (last as Args | undefined)?.meeting;
 }
 
-/** Apply `owner` to cards a task tool just wrote (People layer on only). */
+/** Apply `owner` to cards a task tool just wrote . */
 async function applyCardOwner(db: Database.Database, call: HandlerCall, cardIds: string[], args: Args, errors: string[]): Promise<unknown> {
-  if (args.owner === undefined || !isPeopleEnabled(db)) return undefined;
+  if (args.owner === undefined) return undefined;
   let last: unknown;
   for (const cardId of cardIds) {
     last = await call("set_card_owner", { cardId, owner: args.owner });

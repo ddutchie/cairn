@@ -9,7 +9,7 @@ import * as z from "zod";
 import { executeTool } from "./cairn-executor";
 import type { LLMConfig } from "../../lib/llm";
 import type { ChatRequest } from "../../lib/chat-prompt";
-import { isPeopleEnabled, toolParametersJsonSchema, toolSchemasFor } from "../host-store";
+import { TOOL_SCHEMAS, toolParametersJsonSchema } from "../host-store";
 import { APPROVAL_SAFE_TOOLS, PEOPLE_READ_ACTIONS, approvalPreview } from "../../../shared/agent/tool-risk";
 import { defineTool, type AgentTool, type ToolContext } from "../tool-types";
 import type { RiskInfo } from "../rules";
@@ -24,8 +24,6 @@ export interface CairnToolDeps {
   /** Blocks until the human answers; wired to the question UI. Without it ask_questions echoes. */
   /** Tool names to withhold on this surface. */
   exclude?: ReadonlySet<string>;
-  /** People layer on? Read from the database when omitted (once per toolset). */
-  people?: boolean;
   askQuestions?: (questions: unknown[], ctx: ToolContext) => Promise<unknown>;
 }
 
@@ -43,11 +41,9 @@ export function cairnRisk(name: string, args: Record<string, unknown> = {}): Ris
   return { class: "WRITE_CAIRN" };
 }
 
-export function cairnTools(deps: CairnToolDeps, opts: { exclude?: ReadonlySet<string>; people?: boolean } = {}): AgentTool[] {
+export function cairnTools(deps: CairnToolDeps, opts: { exclude?: ReadonlySet<string> } = {}): AgentTool[] {
   const tools: AgentTool[] = [];
-  // Read once per toolset (= per session): the tool list never changes mid-session.
-  const people = opts.people ?? deps.people ?? safePeopleEnabled(deps);
-  for (const [name, { description, schema }] of Object.entries(toolSchemasFor({ people })) as Array<[string, { description: string; schema: z.ZodType }]>) {
+  for (const [name, { description, schema }] of Object.entries(TOOL_SCHEMAS) as Array<[string, { description: string; schema: z.ZodType }]>) {
     if (opts.exclude?.has(name)) continue;
     const risk = cairnRisk(name);
     tools.push(defineTool({
@@ -78,13 +74,4 @@ export function cairnTools(deps: CairnToolDeps, opts: { exclude?: ReadonlySet<st
     }));
   }
   return tools;
-}
-
-/** The People flag, or off when the database can't be read (inert inventory deps). */
-function safePeopleEnabled(deps: CairnToolDeps): boolean {
-  try {
-    return isPeopleEnabled(deps.getDb());
-  } catch {
-    return false;
-  }
 }

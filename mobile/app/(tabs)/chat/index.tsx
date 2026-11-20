@@ -48,7 +48,6 @@ import { mentionContext } from "@/chat/mentions";
 import { chosenInText, matchPeople, trailingMention } from "@cairn/shared/people/mentions";
 import { loadPeople, peopleWorkspaceId } from "@/db/people";
 import { foldName } from "@cairn/shared/people/parse";
-import { usePeopleEnabled } from "@/people/flag";
 import { streamingPhase } from "@cairn/shared/conversation/work-phase";
 import { createStreamingStore, StreamingStoreContext } from "@/chat/streaming-store";
 import { CairnMorphComposer } from "@/components/chat/CairnMorphComposer";
@@ -314,8 +313,7 @@ export default function ChatScreen() {
   );
 
   // `@name` at the end of the draft offers matching people; picking one completes the name.
-  const peopleOn = usePeopleEnabled();
-  const mentionQuery = peopleOn ? trailingMention(input)?.query : undefined;
+  const mentionQuery = trailingMention(input)?.query;
   const mentioning = mentionQuery !== undefined;
   // Reloaded when the active workspace changes, so a draft left open across a switch never offers the old workspace's people.
   const mentionWorkspace = mentioning ? peopleWorkspaceId() : null;

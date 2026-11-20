@@ -5,9 +5,9 @@ import { applySchemaThrough, applySchema } from "./schema";
 import BetterSqlite3 from "better-sqlite3";
 import {
   addAttendee, addEdge, addMention, createMeeting, createPerson, deleteMeeting, deletePerson, edgeRole, getMe,
-  getMeeting, getPerson, getRelations, isPeopleEnabled, listAttendees, listMeetingNoteIds, listOwnedCardIds, listPeople,
+  getMeeting, getPerson, getRelations, listAttendees, listMeetingNoteIds, listOwnedCardIds, listPeople,
   listPersonMeetings, listPersonMentionNoteIds, listRelated, removeAttendee, removeEdge, removeMention, setCardOwner,
-  setNoteMeeting, setPeopleEnabled, updatePerson, upsertMeetingByExternalId,
+  setNoteMeeting, updatePerson, upsertMeetingByExternalId,
 } from "./people-queries";
 import { attendeeRowId, calendarMeetingId, edgeRowId, mentionRowId } from "../../shared/people/ids";
 import { createNote } from "./notes-queries";
@@ -65,16 +65,6 @@ describe("schema", () => {
       expect(old.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(t)).toBeTruthy();
     }
     old.close();
-  });
-});
-
-describe("feature flag", () => {
-  it("is off by default and can be toggled", () => {
-    expect(isPeopleEnabled(db)).toBe(false);
-    setPeopleEnabled(db, true);
-    expect(isPeopleEnabled(db)).toBe(true);
-    setPeopleEnabled(db, false);
-    expect(isPeopleEnabled(db)).toBe(false);
   });
 });
 

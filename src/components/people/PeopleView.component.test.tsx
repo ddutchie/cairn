@@ -5,7 +5,8 @@
  * so the list comes straight from the state set here.
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import React from "react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { useCairnStore } from "@/store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { PersonSummary } from "../../../shared/types/people-view";
@@ -35,7 +36,6 @@ function renderView() {
 beforeEach(() => {
   useCairnStore.setState({
     activeWorkspaceId: "ws1",
-    peopleEnabled: true,
     peopleLoaded: true,
     peopleSuggestions: [],
     selectedPersonId: null,
@@ -102,5 +102,120 @@ describe("PeopleView", () => {
     useCairnStore.setState({ people: [] });
     renderView();
     expect(screen.getByText("No people yet")).toBeInTheDocument();
+  });
+
+  it("keeps a person opened from elsewhere (also under Strict Mode), and starts at the list on the next visit", () => {
+    // openPerson (Today nudge, tool card) selects before the view mounts.
+    useCairnStore.setState({ activeView: "people", selectedPersonId: "p1" });
+    render(<React.StrictMode><PeopleView /></React.StrictMode>, { wrapper: TooltipProvider });
+    expect(useCairnStore.getState().selectedPersonId).toBe("p1");
+    act(() => useCairnStore.getState().setView("overview"));
+    expect(useCairnStore.getState().selectedPersonId).toBeNull();
+  });
+
+  it("switches to the team and time zone pictures, and hides the list controls there", () => {
+    useCairnStore.setState({
+      people: [
+        person("me", "Me", [], { isMe: true, timezone: "Europe/London" }),
+        person("p1", "Ada Report", ["direct_report"], { team: "Platform", timezone: "America/New_York" }),
+        person("p2", "Elisa Boss", ["manager"], { team: "Platform" }),
+      ],
+    });
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Teams" }));
+    const team = screen.getByRole("region", { name: "Platform" });
+    expect(within(team).getByText("Ada Report")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Search people" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Time zones" }));
+    expect(within(screen.getByRole("table", { name: "Working hours by person" })).getByText("Ada Report")).toBeInTheDocument();
+    expect(screen.getByText("No time zone set (1)")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
+    expect(screen.getByRole("textbox", { name: "Search people" })).toBeInTheDocument();
+  });
+
+  it("opens a person in a side panel from a picture, and can hand them to the list", () => {
+    useCairnStore.setState({ people: [person("p1", "Ada Report", ["direct_report"], { team: "Platform" })] });
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Teams" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ada Report" }));
+    expect(screen.getByRole("complementary", { name: "Person" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Open in list/ }));
+    expect(useCairnStore.getState().selectedPersonId).toBe("p1");
+    expect(screen.getByRole("complementary", { name: "People" })).toBeInTheDocument();
+  });
+
+  it("shows who is due to be met, against the cadence, with status in words", () => {
+    const ago = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
+    useCairnStore.setState({
+      people: [
+        person("me", "Me", [], { isMe: true }),
+        person("p1", "Late Larry", ["peer"], { cadence: "weekly", lastMetAt: ago(10) }),
+        person("p2", "Fine Fran", ["peer"], { cadence: "monthly", lastMetAt: ago(2) }),
+        person("p3", "Unset Uma", ["peer"]),
+      ],
+    });
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Rhythm" }));
+    expect(screen.getByText("Overdue by 3 days")).toBeInTheDocument();
+    expect(screen.getByText("28 days to go")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "No cadence set" })).getByText("Unset Uma")).toBeInTheDocument();
+  });
+
+  it("lists people with no link to you under Bridges", () => {
+    useCairnStore.setState({
+      people: [
+        person("me", "Me", [], { isMe: true }),
+        person("p1", "Linked Lin", ["peer"]),
+        person("p2", "Lonely Lou", []),
+      ],
+    });
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Bridges" }));
+    expect(within(screen.getByRole("region", { name: "Not connected to you" })).getByText("Lonely Lou")).toBeInTheDocument();
+    expect(screen.getByText("Nobody is your only route to anyone else.")).toBeInTheDocument();
+  });
+
+  it("places people on the map from their time zone and lists the rest", () => {
+    useCairnStore.setState({
+      people: [
+        person("me", "Me", [], { isMe: true, timezone: "Europe/London" }),
+        person("p1", "Ada Report", ["direct_report"], { timezone: "Europe/London" }),
+        person("p2", "No Zone", []),
+      ],
+    });
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
+    const marker = screen.getByRole("button", { name: /^London, 2 people, / });
+    fireEvent.click(marker);
+    const who = screen.getByRole("region", { name: "Who is there" });
+    expect(within(who).getByText("Ada Report")).toBeInTheDocument();
+    expect(within(who).getByText("Me (you)")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Not on the map" })).getByText("No Zone")).toBeInTheDocument();
+  });
+
+  it("opens the add form from any picture by switching to the list", () => {
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Teams" }));
+    fireEvent.click(screen.getByRole("button", { name: /Add person/ }));
+    expect(screen.getByRole("form", { name: "Add a person" })).toBeInTheDocument();
+  });
+
+  it("doesn't leave Org chart blank when the people bridge is absent", () => {
+    useCairnStore.setState({ peopleLoaded: false, people: [] });
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Org chart" }));
+    expect(screen.getByText(/No people yet/)).toBeInTheDocument();
+  });
+
+  it("keeps the minutes in a time zone row's working hours", () => {
+    useCairnStore.setState({
+      people: [
+        person("me", "Me", [], { isMe: true, timezone: "UTC" }),
+        person("p1", "Ravi", ["peer"], { timezone: "Asia/Kolkata" }),
+      ],
+    });
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Time zones" }));
+    expect(screen.getByLabelText(/Ravi: works 3:30 to 11:30 your time/)).toBeInTheDocument();
   });
 });

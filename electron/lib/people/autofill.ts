@@ -16,7 +16,7 @@ import { AUTOFILL_SYSTEM_PROMPT, buildAutofillPrompt, parseAutofill, type Autofi
 
 export type AutofillResult =
   | { proposals: AutofillProposal[] }
-  | { skipped: "off" | "no-ai" | "private" | "no-persona" | "empty" | "failed" };
+  | { skipped: "no-ai" | "private" | "no-persona" | "empty" | "failed" };
 
 export async function proposeProfileFields(db: Database.Database, personId: string): Promise<AutofillResult> {
   const person = getPerson(db, personId);

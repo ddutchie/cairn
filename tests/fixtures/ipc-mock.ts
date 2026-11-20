@@ -283,7 +283,6 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
 
     // ── People layer (flag off) ───────────────────────────────
     people: {
-      flag:      { get: () => Promise.resolve(false), set: (on) => Promise.resolve(!!on) },
       list:      () => Promise.resolve([]),
       summaries: () => Promise.resolve([]),
       network:   () => Promise.resolve({ edges: [], coAttendance: [] }),
@@ -299,16 +298,16 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       ownedCardIds:   () => Promise.resolve([]),
       attendees: () => Promise.resolve([]),
       attendee:  { add: noop, remove: noop },
-      autofill:  { propose: () => Promise.resolve({ skipped: "off" }) },
+      autofill:  { propose: () => Promise.resolve({ skipped: "no-ai" }) },
       profile:   { get: () => Promise.resolve({ fields: {}, stale: false }), refresh: () => Promise.resolve({ fields: {}, stale: false }) },
-      prep:      { get: () => Promise.resolve({ brief: null, running: false }), run: () => Promise.resolve({ skipped: "off" }), onUpdated: () => () => {} },
+      prep:      { get: () => Promise.resolve({ brief: null, running: false }), run: () => Promise.resolve({ skipped: "no-ai" }), onUpdated: () => () => {} },
       migration: {
         inventory: () => Promise.resolve({
           workspaceId: "", personas: [], meetings: [], owners: [], ambiguousShortNames: [],
           counts: { notesScanned: 0, personaCandidates: 0, highConfidence: 0, meetingNotes: 0, ownedChecklistItems: 0, openOwnedChecklistItems: 0, archivedCandidates: 0, existingPeople: 0, collisions: 0, ambiguousNames: 0 },
         }),
         apply: () => Promise.resolve({
-          dryRun: true, applied: false, reason: "flag_off", personas: [], meetings: [], frontmatterNotes: [],
+          dryRun: true, applied: false, personas: [], meetings: [], frontmatterNotes: [],
           index: { mentionsBefore: 0, mentionsAfter: 0, ownedItemsBefore: 0, ownedItemsAfter: 0 },
         }),
       },
