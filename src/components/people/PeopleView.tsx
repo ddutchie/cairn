@@ -11,7 +11,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ExternalLink, Globe, List, Lock, Network, Plus, Search, Users, UsersRound, X, Workflow } from "lucide-react";
+import { CalendarClock, Check, ExternalLink, Globe, List, Lock, Map as MapIcon, Network, Plus, Search, Share2, Users, UsersRound, X, Workflow } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { onChangeFeed } from "@/store/change-feed";
@@ -36,8 +36,11 @@ import { MigrationPanel } from "./MigrationPanel";
 import { PersonPanel } from "./PersonPanel";
 import { TeamsCanvas } from "./TeamsCanvas";
 import { TimeZonesCanvas } from "./TimeZonesCanvas";
+import { RhythmCanvas } from "./RhythmCanvas";
+import { BridgesCanvas } from "./BridgesCanvas";
+import { MapCanvas } from "./MapCanvas";
 
-export type PeopleMode = "list" | "org" | "relationships" | "teams" | "zones";
+export type PeopleMode = "list" | "org" | "relationships" | "teams" | "zones" | "rhythm" | "bridges" | "map";
 
 const MODES = [
   { value: "list" as const, label: "List", icon: <List size={12} /> },
@@ -45,6 +48,9 @@ const MODES = [
   { value: "relationships" as const, label: "Relationships", icon: <Network size={12} /> },
   { value: "teams" as const, label: "Teams", icon: <UsersRound size={12} /> },
   { value: "zones" as const, label: "Time zones", icon: <Globe size={12} /> },
+  { value: "rhythm" as const, label: "Rhythm", icon: <CalendarClock size={12} /> },
+  { value: "bridges" as const, label: "Bridges", icon: <Share2 size={12} /> },
+  { value: "map" as const, label: "Map", icon: <MapIcon size={12} /> },
 ];
 
 // ── List ────────────────────────────────────────────────────────────────────
@@ -220,11 +226,14 @@ export function PeopleView() {
       {!inList && (
         <OpenPersonContext.Provider value={setPanelId}>
           <div className="flex flex-1 min-h-0">
-            <div className="flex flex-1 min-w-0 min-h-0 flex-col">
+            <div className="@container flex flex-1 min-w-0 min-h-0 flex-col">
               {mode === "org" && <OrgChartCanvas />}
               {mode === "relationships" && <RelationshipCanvas />}
               {mode === "teams" && <TeamsCanvas people={people} selectedId={panelId} />}
               {mode === "zones" && <TimeZonesCanvas people={people} selectedId={panelId} />}
+              {mode === "rhythm" && <RhythmCanvas people={people} selectedId={panelId} />}
+              {mode === "bridges" && <BridgesCanvas selectedId={panelId} />}
+              {mode === "map" && <MapCanvas people={people} selectedId={panelId} />}
             </div>
             {panelId && (
               <aside aria-label="Person" className="w-[26rem] max-w-[45%] flex-shrink-0 border-l border-[var(--border)] bg-[var(--surface)] flex flex-col overflow-hidden">

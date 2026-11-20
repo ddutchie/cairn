@@ -44,6 +44,19 @@ export function overlapHours(diffMinutes: number, start = WORK_START, end = WORK
   return Math.round(total * 10) / 10;
 }
 
+/** Local hour of day (fractional) in a zone at `at`, or null for a zone the runtime doesn't know. */
+export function localHourAt(timezone: string, at: Date): number | null {
+  const off = zoneOffsetMinutes(timezone, at);
+  return off === null ? null : (((at.getTime() / 3_600_000 + off / 60) % 24) + 24) % 24;
+}
+
+export type Availability = "work" | "edge" | "asleep";
+
+/** At work (9 to 17), asleep (22 to 07), or early or late in between. */
+export function availabilityAt(hour: number): Availability {
+  return hour >= WORK_START && hour < WORK_END ? "work" : hour >= 22 || hour < 7 ? "asleep" : "edge";
+}
+
 export interface ZonePerson {
   person: PersonSummary;
   timezone: string;
