@@ -736,6 +736,8 @@ export interface IpcContract {
   /** null when the dialog is cancelled. */
   "sync:selectFolder": { args: []; result: string | null };
   "sync:clearFolder": { args: []; result: { ok: true } };
+  /** Disconnect and delete this desktop's oplog/blobs for the workspace from the folder; phones are told via a marker. */
+  "sync:removeFromFolder": { args: []; result: { removed: boolean } };
   "sync:now": { args: []; result: DesktopSyncResult };
   /** Initial status; transitions are pushed on the `sync:status` event. */
   "sync:status": { args: []; result: SyncStatus };
@@ -1244,6 +1246,7 @@ const CHANNELS: ChannelRecord = {
   "sync:getFolder": "read",
   "sync:selectFolder": "read",
   "sync:clearFolder": "read",
+  "sync:removeFromFolder": "read",
   "sync:now": "read",
   "sync:status": "read",
   "sync:pendingBreakdown": "read",

@@ -11,7 +11,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as SplashScreen from "expo-splash-screen";
 import { initDatabase, getActiveSource, resetActiveSource } from "@/db";
 import { isDemoSource, seedChat } from "@/dev/demo-seed";
-import { startAutoSync, onDataChanged } from "@/sync/controller";
+import { startAutoSync, onDataChanged, onActiveSourceRemoved } from "@/sync/controller";
 // Also defines the background task at load, before React mounts (see the module).
 import { registerBackgroundSync } from "@/sync/background-sync";
 import { catchUpIndex } from "@/notes/embeddings";
@@ -55,6 +55,10 @@ export default function RootLayout() {
       return false;
     }
   });
+
+  // The active workspace was removed (swipe-to-delete in the sync modal) with no
+  // other workspace to fall back to: return to onboarding.
+  useEffect(() => onActiveSourceRemoved(() => setHasSource(false)), []);
 
   // NOTE: the status bar is intentionally NOT controlled from JS. With
   // UIUserInterfaceStyle=Automatic + UIStatusBarStyle=UIStatusBarStyleDefault

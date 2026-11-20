@@ -12,6 +12,8 @@ export const syncClient = {
   getFolder: () => sync((s) => s.getFolder()),
   selectFolder: () => sync((s) => s.selectFolder()),
   clearFolder: () => sync((s) => s.clearFolder()),
+  /** Disconnect and remove this workspace's published files (oplog + blobs) from the shared folder. */
+  removeFromFolder: () => sync((s) => s.removeFromFolder()),
   now: () => sync((s) => s.now()),
   /** Current live status snapshot (state + pending/conflict counts + lastSyncAt). */
   status: () => sync((s) => s.status()),

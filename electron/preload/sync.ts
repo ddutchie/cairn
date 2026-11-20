@@ -9,6 +9,7 @@ export const syncApi = {
     getFolder: () => invokeContract("sync:getFolder"),
     selectFolder: () => invokeContract("sync:selectFolder"),
     clearFolder: () => invokeContract("sync:clearFolder"),
+    removeFromFolder: () => invokeContract("sync:removeFromFolder"),
     now: () => invokeContract("sync:now"),
     // Current live status snapshot (state + pending/conflict counts + lastSyncAt).
     status: () => invokeContract("sync:status"),

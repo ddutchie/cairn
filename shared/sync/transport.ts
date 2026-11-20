@@ -24,6 +24,8 @@ import path from "path";
 import type { OplogEntry } from "./engine";
 import { oplogFileName, isOplogForWorkspace, parseWorkspaceIdFromOplogName } from "./oplog-name";
 import { isOplogEntry } from "./oplog-guard";
+import { removalMarkerName, serializeRemovalMarker } from "./removal-marker";
+import { blobsDirName } from "./attachments";
 
 // Re-export the pure filename helpers so existing importers of "./transport"
 // keep working; the definitions live in the Node-free ./oplog-name module so
@@ -187,4 +189,42 @@ export async function readPeerOplogsAsync(syncFolder: string, selfDeviceId: stri
     for (const line of raw.split("\n")) parseInto(out, line);
   }
   return out;
+}
+
+// ── Workspace removal (see removal-marker.ts) ───────────────────────────────
+
+/**
+ * Remove this device's published workspace from the shared folder: write the
+ * removal marker FIRST (so phones never observe "no files and no marker"), then
+ * delete this device's oplog and the workspace's blob directory. Peers' own
+ * oplog files are left alone — they are told via the marker. Returns the
+ * number of oplog files deleted (0 or 1).
+ */
+export async function removeWorkspaceFromFolder(syncFolder: string, deviceId: string, workspaceId: string): Promise<number> {
+  await fs.promises.mkdir(syncFolder, { recursive: true });
+  await fs.promises.writeFile(
+    path.join(syncFolder, removalMarkerName(workspaceId)),
+    serializeRemovalMarker({ workspaceId, removedAt: new Date().toISOString(), deviceId }),
+    "utf-8",
+  );
+  let deleted = 0;
+  try {
+    await fs.promises.unlink(path.join(syncFolder, oplogFileName(deviceId, workspaceId)));
+    deleted = 1;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+  await fs.promises.rm(path.join(syncFolder, blobsDirName(workspaceId)), { recursive: true, force: true });
+  return deleted;
+}
+
+/** Delete the workspace's removal marker (the desktop is publishing it again). True if one existed. */
+export async function clearRemovalMarker(syncFolder: string, workspaceId: string): Promise<boolean> {
+  try {
+    await fs.promises.unlink(path.join(syncFolder, removalMarkerName(workspaceId)));
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw err;
+  }
 }
