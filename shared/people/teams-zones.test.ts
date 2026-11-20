@@ -60,4 +60,13 @@ describe("zones", () => {
   it("formats differences", () => {
     expect([0, 120, -330].map(formatDiff)).toEqual(["same time", "+2h", "-5h 30m"]);
   });
+
+  it("keeps the minute exact (12:01 is not 12:00)", () => {
+    const me = p("me", "Me", { isMe: true, timezone: "UTC" });
+    for (const min of [1, 7, 16, 22, 31, 37, 46, 52]) {
+      const at = new Date(Date.UTC(2026, 0, 15, 12, min));
+      const m = buildZoneModel([me, p("1", "A", { timezone: "UTC" })], me, at);
+      expect(m.rows[0].localTime).toBe(`12:${String(min).padStart(2, "0")}`);
+    }
+  });
 });

@@ -8,7 +8,7 @@ import { makeDb, seedProject, seedWorkspace } from "./test-support/db";
 import { createNote } from "./db/notes-queries";
 import { addAttendee, createPerson, listAttendees } from "./db/people-queries";
 import { findNoteFilePath, writeNoteFile } from "./host-shared/notes-io";
-import { FrontmatterRetryQueue, capturePeopleFromFile, meetingNotesForSync, refreshMeetingFrontmatter } from "./people-files";
+import { FrontmatterRetryQueue, backfillMeetingCapture, capturePeopleFromFile, meetingNotesForSync, refreshMeetingFrontmatter } from "./people-files";
 
 let db: Database.Database;
 let ws: string;
@@ -215,5 +215,34 @@ describe("round-three review fixes", () => {
     const back = capturePeopleFromFile(db, file, "n1")!;
     expect(back.created).toEqual([]);
     expect(back.attendees).toEqual([ana.id]);
+  });
+});
+
+describe("backfillMeetingCapture", () => {
+  it("captures attendees from note files that were never read, once", async () => {
+    const ana = createPerson(db, { workspaceId: "ws1", name: "Ana" });
+    noteWithFile("n1", { attendees: ["[[Ana]]"], date: "2026-11-10" });
+    noteWithFile("n2", { date: "2026-11-11" }); // a journal note: not a meeting
+    expect(meetingOf("n1")).toBeNull();
+
+    expect(await backfillMeetingCapture(db, ws)).toBe(1);
+    expect(listAttendees(db, meetingOf("n1")!).map((a) => a.personId)).toEqual([ana.id]);
+    expect(meetingOf("n2")).toBeNull();
+
+    // A second run is a no-op, even for a file added since.
+    noteWithFile("n3", { attendees: ["[[Ana]]"] });
+    expect(await backfillMeetingCapture(db, ws)).toBe(0);
+    expect(meetingOf("n3")).toBeNull();
+  });
+
+  it("skips a file that isn't a live note and keeps going after one that can't be read", async () => {
+    createPerson(db, { workspaceId: "ws1", name: "Ana" });
+    const gone = noteWithFile("n1", { attendees: ["[[Ana]]"] });
+    db.prepare("UPDATE notes SET deleted_at = ? WHERE id = 'n1'").run(new Date().toISOString());
+    expect(fs.existsSync(gone)).toBe(true);
+    noteWithFile("n2", { attendees: ["[[Ana]]"] });
+    expect(await backfillMeetingCapture(db, ws)).toBe(1);
+    expect(meetingOf("n1")).toBeNull();
+    expect(meetingOf("n2")).not.toBeNull();
   });
 });

@@ -5,7 +5,8 @@
  * so the list comes straight from the state set here.
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import React from "react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { useCairnStore } from "@/store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { PersonSummary } from "../../../shared/types/people-view";
@@ -103,12 +104,12 @@ describe("PeopleView", () => {
     expect(screen.getByText("No people yet")).toBeInTheDocument();
   });
 
-  it("keeps a person opened from elsewhere, and starts at the list on the next visit", () => {
+  it("keeps a person opened from elsewhere (also under Strict Mode), and starts at the list on the next visit", () => {
     // openPerson (Today nudge, tool card) selects before the view mounts.
-    useCairnStore.setState({ selectedPersonId: "p1" });
-    const { unmount } = renderView();
+    useCairnStore.setState({ activeView: "people", selectedPersonId: "p1" });
+    render(<React.StrictMode><PeopleView /></React.StrictMode>, { wrapper: TooltipProvider });
     expect(useCairnStore.getState().selectedPersonId).toBe("p1");
-    unmount();
+    act(() => useCairnStore.getState().setView("overview"));
     expect(useCairnStore.getState().selectedPersonId).toBeNull();
   });
 
@@ -190,5 +191,31 @@ describe("PeopleView", () => {
     expect(within(who).getByText("Ada Report")).toBeInTheDocument();
     expect(within(who).getByText("Me (you)")).toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Not on the map" })).getByText("No Zone")).toBeInTheDocument();
+  });
+
+  it("opens the add form from any picture by switching to the list", () => {
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Teams" }));
+    fireEvent.click(screen.getByRole("button", { name: /Add person/ }));
+    expect(screen.getByRole("form", { name: "Add a person" })).toBeInTheDocument();
+  });
+
+  it("doesn't leave Org chart blank when the people bridge is absent", () => {
+    useCairnStore.setState({ peopleLoaded: false, people: [] });
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Org chart" }));
+    expect(screen.getByText(/No people yet/)).toBeInTheDocument();
+  });
+
+  it("keeps the minutes in a time zone row's working hours", () => {
+    useCairnStore.setState({
+      people: [
+        person("me", "Me", [], { isMe: true, timezone: "UTC" }),
+        person("p1", "Ravi", ["peer"], { timezone: "Asia/Kolkata" }),
+      ],
+    });
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Time zones" }));
+    expect(screen.getByLabelText(/Ravi: works 3:30 to 11:30 your time/)).toBeInTheDocument();
   });
 });

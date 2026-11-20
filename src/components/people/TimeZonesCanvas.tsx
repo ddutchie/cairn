@@ -18,6 +18,11 @@ import { findMe } from "@/lib/people/network";
 import type { PersonSummary } from "../../../shared/types/people-view";
 
 const TICKS = [0, 3, 6, 9, 12, 15, 18, 21, 24];
+/** "3:30", from a fractional hour; 24 reads as 24:00. */
+const clock = (h: number) => {
+  const total = Math.round(h * 60);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+};
 const pct = (h: number) => `${(h / 24) * 100}%`;
 
 export function TimeZonesCanvas({ people, selectedId }: { people: readonly PersonSummary[]; selectedId?: string | null }) {
@@ -57,7 +62,7 @@ export function TimeZonesCanvas({ people, selectedId }: { people: readonly Perso
               </div>
               <div
                 role="cell" className="relative h-5 flex-1 rounded bg-[var(--surface-2)]"
-                aria-label={`${r.person.name}: works ${r.spans.map(([a, b]) => `${Math.floor(a)}:00 to ${Math.floor(b)}:00`).join(" and ")} your time, ${r.overlap} shared hours`}
+                aria-label={`${r.person.name}: works ${r.spans.map(([a, b]) => `${clock(a)} to ${clock(b)}`).join(" and ")} your time, ${r.overlap} shared hours`}
               >
                 <div className="absolute inset-y-0 bg-[var(--accent-dim)]" style={{ left: pct(WORK_START), width: pct(WORK_END - WORK_START) }} />
                 {r.spans.map(([a, b]) => (

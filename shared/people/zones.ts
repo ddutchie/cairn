@@ -97,7 +97,9 @@ export function buildZoneModel(people: readonly PersonSummary[], me: PersonSumma
     if (!p.timezone || off === null) { unset.push(p); continue; }
     const diff = off - myOffset;
     const h = hourIn(off);
-    const hh = Math.floor(h); const mm = Math.floor((h - hh) * 60);
+    // Integer minutes, not the fractional hour: 12:01 must not come out as 12:00.
+    const minuteOfDay = (((Math.floor(now.getTime() / 60_000) + off) % 1440) + 1440) % 1440;
+    const hh = Math.floor(minuteOfDay / 60); const mm = minuteOfDay % 60;
     rows.push({
       person: p, timezone: p.timezone, diffMinutes: diff,
       localTime: `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`,

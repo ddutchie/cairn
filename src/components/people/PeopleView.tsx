@@ -175,8 +175,12 @@ export function PeopleView() {
     void loadPeople();
   }, [activeWorkspaceId, loadPeople]);
 
-  // Reopening People from the sidebar starts at the list, not at the last person.
-  useEffect(() => () => selectPerson(null), [selectPerson]);
+  // Reopening People from the sidebar starts at the list, not at the last person. Clear on the
+  // move away, not in an effect cleanup: Strict Mode runs that cleanup on mount and would drop
+  // the person openPerson just selected.
+  useEffect(() => useCairnStore.subscribe((state, prev) => {
+    if (prev.activeView === "people" && state.activeView !== "people") selectPerson(null);
+  }), [selectPerson]);
 
   // People tables aren't in the change feed's entity set, so refresh on any
   // change (sync, an agent over MCP). Both reads are cheap.
@@ -198,7 +202,7 @@ export function PeopleView() {
         actions={
           <>
             <Button size="sm" variant="ghost" onClick={() => setFinding(true)}>Find in notes</Button>
-            <Button size="sm" variant="outline" onClick={() => setCreating(true)} disabled={creating}>
+            <Button size="sm" variant="outline" onClick={() => { changeMode("list"); setCreating(true); }} disabled={creating && inList}>
               <Plus size={12} /> Add person
             </Button>
           </>

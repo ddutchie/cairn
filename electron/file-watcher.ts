@@ -23,7 +23,7 @@ import type Database from "better-sqlite3";
 import { parseNoteFile, adoptExternalNoteFile, importVaultProjects, isImportPathExcluded, reconcileOwnedNote, touchAdoptedBaseline, flushAdoptedLedger, readImportConfig } from "./notes-files";
 import { findNoteFilePath, noteDir } from "./host-shared/notes-io";
 import * as q from "./db/queries";
-import { capturePeopleFromFile } from "./people-files";
+import { backfillMeetingCapture, capturePeopleFromFile } from "./people-files";
 import { indexNotesPeople } from "./db/people-indexing";
 
 let watcher: FSWatcher | null = null;
@@ -101,6 +101,12 @@ export function startFileWatcher(
     .on("add",    (fp) => handleFileAdd(fp, workspacePath, db, onChanged))
     .on("change", (fp) => handleFileChange(fp, workspacePath, db, onChanged))
     .on("unlink", (fp) => handleFileDelete(fp, db, onChanged));
+
+  // The watcher skips files already on disk, so meeting notes with `attendees` that
+  // predate People reading them are caught up once here (a no-op after the first run).
+  void backfillMeetingCapture(db, workspacePath)
+    .then((captured) => { if (captured > 0) onChanged(); })
+    .catch((err) => console.error("[people] attendee backfill failed:", err));
 }
 
 /**

@@ -52,7 +52,7 @@ export function usePeopleNetwork() {
   }, [workspaceId, people]);
 
   const data = network && network.workspaceId === workspaceId ? network.data : EMPTY_NETWORK;
-  return { people: peopleLoaded ? people : EMPTY_PEOPLE, network: data, loading: !peopleLoaded || (hasElectron("people") && network?.workspaceId !== workspaceId) };
+  return { people: peopleLoaded ? people : EMPTY_PEOPLE, network: data, loading: hasElectron("people") && (!peopleLoaded || network?.workspaceId !== workspaceId) };
 }
 const EMPTY_PEOPLE: never[] = [];
 

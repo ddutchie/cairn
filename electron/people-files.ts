@@ -75,6 +75,68 @@ export function capturePeopleFromFile(db: Database.Database, filePath: string, n
   });
 }
 
+const BACKFILL_KEY = "people.attendeeBackfill.v1";
+const BACKFILL_BATCH = 40;
+const backfillRunning = new Set<string>();
+
+/** Every .md file under a folder, never following symlinks or entering dot folders. */
+function listMarkdownFiles(dir: string, out: string[]): void {
+  let entries: string[];
+  try { entries = fs.readdirSync(dir); } catch { return; }
+  for (const entry of entries) {
+    if (entry.startsWith(".") || entry === "node_modules") continue;
+    const fp = path.join(dir, entry);
+    try {
+      const stat = fs.lstatSync(fp);
+      if (stat.isDirectory()) listMarkdownFiles(fp, out);
+      else if (stat.isFile() && entry.endsWith(".md")) out.push(fp);
+    } catch { /* vanished or unreadable: skip */ }
+  }
+}
+
+/**
+ * One-time catch-up for notes whose `attendees` frontmatter was on disk before
+ * People read it: the file watcher ignores files that exist at startup, so a
+ * meeting note imported (or edited) while People was off or a flag was
+ * hidden would stay out of the index until its file next changed. Reads every
+ * note file once per device and workspace folder, in small batches so startup
+ * isn't blocked, and records a marker in `app_kv` (not synced) when done. Safe to
+ * run twice or be interrupted: capture is idempotent, and the marker is only
+ * written after the last batch. Returns how many notes it captured.
+ */
+export async function backfillMeetingCapture(db: Database.Database, workspacePath: string): Promise<number> {
+  const key = `${BACKFILL_KEY}:${workspacePath}`;
+  if (backfillRunning.has(key)) return 0;
+  if (db.prepare("SELECT 1 FROM app_kv WHERE key = ?").get(key)) return 0;
+  backfillRunning.add(key);
+  try {
+    const files: string[] = [];
+    const projects = db.prepare("SELECT name FROM projects").all() as { name: string }[];
+    for (const p of projects) listMarkdownFiles(projectNotesDir(workspacePath, p.name), files);
+    const liveNote = db.prepare("SELECT 1 FROM notes WHERE id = ? AND deleted_at IS NULL");
+    let captured = 0;
+    for (let i = 0; i < files.length; i += BACKFILL_BATCH) {
+      for (const fp of files.slice(i, i + BACKFILL_BATCH)) {
+        try {
+          const raw = fs.readFileSync(fp, "utf-8");
+          if (!raw.includes("attendees")) continue;
+          const { data } = matter(raw);
+          if (typeof data.id !== "string" || !Object.prototype.hasOwnProperty.call(data, "attendees") || !liveNote.get(data.id)) continue;
+          if (capturePeopleFromFile(db, fp, data.id)) captured++;
+        } catch (err) {
+          console.error(`[people] backfill skipped ${fp}:`, err);
+        }
+      }
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    db.prepare("INSERT INTO app_kv (key, value, updated_at) VALUES (?, 'done', ?) ON CONFLICT(key) DO UPDATE SET value = 'done', updated_at = excluded.updated_at")
+      .run(key, new Date().toISOString());
+    return captured;
+  } finally {
+    backfillRunning.delete(key);
+  }
+}
+
 /**
  * Rewrite one file's `attendees` / `date` in place, keeping every other key and
  * the body exactly as they are. `null` removes `attendees` (the note is no
