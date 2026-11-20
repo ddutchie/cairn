@@ -157,10 +157,12 @@ const RESTORABLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  * that hasn't seen it. An older peer ignores the column; nothing wrote attendee rows before this, so it loses no data, but it
  * is stamped `behind` like protocol 5 so the update hint appears before launch.
  *
- * Protocol 7 (teams): added the `teams` entity (what a team owns, its lead,
- * the team above it, its channel and links). Membership stays on
- * `people.team`, so an older peer loses no membership and stays convergent; it
- * just shows no team details, and stamping it `behind` says why.
+ * Protocol 7 (teams): added the `teams` entity (what a team owns, its kind,
+ * its lead, the team above it, its channel and links) and `team_memberships`
+ * (who is on which team, with a role and the dates they joined and left).
+ * Membership moved off the free-text `people.team`, which this build no
+ * longer reads: an older peer's team edits don't reach it, so the older peer
+ * is stamped `behind` and told to update.
  *
  * The point of stamping it now, while only two historical shapes exist, is that
  * a peer can be *told* it is behind instead of us inferring capability from

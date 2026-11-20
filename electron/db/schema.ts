@@ -13,7 +13,8 @@
  */
 
 import type Database from "better-sqlite3";
-import { PEOPLE_ADDED_COLUMNS, PEOPLE_SYNC_TABLES, PEOPLE_SYNC_TABLES_SQL, TEAMS_SYNC_TABLE_SQL } from "../../shared/sync/people-schema";
+import { PEOPLE_ADDED_COLUMNS, PEOPLE_SYNC_TABLES, PEOPLE_SYNC_TABLES_SQL, TEAM_MEMBERSHIPS_SYNC_TABLE_SQL, TEAMS_SYNC_TABLE_SQL } from "../../shared/sync/people-schema";
+import { adoptPeopleStructure } from "../../shared/people/adopt";
 
 /**
  * The tables replicated by Device Sync, as of migrations v25/v26. Hoisted to a
@@ -1844,6 +1845,42 @@ const MIGRATIONS: Migration[] = [
         INSERT INTO sync_pending (entity, entity_id, op) VALUES ('teams', OLD.id, 'delete');
       END;
     `);
+  },
+
+  // v69: team memberships and team kinds (sync protocol 7). Fresh databases
+  // get both from the v66 DDL; this adds them to v68 databases, with capture
+  // triggers. Then, once, every person's free-text `people.team` becomes a
+  // membership of a team row, and relationship chips that describe structure
+  // ("manager", "direct report") become edges to you
+  // (shared/people/adopt.ts). The new rows go through the triggers, so they
+  // sync; their ids come from the data, so two devices adopting the same
+  // people write the same rows.
+  (db) => {
+    const teamCols = db.prepare("PRAGMA table_info(teams)").all() as { name: string }[];
+    if (!teamCols.some((c) => c.name === "kind")) db.exec("ALTER TABLE teams ADD COLUMN kind TEXT NOT NULL DEFAULT 'team'");
+    db.exec(TEAM_MEMBERSHIPS_SYNC_TABLE_SQL);
+    const suppressGuard = `(SELECT COALESCE((SELECT value FROM sync_state WHERE key='suppress'),'0')) = '0'`;
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_sync_team_memberships_ins AFTER INSERT ON team_memberships
+      WHEN ${suppressGuard}
+      BEGIN
+        INSERT INTO sync_pending (entity, entity_id, op) VALUES ('team_memberships', NEW.id, 'put');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_sync_team_memberships_upd AFTER UPDATE ON team_memberships
+      WHEN ${suppressGuard}
+      BEGIN
+        INSERT INTO sync_pending (entity, entity_id, op)
+        VALUES ('team_memberships', NEW.id, CASE WHEN NEW.deleted_at IS NOT NULL THEN 'delete' ELSE 'put' END);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_sync_team_memberships_del AFTER DELETE ON team_memberships
+      WHEN ${suppressGuard}
+      BEGIN
+        INSERT INTO sync_pending (entity, entity_id, op) VALUES ('team_memberships', OLD.id, 'delete');
+      END;
+    `);
+    adoptPeopleStructure(db);
   },
 ];
 

@@ -11,7 +11,7 @@
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { ID } from "@/types";
-import type { Person, PersonCreateInput, PersonPatch, Team, TeamCreateInput, TeamPatch } from "../../../shared/types/people";
+import type { AddMemberInput, Person, PersonCreateInput, PersonPatch, Team, TeamCreateInput, TeamMembership, TeamPatch } from "../../../shared/types/people";
 import type { PersonEdgeInput, PersonEdgePatch, PersonPage, PersonSummary } from "../../../shared/types/people-view";
 import { peopleClient } from "@/lib/ipc/people";
 import { hasElectron, reportIpcError } from "@/lib/ipc/client";
@@ -22,8 +22,10 @@ export interface PeopleSlice {
   /** People proposed by capture or an agent (status `suggested`), for the tray. */
   peopleSuggestions: PersonSummary[];
   peopleLoaded: boolean;
-  /** Team details in the active workspace (members are `Person.team`). */
+  /** Teams in the active workspace. */
   teams: Team[];
+  /** Every membership in the active workspace, past ones included (roles, history). */
+  teamMemberships: TeamMembership[];
   selectedPersonId: ID | null;
   /** The selected person's page; null while loading or when none is selected. */
   personPage: PersonPage | null;
@@ -57,7 +59,13 @@ export interface PeopleSlice {
   removePersonEdge: (id: ID) => Promise<void>;
   createTeam: (input: Omit<TeamCreateInput, "workspaceId">) => Promise<Team | null>;
   updateTeam: (id: ID, patch: TeamPatch) => Promise<Team | null>;
-  deleteTeam: (id: ID, keepMembers?: boolean) => Promise<void>;
+  deleteTeam: (id: ID) => Promise<void>;
+  mergeTeams: (keepId: ID, dropId: ID) => Promise<Team | null>;
+  addTeamMember: (input: AddMemberInput) => Promise<void>;
+  /** Leave a team, kept as history. */
+  endTeamMember: (teamId: ID, personId: ID) => Promise<void>;
+  /** Fold `dropId` into `keepId`; the page moves to who stays. */
+  mergePeople: (keepId: ID, dropId: ID) => Promise<Person | null>;
 }
 
 export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = (set, get) => {
@@ -79,6 +87,7 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
     peopleSuggestions: [],
     peopleLoaded: false,
     teams: [],
+    teamMemberships: [],
     selectedPersonId: null,
     personPage: null,
     personaNoteIds: [],
@@ -88,13 +97,14 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
       const workspaceId = get().activeWorkspaceId;
       if (!workspaceId || !hasElectron("people")) return;
       try {
-        const [people, peopleSuggestions, teams] = await Promise.all([
+        const [people, peopleSuggestions, teams, teamMemberships] = await Promise.all([
           peopleClient.summaries({ workspaceId }),
           peopleClient.summaries({ workspaceId, statuses: ["suggested"] }),
           peopleClient.teams(workspaceId),
+          peopleClient.memberships(workspaceId),
         ]);
         if (get().activeWorkspaceId !== workspaceId) return;
-        set({ people, peopleSuggestions, teams, peopleLoaded: true });
+        set({ people, peopleSuggestions, teams, teamMemberships, peopleLoaded: true });
       } catch (err) {
         reportIpcError(err, "Couldn't load people");
       }
@@ -205,8 +215,25 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
       return write(() => peopleClient.updateTeam(id, patch), "Couldn't save the team");
     },
 
-    async deleteTeam(id, keepMembers) {
-      await write(() => peopleClient.deleteTeam(id, keepMembers), "Couldn't delete the team");
+    async deleteTeam(id) {
+      await write(() => peopleClient.deleteTeam(id), "Couldn't delete the team");
+    },
+
+    async mergeTeams(keepId, dropId) {
+      return write(() => peopleClient.mergeTeams(keepId, dropId), "Couldn't merge the teams");
+    },
+
+    async addTeamMember(input) {
+      await write(() => peopleClient.addMember(input), "Couldn't add them to the team");
+    },
+
+    async endTeamMember(teamId, personId) {
+      await write(() => peopleClient.endMember(teamId, personId), "Couldn't take them off the team");
+    },
+
+    async mergePeople(keepId, dropId) {
+      if (get().selectedPersonId === dropId) set({ selectedPersonId: keepId, personPage: null });
+      return write(() => peopleClient.merge(keepId, dropId), "Couldn't merge them");
     },
   };
 };

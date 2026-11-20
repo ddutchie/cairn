@@ -29,6 +29,8 @@ import {
 } from "../types/people";
 import { activeSources, parseClaims, serializeClaims } from "./claims";
 import { attendeeRowId, calendarMeetingId, edgeRowId, mentionRowId } from "./ids";
+import { currentTeamsByPerson, setHomeTeam } from "./team-queries";
+import { chipEdge, edgeChip, isStructuralChip, reconcileChips, type EdgeFact } from "./chip-edges";
 
 type Db = SyncDb;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -97,7 +99,8 @@ function toPerson(r: Row): Person {
     provenance: r.provenance as Provenance,
     stage: opt(r.stage),
     title: opt(r.title),
-    team: opt(r.team),
+    // `team` and `teams` come from team_memberships (`decorate`); the legacy `people.team` column is not read.
+    teams: [],
     location: opt(r.location),
     timezone: opt(r.timezone),
     // Two devices can each mark a different person as "me" before they sync; only the canonical one counts.
@@ -188,9 +191,45 @@ function toMention(r: Row): NoteMention {
 const PERSON_COLS = `*, (SELECT m.id FROM people m WHERE m.workspace_id = people.workspace_id AND m.is_me = 1
   AND m.deleted_at IS NULL ORDER BY m.created_at, m.id LIMIT 1) AS canonical_me`;
 
+/** The canonical "me" of a workspace (see PERSON_COLS), or null. */
+export function canonicalMeId(db: Db, workspaceId: string): string | null {
+  const row = db.prepare("SELECT id FROM people WHERE workspace_id = ? AND is_me = 1 AND deleted_at IS NULL ORDER BY created_at, id LIMIT 1")
+    .get(workspaceId) as Row | undefined;
+  return row?.id ?? null;
+}
+
+/** Confirmed edges between you and others (or one other), by row id, ended ones included. */
+function edgesToMe(db: Db, workspaceId: string, meId: string, otherId?: string): Map<string, EdgeFact> {
+  const rows = db.prepare(`
+    SELECT id, ended_at, label, provenance FROM person_edges
+    WHERE workspace_id = ? AND deleted_at IS NULL AND status = 'confirmed' AND (source_id = ? OR target_id = ?)
+      ${otherId ? "AND (source_id = ? OR target_id = ?)" : ""}
+  `).all(...[workspaceId, meId, meId, ...(otherId ? [otherId, otherId] : [])]) as Row[];
+  return new Map(rows.map((r) => [r.id as string, { ended: !!r.ended_at, label: opt(r.label), provenance: r.provenance as Provenance }]));
+}
+
+/**
+ * Fill in what lives outside the person row: their current teams (home team
+ * first, as `team`), and their structural chips as the edges to you decide
+ * (shared/people/chip-edges.ts). All people are in one workspace.
+ */
+function decorate(db: Db, people: Person[], one?: string): Person[] {
+  if (people.length === 0) return people;
+  const workspaceId = people[0].workspaceId;
+  const teams = currentTeamsByPerson(db, workspaceId, one);
+  const meId = canonicalMeId(db, workspaceId);
+  const edges = meId ? edgesToMe(db, workspaceId, meId, one) : new Map<string, EdgeFact>();
+  for (const p of people) {
+    p.teams = teams.get(p.id) ?? [];
+    p.team = p.teams[0]?.name;
+    if (meId && p.id !== meId) p.relationship = reconcileChips(p.relationship, meId, p.id, edges);
+  }
+  return people;
+}
+
 export function getPerson(db: Db, id: string): Person | null {
   const row = db.prepare(`SELECT ${PERSON_COLS} FROM people WHERE id = ? AND deleted_at IS NULL`).get(id) as Row | undefined;
-  return row ? toPerson(row) : null;
+  return row ? decorate(db, [toPerson(row)], id)[0] : null;
 }
 
 export interface ListPeopleOptions {
@@ -206,12 +245,11 @@ export function listPeople(db: Db, workspaceId: string, opts: ListPeopleOptions 
   const where = ["workspace_id = ?", "deleted_at IS NULL", `status IN (${statuses.map(() => "?").join(", ")})`];
   const params: unknown[] = [workspaceId, ...statuses];
   if (!opts.includeArchived) where.push("archived_at IS NULL");
-  if (opts.relationship) {
-    where.push("EXISTS (SELECT 1 FROM json_each(people.relationship) j WHERE json_extract(j.value, '$.type') = ?)");
-    params.push(oneOf(RELATIONSHIP_TYPES, opts.relationship, "relationship type"));
-  }
+  const rel = opts.relationship ? oneOf(RELATIONSHIP_TYPES, opts.relationship, "relationship type") : null;
   const rows = db.prepare(`SELECT ${PERSON_COLS} FROM people WHERE ${where.join(" AND ")} ORDER BY name COLLATE NOCASE`).all(...params) as Row[];
-  return rows.map(toPerson);
+  const people = decorate(db, rows.map(toPerson));
+  // Filtered after `decorate`: an edge to you can add or take away a chip.
+  return rel ? people.filter((p) => p.relationship.some((r) => r.type === rel)) : people;
 }
 
 /** The person row for the user themself, if one exists. */
@@ -219,7 +257,7 @@ export function getMe(db: Db, workspaceId: string): Person | null {
   const row = db
     .prepare("SELECT *, id AS canonical_me FROM people WHERE workspace_id = ? AND is_me = 1 AND deleted_at IS NULL ORDER BY created_at, id LIMIT 1")
     .get(workspaceId) as Row | undefined;
-  return row ? toPerson(row) : null;
+  return row ? decorate(db, [toPerson(row)], row.id)[0] : null;
 }
 
 /** Keep at most one `is_me` person per workspace: clear the flag on everyone else. */
@@ -253,7 +291,7 @@ export function createPerson(db: Db, input: PersonCreateInput): Person {
       status, provenance,
       input.stage?.trim() || null,
       input.title?.trim() || null,
-      input.team?.trim() || null,
+      null,
       input.location?.trim() || null,
       input.timezone?.trim() || null,
       input.isMe ? 1 : 0,
@@ -261,6 +299,9 @@ export function createPerson(db: Db, input: PersonCreateInput): Person {
       now, now,
     );
     if (input.isMe) clearOtherMe(db, input.workspaceId, id, now);
+    if (input.team?.trim()) setHomeTeam(db, id, input.team);
+    if (input.isMe) adoptChipEdges(db, input.workspaceId);
+    else syncEdgesFromChips(db, { id, workspaceId: input.workspaceId, relationship: [] }, normaliseRelationships(input.relationship));
   })();
   return getPerson(db, id)!;
 }
@@ -280,25 +321,29 @@ export function updatePerson(db: Db, id: string, patch: PersonPatch): Person {
   if (patch.aliases !== undefined) set("aliases", JSON.stringify(cleanStrings(patch.aliases)));
   if (patch.emails !== undefined) set("emails", JSON.stringify(cleanStrings(patch.emails).map((e) => e.toLowerCase())));
   if (patch.slackId !== undefined) set("slack_id", patch.slackId?.trim() || null);
-  if (patch.relationship !== undefined) set("relationship", JSON.stringify(normaliseRelationships(patch.relationship)));
+  const rels = patch.relationship !== undefined ? normaliseRelationships(patch.relationship) : null;
+  if (rels) set("relationship", JSON.stringify(rels));
   if (patch.cadence !== undefined) set("cadence", patch.cadence === null ? null : oneOf(CADENCES, patch.cadence, "cadence"));
   if (patch.personaNoteId !== undefined) set("persona_note_id", patch.personaNoteId);
   if (patch.status !== undefined) set("status", oneOf(PEOPLE_STATUSES, patch.status, "status"));
   if (patch.provenance !== undefined) set("provenance", oneOf(PROVENANCES, patch.provenance, "provenance"));
   if (patch.stage !== undefined) set("stage", patch.stage?.trim() || null);
-  for (const key of ["title", "team", "location", "timezone"] as const) {
+  for (const key of ["title", "location", "timezone"] as const) {
     if (patch[key] !== undefined) set(key, patch[key]?.trim() || null);
   }
   if (patch.isMe !== undefined) set("is_me", patch.isMe ? 1 : 0);
   if (patch.agentPrivate !== undefined) set("agent_private", patch.agentPrivate ? 1 : 0);
   if (patch.archivedAt !== undefined) set("archived_at", patch.archivedAt);
-  if (sets.length === 0) return current;
+  if (sets.length === 0 && patch.team === undefined) return current;
 
   const now = ts();
   set("updated_at", now);
   db.transaction(() => {
-    db.prepare(`UPDATE people SET ${sets.join(", ")} WHERE id = ?`).run(...params, id);
+    if (sets.length > 1) db.prepare(`UPDATE people SET ${sets.join(", ")} WHERE id = ?`).run(...params, id);
     if (patch.isMe) clearOtherMe(db, current.workspaceId, id, now);
+    if (patch.team !== undefined) setHomeTeam(db, id, patch.team);
+    if (patch.isMe) adoptChipEdges(db, current.workspaceId);
+    else if (rels) syncEdgesFromChips(db, current, rels);
     // The Slack profile cache (desktop-only table) belongs to one Slack id.
     if (patch.slackId !== undefined && (patch.slackId?.trim() || null) !== current.slackId) {
       try {
@@ -327,10 +372,13 @@ export interface AddEdgeInput {
 }
 
 /**
- * Add a person-to-person edge. Idempotent: the row id comes from (type, source,
- * target) (`edgeRowId`; `partner` in either direction is one row), so a live
- * edge is returned with its label/end date updated when given, and a removed
- * one is revived.
+ * Add a person-to-person edge: the relationship holds now, unless `endedAt`
+ * says when it ended. Idempotent: the row id comes from (type, source,
+ * target) (`edgeRowId`; `partner` in either direction is one row), so adding
+ * an edge that exists updates it (an ended one becomes current again, a
+ * suggestion becomes confirmed when this call is), and a removed one is
+ * revived. One row per pair means a second stint replaces the first; the
+ * history of earlier stints isn't kept.
  */
 export function addEdge(db: Db, input: AddEdgeInput): PersonEdge {
   const type = oneOf(PERSON_EDGE_TYPES, input.type, "edge type");
@@ -342,9 +390,13 @@ export function addEdge(db: Db, input: AddEdgeInput): PersonEdge {
   const id = edgeRowId(type, input.sourceId, input.targetId);
   const existing = db.prepare("SELECT * FROM person_edges WHERE id = ?").get(id) as Row | undefined;
   if (existing && !existing.deleted_at) {
-    if (input.label !== undefined || input.endedAt !== undefined) {
-      db.prepare("UPDATE person_edges SET label = COALESCE(?, label), ended_at = COALESCE(?, ended_at), updated_at = ? WHERE id = ?")
-        .run(input.label ?? null, input.endedAt ?? null, now, id);
+    const label = input.label !== undefined ? input.label.trim() || null : existing.label;
+    const endedAt = input.endedAt ?? null;
+    // Only ever upgrade: an inferred call doesn't turn the user's confirmed edge back into a suggestion.
+    const status = existing.status === "confirmed" || input.status === undefined ? existing.status : oneOf(PEOPLE_STATUSES, input.status, "status");
+    if (label !== existing.label || endedAt !== existing.ended_at || status !== existing.status) {
+      db.prepare("UPDATE person_edges SET label = ?, ended_at = ?, status = ?, updated_at = ? WHERE id = ?").run(label, endedAt, status, now, id);
+      syncChipFromEdge(db, id);
     }
     return toEdge(db.prepare("SELECT * FROM person_edges WHERE id = ?").get(id) as Row);
   }
@@ -360,6 +412,7 @@ export function addEdge(db: Db, input: AddEdgeInput): PersonEdge {
       oneOf(PROVENANCES, input.provenance ?? "explicit", "provenance"),
       input.sourceNoteId ?? null, now, id,
     );
+    syncChipFromEdge(db, id);
     return toEdge(db.prepare("SELECT * FROM person_edges WHERE id = ?").get(id) as Row);
   }
   db.prepare(`
@@ -373,6 +426,7 @@ export function addEdge(db: Db, input: AddEdgeInput): PersonEdge {
     oneOf(PROVENANCES, input.provenance ?? "explicit", "provenance"),
     input.sourceNoteId ?? null, now, now,
   );
+  syncChipFromEdge(db, id);
   return toEdge(db.prepare("SELECT * FROM person_edges WHERE id = ?").get(id) as Row);
 }
 
@@ -390,6 +444,7 @@ export function updateEdge(
     sets.push("updated_at = ?");
     params.push(ts());
     db.prepare(`UPDATE person_edges SET ${sets.join(", ")} WHERE id = ? AND deleted_at IS NULL`).run(...params, id);
+    syncChipFromEdge(db, id);
   }
   const row = db.prepare("SELECT * FROM person_edges WHERE id = ? AND deleted_at IS NULL").get(id) as Row | undefined;
   if (!row) throw new Error(`Edge not found: ${id}`);
@@ -398,7 +453,83 @@ export function updateEdge(
 
 export function removeEdge(db: Db, id: string): void {
   const now = ts();
-  db.prepare("UPDATE person_edges SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL").run(now, now, id);
+  const live = db.prepare("SELECT 1 FROM person_edges WHERE id = ? AND deleted_at IS NULL").get(id);
+  if (!live) return;
+  db.prepare("UPDATE person_edges SET deleted_at = ?, updated_at = ? WHERE id = ?").run(now, now, id);
+  syncChipFromEdge(db, id);
+}
+
+// ── Chips and edges to you (shared/people/chip-edges.ts) ──
+
+/** Turn one chip on or off in a person's stored set, leaving the rest. */
+function setChip(db: Db, personId: string, chip: RelationshipType, on: boolean, label: string | undefined, provenance: Provenance): void {
+  const row = db.prepare("SELECT relationship FROM people WHERE id = ? AND deleted_at IS NULL").get(personId) as Row | undefined;
+  if (!row) return;
+  const list = parseJson<Relationship[]>(row.relationship, []);
+  const has = list.some((r) => r.type === chip);
+  if (on === has) return;
+  const next = on ? [...list, { type: chip, ...(label ? { label } : {}), provenance }] : list.filter((r) => r.type !== chip);
+  db.prepare("UPDATE people SET relationship = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(next), ts(), personId);
+}
+
+/** After an edge changed: when it joins someone to you, their chip follows it. Suggestions leave chips alone. */
+function syncChipFromEdge(db: Db, edgeId: string): void {
+  const e = db.prepare("SELECT * FROM person_edges WHERE id = ?").get(edgeId) as Row | undefined;
+  if (!e || e.status !== "confirmed") return;
+  const meId = canonicalMeId(db, e.workspace_id);
+  if (!meId) return;
+  const c = edgeChip({ type: e.type, sourceId: e.source_id, targetId: e.target_id }, meId);
+  if (!c) return;
+  setChip(db, c.otherId, c.chip, !e.deleted_at && !e.ended_at, opt(e.label), e.provenance);
+}
+
+/**
+ * After a person's chips were written: a structural chip that is new writes
+ * its edge to you (or makes an ended one current), and one taken off ends it.
+ */
+function syncEdgesFromChips(db: Db, before: Pick<Person, "id" | "workspaceId" | "relationship">, after: readonly Relationship[]): void {
+  const meId = canonicalMeId(db, before.workspaceId);
+  if (!meId || meId === before.id) return;
+  const had = new Set(before.relationship.filter((r) => isStructuralChip(r.type)).map((r) => r.type));
+  const has = new Map(after.filter((r) => isStructuralChip(r.type)).map((r) => [r.type, r]));
+  for (const [type, r] of has) {
+    if (had.has(type)) continue;
+    const e = chipEdge(type, meId, before.id)!;
+    addEdge(db, { workspaceId: before.workspaceId, sourceId: e.sourceId, targetId: e.targetId, type: e.type, label: r.label, status: "confirmed", provenance: r.provenance });
+  }
+  for (const type of had) {
+    if (has.has(type)) continue;
+    const e = chipEdge(type, meId, before.id)!;
+    const live = db.prepare("SELECT 1 FROM person_edges WHERE id = ? AND deleted_at IS NULL AND ended_at IS NULL").get(e.id);
+    if (live) updateEdge(db, e.id, { endedAt: ts() });
+  }
+}
+
+/**
+ * Give every structural chip in a workspace its edge to you, where that pair
+ * has no edge row at all yet (rows from before this rule, or chips set while
+ * there was no "me"). Idempotent; the edge ids come from the pair, so two
+ * devices write the same rows.
+ */
+export function adoptChipEdges(db: Db, workspaceId: string): number {
+  const meId = canonicalMeId(db, workspaceId);
+  if (!meId) return 0;
+  const rows = db.prepare("SELECT id, relationship FROM people WHERE workspace_id = ? AND deleted_at IS NULL AND id != ?").all(workspaceId, meId) as Row[];
+  const exists = db.prepare("SELECT 1 FROM person_edges WHERE id = ?");
+  const now = ts();
+  let n = 0;
+  for (const p of rows) {
+    for (const r of parseJson<Relationship[]>(p.relationship, [])) {
+      const e = chipEdge(r.type, meId, p.id);
+      if (!e || exists.get(e.id)) continue;
+      db.prepare(`
+        INSERT INTO person_edges (id, workspace_id, source_id, target_id, type, label, ended_at, status, provenance, source_note_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, NULL, 'confirmed', ?, NULL, ?, ?)
+      `).run(e.id, workspaceId, e.sourceId, e.targetId, e.type, r.label ?? null, r.provenance ?? "explicit", now, now);
+      n++;
+    }
+  }
+  return n;
 }
 
 /** The role `personId` plays in an edge, deriving the inverse when they're the target. */

@@ -5,7 +5,7 @@ import type { NetworkLink } from "./network";
 
 const person = (id: string, name: string): PersonSummary => ({
   id, workspaceId: "ws", name, aliases: [], emails: [], relationship: [], status: "confirmed",
-  provenance: "explicit", isMe: false, agentPrivate: false, createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z",
+  provenance: "explicit", isMe: false, agentPrivate: false, teams: [], createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z",
 });
 const link = (over: Partial<NetworkLink> & Pick<NetworkLink, "id" | "kind" | "source" | "target">): NetworkLink => ({
   directed: false, ended: false, derived: false, weight: 1, ...over,

@@ -18,7 +18,7 @@ import { ConnectionsGraph } from "@/components/people/ConnectionsGraph";
 const person = (id: string, name: string, types: RelationshipType[], extra: Partial<PersonSummary> = {}): PersonSummary => ({
   id, workspaceId: "ws1", name, aliases: [], emails: [],
   relationship: types.map((type) => ({ type, provenance: "explicit" as const })),
-  status: "confirmed", provenance: "explicit", isMe: false, agentPrivate: false,
+  status: "confirmed", provenance: "explicit", isMe: false, agentPrivate: false, teams: [],
   createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z", ...extra,
 });
 
@@ -68,14 +68,14 @@ describe("OrgChartCanvas", () => {
       person("me", "Me Myself", [], { isMe: true, team: "Sync" }),
       person("rep", "Dana Report", ["direct_report"], { team: "Sync" }),
     ]);
-    const t = (id: string, name: string, extra = {}) => ({ id, workspaceId: "ws1", name, links: [], createdAt: "", updatedAt: "", ...extra });
+    const t = (id: string, name: string, extra = {}) => ({ id, workspaceId: "ws1", name, kind: "team" as const, links: [], createdAt: "", updatedAt: "", ...extra });
     useCairnStore.setState({ teams: [t("pl", "Platform"), t("sy", "Sync", { parentTeamId: "pl", leadPersonId: "rep" })] });
     const opened: string[] = [];
     render(<OrgChartCanvas onOpenTeam={(n) => opened.push(n)} />, { wrapper: TooltipProvider });
     fireEvent.click(screen.getByRole("button", { name: "Teams" }));
     expect(screen.getByRole("button", { name: "Platform, 2 people. Open team" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Sync, Lead Dana Report · 2 people. Open team" }));
-    expect(opened).toEqual(["Sync"]);
+    expect(opened).toEqual(["sy"]);
     useCairnStore.setState({ teams: [] });
   });
 });

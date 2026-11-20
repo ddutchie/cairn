@@ -6,7 +6,7 @@ import { buildZoneModel, formatDiff, overlapHours, sameZone, workSpans, zoneOffs
 
 const p = (id: string, name: string, extra: Partial<PersonSummary> = {}): PersonSummary => ({
   id, workspaceId: "w", name, aliases: [], emails: [], relationship: [], status: "confirmed", provenance: "explicit",
-  isMe: false, agentPrivate: false, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", ...extra,
+  isMe: false, agentPrivate: false, teams: [], createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", ...extra,
 });
 
 describe("groupByTeam", () => {
@@ -28,7 +28,7 @@ describe("groupByTeam", () => {
 
 describe("teamForest", () => {
   const t = (id: string, name: string, parentTeamId?: string): Team => ({
-    id, workspaceId: "w", name, parentTeamId, links: [], createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+    id, workspaceId: "w", name, kind: "team", parentTeamId, links: [], createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
   });
   it("nests teams under their parent, keeps empty teams with details, and survives a loop", () => {
     const people = [p("1", "A", { team: "Sync" }), p("2", "B", { team: "Data" }), p("3", "C", { team: "Loose" })];

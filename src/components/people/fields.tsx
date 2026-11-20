@@ -21,8 +21,8 @@ export function Field({ label, children }: { label: string; children: React.Reac
  * A text input that saves on blur or Enter. Callers key it by the saved value
  * (see BlurInput), so a save or an outside change starts a fresh draft.
  */
-export function DraftInput({ value, onSave, placeholder, ariaLabel }: {
-  value: string; onSave: (v: string) => void; placeholder?: string; ariaLabel: string;
+export function DraftInput({ value, onSave, placeholder, ariaLabel, className }: {
+  value: string; onSave: (v: string) => void; placeholder?: string; ariaLabel: string; className?: string;
 }) {
   const [draft, setDraft] = useState(value);
   return (
@@ -30,7 +30,7 @@ export function DraftInput({ value, onSave, placeholder, ariaLabel }: {
       value={draft}
       aria-label={ariaLabel}
       placeholder={placeholder}
-      className="text-xs"
+      className={className ?? "text-xs"}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => { if (draft !== value) onSave(draft); }}
       onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}

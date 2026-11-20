@@ -17,13 +17,16 @@ import {
 import { captureNoteMeeting, loadCandidates, meetingLinkPending, resolvePerson } from "./capture";
 import { ownedItemsIn } from "./action-items";
 import { edgeRowId } from "./ids";
-import { createTeam, findTeamByName, getTeam, listTeams, normTeamName, updateTeam } from "./team-queries";
-import { groupByTeam, NO_TEAM } from "./teams";
+import {
+  addMember, createTeam, deleteTeam, endMember, findTeamByName, foldTeamName, getTeam, listMemberships, listTeams,
+  mergeTeams, normTeamName, teamKind, updateTeam,
+} from "./team-queries";
+import { mergePeople } from "./merge";
 import { cleanProfileFieldWithPlaces, zoneForPlace } from "./place-zone";
 import { cleanRelationshipLabel, parseMeetingDate, PROFILE_FIELDS } from "./parse";
 import {
-  PEOPLE_STATUSES, PERSON_EDGE_TYPES, PROVENANCES, RELATIONSHIP_TYPES,
-  type Person, type PeopleStatus, type PersonPatch, type Provenance, type Relationship, type TeamPatch,
+  PEOPLE_STATUSES, PERSON_EDGE_TYPES, PROVENANCES, RELATIONSHIP_TYPES, TEAM_KINDS,
+  type Person, type PeopleStatus, type PersonPatch, type Provenance, type Relationship, type Team, type TeamPatch,
 } from "../types/people";
 
 type Args = Record<string, any>;
@@ -57,7 +60,7 @@ function personSummary(p: Person) {
     ...(p.relationship.length ? { relationship: p.relationship.map((r) => (r.label ? `${r.type} (${r.label})` : r.type)) } : {}),
     ...(p.status !== "confirmed" ? { status: p.status } : {}),
     ...(p.title ? { title: p.title } : {}),
-    ...(p.team ? { team: p.team } : {}),
+    ...(p.teams.length ? { teams: p.teams.map((t) => [t.name, t.kind !== "team" ? t.kind : null, t.role].filter(Boolean).join(", ")) } : {}),
     ...(p.location ? { location: p.location } : {}),
     ...(p.cadence ? { cadence: p.cadence } : {}),
     ...(p.isMe ? { isMe: true } : {}),
@@ -106,8 +109,11 @@ export function peopleTool(db: Db, ctx: PeopleToolContext, args: Args): unknown 
       case "relationships": return relationships(db, workspaceId, args);
       case "upsert": return upsert(db, workspaceId, args);
       case "link": return link(db, ctx, workspaceId, args);
+      case "archive": return archive(db, workspaceId, args);
+      case "merge": return merge(db, ctx, workspaceId, args);
       case "teams": return teams(db, workspaceId, args);
       case "team_upsert": return teamUpsert(db, workspaceId, args);
+      case "team_delete": return teamDelete(db, workspaceId, args);
       default: return { error: `Unknown people action "${args.action}"` };
     }
   } catch (err) {
@@ -318,41 +324,97 @@ function upsert(db: Db, workspaceId: string, args: Args) {
   return { updated: true, person: personSummary(updatePerson(db, existing.id, patch)) };
 }
 
-// ── teams ───────────────────────────────────────────────────────────────────
+// ── archive and merge ───────────────────────────────────────────────────────
 
-/** Every team (named on people or given details), or one when `team` names it. */
-function teams(db: Db, workspaceId: string, args: Args) {
-  const people = listPeople(db, workspaceId);
-  const rows = listTeams(db, workspaceId);
-  const groups = groupByTeam(people, rows).filter((g) => g.team !== NO_TEAM);
-  const byId = new Map(rows.map((t) => [t.id, t]));
-  const nameOf = (id: string | undefined) => (id ? getPerson(db, id)?.name : undefined);
-  const view = (g: (typeof groups)[number]) => {
-    const t = g.info;
-    return {
-      name: g.team,
-      ...(t ? { teamId: t.id } : {}),
-      ...(t?.description ? { description: t.description } : {}),
-      ...(t?.leadPersonId && nameOf(t.leadPersonId) ? { lead: { id: t.leadPersonId, name: nameOf(t.leadPersonId) } } : {}),
-      ...(t?.parentTeamId && byId.get(t.parentTeamId) ? { parentTeam: byId.get(t.parentTeamId)!.name } : {}),
-      ...(t?.channel ? { channel: t.channel } : {}),
-      ...(t?.links.length ? { links: t.links } : {}),
-      members: g.people.map((p) => ({ id: p.id, name: p.name, ...(p.title ? { title: p.title } : {}) })),
-      ...(g.timezones.length ? { timezones: g.timezones } : {}),
-    };
-  };
-  const want = typeof args.team === "string" ? normTeamName(args.team).toLowerCase() : "";
-  if (want) {
-    const g = groups.find((x) => x.team.toLowerCase() === want);
-    return g ? view(g) : { error: `No team named "${args.team}". Teams: ${groups.map((x) => x.team).join(", ") || "none yet"}` };
-  }
-  const limit = typeof args.limit === "number" && args.limit > 0 ? args.limit : 50;
-  return { teams: groups.slice(0, limit).map(view), total: groups.length, withoutTeam: people.filter((p) => !normTeamName(p.team)).length };
+/** Archive someone (they leave the list, nothing is lost); `remove: true` brings them back. */
+function archive(db: Db, workspaceId: string, args: Args) {
+  const p = findPerson(db, workspaceId, args);
+  if (isErr(p)) return p;
+  const restore = args.remove === true;
+  if (!!p.archivedAt === !restore) return { [restore ? "restored" : "archived"]: false, person: personSummary(p) };
+  return { [restore ? "restored" : "archived"]: true, person: personSummary(updatePerson(db, p.id, { archivedAt: restore ? null : new Date().toISOString() })) };
 }
 
+/** Two people who are one: `otherPersonId` folds into this person, who keeps their own name. */
+function merge(db: Db, ctx: PeopleToolContext, workspaceId: string, args: Args) {
+  const p = findPerson(db, workspaceId, args);
+  if (isErr(p)) return p;
+  const other = findPerson(db, workspaceId, { personId: args.otherPersonId });
+  if (isErr(other)) return { error: `otherPersonId: ${other.error}` };
+  const { person, meetingNoteIds } = mergePeople(db, p.id, other.id);
+  if (meetingNoteIds.length) ctx.meetingsChanged?.(meetingNoteIds);
+  return { merged: true, person: personSummary(person), removed: { id: other.id, name: other.name } };
+}
+
+// ── teams ───────────────────────────────────────────────────────────────────
+
+/** The team a call names: by id, else by name (the oldest when two share it). */
+function findTeam(db: Db, workspaceId: string, ref: unknown): Team | { error: string } {
+  const s = typeof ref === "string" ? ref.trim() : "";
+  if (!s) return { error: "Pass team (the team's name)" };
+  const byId = getTeam(db, s);
+  if (byId && byId.workspaceId === workspaceId) return byId;
+  return findTeamByName(db, workspaceId, s) ?? { error: `No team named "${s}". Teams: ${listTeams(db, workspaceId).map((t) => t.name).join(", ") || "none yet"}` };
+}
+
+/** Every team with its people, or one (with who used to be on it) when `team` names it. */
+function teams(db: Db, workspaceId: string, args: Args) {
+  const rows = listTeams(db, workspaceId);
+  const people = new Map(listPeople(db, workspaceId, { includeArchived: true }).map((p) => [p.id, p]));
+  const memberships = listMemberships(db, workspaceId);
+  const byId = new Map(rows.map((t) => [t.id, t]));
+  const nameCount = new Map<string, number>();
+  for (const t of rows) nameCount.set(foldTeamName(t.name), (nameCount.get(foldTeamName(t.name)) ?? 0) + 1);
+  const view = (t: Team, withPast: boolean) => {
+    const mine = memberships.filter((m) => m.teamId === t.id && people.has(m.personId))
+      .sort((a, b) => people.get(a.personId)!.name.localeCompare(people.get(b.personId)!.name));
+    const member = (m: (typeof mine)[number]) => {
+      const p = people.get(m.personId)!;
+      return {
+        id: p.id, name: p.name, ...(p.title ? { title: p.title } : {}), ...(m.role ? { role: m.role } : {}),
+        ...(m.startedAt ? { since: m.startedAt } : {}), ...(m.endedAt ? { left: m.endedAt } : {}),
+      };
+    };
+    const current = mine.filter((m) => !m.endedAt && !people.get(m.personId)!.archivedAt);
+    const lead = t.leadPersonId ? people.get(t.leadPersonId) : undefined;
+    const zones = [...new Set(current.map((m) => people.get(m.personId)!.timezone).filter(Boolean))];
+    return {
+      teamId: t.id,
+      name: t.name,
+      ...(t.kind !== "team" ? { kind: t.kind } : {}),
+      ...(t.description ? { description: t.description } : {}),
+      ...(lead ? { lead: { id: lead.id, name: lead.name, ...(current.some((m) => m.personId === lead.id) ? {} : { onTeam: false }) } } : {}),
+      ...(t.parentTeamId && byId.get(t.parentTeamId) ? { parentTeam: byId.get(t.parentTeamId)!.name } : {}),
+      ...(t.channel ? { channel: t.channel } : {}),
+      ...(t.links.length ? { links: t.links } : {}),
+      members: current.map(member),
+      ...(withPast && mine.some((m) => m.endedAt) ? { pastMembers: mine.filter((m) => m.endedAt).map(member) } : {}),
+      ...(zones.length ? { timezones: zones } : {}),
+      ...((nameCount.get(foldTeamName(t.name)) ?? 0) > 1 ? { duplicateName: true } : {}),
+    };
+  };
+  if (typeof args.team === "string" && args.team.trim()) {
+    const t = findTeam(db, workspaceId, args.team);
+    return isErr(t) ? t : view(t, true);
+  }
+  const limit = typeof args.limit === "number" && args.limit > 0 ? args.limit : 50;
+  const onATeam = new Set(memberships.filter((m) => !m.endedAt).map((m) => m.personId));
+  const live = [...people.values()].filter((p) => !p.archivedAt && p.status === "confirmed");
+  return {
+    teams: rows.slice(0, limit).map((t) => view(t, false)),
+    total: rows.length,
+    withoutTeam: live.filter((p) => !onATeam.has(p.id)).length,
+    ...([...nameCount.values()].some((n) => n > 1) ? { note: "Teams marked duplicateName share a name; merge them with team_upsert teamInfo.mergeInto (by teamId)." } : {}),
+  };
+}
+
+const personRef = (db: Db, workspaceId: string, ref: string) => findPerson(db, workspaceId, getPerson(db, ref) ? { personId: ref } : { name: ref });
+
 /**
- * Create or update a team's details (`teamInfo`) and add people to it
- * (`teamInfo.members`). What the user set wins over an inferred value.
+ * Create or update a team's details (`teamInfo`), add people to it
+ * (`teamInfo.members`, with `teamInfo.role`), take people off it
+ * (`teamInfo.removeMembers`), or fold it into another (`teamInfo.mergeInto`).
+ * What the user set wins over an inferred value.
  */
 function teamUpsert(db: Db, workspaceId: string, args: Args) {
   const name = typeof args.team === "string" ? normTeamName(args.team) : "";
@@ -360,25 +422,36 @@ function teamUpsert(db: Db, workspaceId: string, args: Args) {
   const info = (args.teamInfo && typeof args.teamInfo === "object" ? args.teamInfo : {}) as Args;
   const { provenance } = writeStatus(args);
   const fill = provenance === "explicit";
+  if (info.kind !== undefined && !(TEAM_KINDS as readonly unknown[]).includes(info.kind)) return { error: `kind must be one of: ${TEAM_KINDS.join(", ")}` };
 
-  const lead = typeof info.lead === "string" && info.lead.trim()
-    ? findPerson(db, workspaceId, getPerson(db, info.lead) ? { personId: info.lead } : { name: info.lead })
-    : undefined;
+  if (typeof info.mergeInto === "string" && info.mergeInto.trim()) {
+    const drop = findTeam(db, workspaceId, args.team);
+    if (isErr(drop)) return drop;
+    const keep = findTeam(db, workspaceId, info.mergeInto);
+    if (isErr(keep)) return { error: `mergeInto: ${keep.error}` };
+    const kept = mergeTeams(db, keep.id, drop.id);
+    return { merged: true, removed: { teamId: drop.id, name: drop.name }, team: teams(db, workspaceId, { team: kept.id }) };
+  }
+
+  const lead = typeof info.lead === "string" && info.lead.trim() ? personRef(db, workspaceId, info.lead) : undefined;
   if (isErr(lead)) return { error: `lead: ${lead.error}` };
   let parentTeamId: string | null | undefined;
   if (info.parentTeam === "") parentTeamId = null;
   else if (typeof info.parentTeam === "string" && info.parentTeam.trim()) {
-    const parent = findTeamByName(db, workspaceId, info.parentTeam) ?? createTeam(db, { workspaceId, name: info.parentTeam });
+    // A parent that doesn't exist is an error, not a new team: a typo would otherwise make one.
+    const parent = findTeam(db, workspaceId, info.parentTeam);
+    if (isErr(parent)) return { error: `parentTeam: ${parent.error}. Create it first with team_upsert.` };
     parentTeamId = parent.id;
   }
   const links = Array.isArray(info.links) ? info.links : undefined;
   const text = (v: unknown) => (typeof v === "string" ? v : undefined);
 
-  let team = findTeamByName(db, workspaceId, name);
+  const found = getTeam(db, name) ?? findTeamByName(db, workspaceId, name);
+  let team = found && found.workspaceId === workspaceId ? found : null;
   const created = !team;
   if (!team) {
     team = createTeam(db, {
-      workspaceId, name,
+      workspaceId, name, kind: info.kind !== undefined ? teamKind(info.kind) : undefined,
       description: text(info.description), channel: text(info.channel), links,
       leadPersonId: lead?.id, parentTeamId: parentTeamId ?? undefined,
     });
@@ -387,6 +460,7 @@ function teamUpsert(db: Db, workspaceId: string, args: Args) {
     const patch: TeamPatch = {};
     const take = (has: boolean) => fill || !has;
     if (text(info.rename)?.trim()) patch.name = text(info.rename)!;
+    if (info.kind !== undefined && take(t.kind !== "team")) patch.kind = teamKind(info.kind);
     if (text(info.description) !== undefined && take(!!t.description)) patch.description = text(info.description)!;
     if (text(info.channel) !== undefined && take(!!t.channel)) patch.channel = text(info.channel)!;
     if (links && take(t.links.length > 0)) patch.links = links;
@@ -395,23 +469,41 @@ function teamUpsert(db: Db, workspaceId: string, args: Args) {
     if (Object.keys(patch).length) team = updateTeam(db, t.id, patch);
   }
 
-  // Members: people named here join this team (their `team` field), and the lead is one of them.
+  // Members join (a guild or project beside their own team; nobody moves). The lead is one of them.
   const added: string[] = [];
-  const memberArgs = [...strList(info.members), ...(lead && !normTeamName(lead.team) ? [lead.id] : [])];
+  const role = text(info.role)?.trim() || undefined;
+  const memberArgs = [...strList(info.members), ...(lead ? [lead.id] : [])];
+  const current = new Set(listMemberships(db, workspaceId).filter((m) => m.teamId === team!.id && !m.endedAt).map((m) => m.personId));
   for (const m of memberArgs) {
-    const p = findPerson(db, workspaceId, getPerson(db, m) ? { personId: m } : { name: m });
+    const p = personRef(db, workspaceId, m);
     if (isErr(p)) return { error: `members: ${p.error}` };
-    if (normTeamName(p.team).toLowerCase() === team.name.toLowerCase()) continue;
-    if (p.team && !fill) continue;
-    updatePerson(db, p.id, { team: team.name });
-    added.push(p.name);
+    if (current.has(p.id) && !role) continue;
+    addMember(db, { teamId: team.id, personId: p.id, ...(role && strList(info.members).includes(m) ? { role } : {}) });
+    if (!current.has(p.id)) added.push(p.name);
+    current.add(p.id);
   }
-  const fresh = getTeam(db, team.id)!;
+  const removed: string[] = [];
+  for (const m of strList(info.removeMembers)) {
+    const p = personRef(db, workspaceId, m);
+    if (isErr(p)) return { error: `removeMembers: ${p.error}` };
+    if (!current.has(p.id)) continue;
+    endMember(db, team.id, p.id);
+    removed.push(p.name);
+  }
   return {
     [created ? "created" : "updated"]: true,
-    team: teams(db, workspaceId, { team: fresh.name }),
+    team: teams(db, workspaceId, { team: team.id }),
     ...(added.length ? { addedMembers: added } : {}),
+    ...(removed.length ? { removedMembers: removed } : {}),
   };
+}
+
+/** Delete a team: its memberships go with it, and teams under it move up. */
+function teamDelete(db: Db, workspaceId: string, args: Args) {
+  const t = findTeam(db, workspaceId, args.team);
+  if (isErr(t)) return t;
+  deleteTeam(db, t.id);
+  return { deleted: true, team: { teamId: t.id, name: t.name } };
 }
 
 function noteInWorkspace(db: Db, noteId: unknown, workspaceId: string): string | { error: string } {
@@ -436,8 +528,19 @@ function link(db: Db, ctx: PeopleToolContext, workspaceId: string, args: Args) {
         removeEdge(db, edgeRowId(type, p.id, other.id));
         return { removed: true, edge: { source: p.name, type, target: other.name } };
       }
-      const edge = addEdge(db, { workspaceId, sourceId: p.id, targetId: other.id, type, status, provenance });
-      return { linked: true, edge: { id: edge.id, source: p.name, type, target: other.name, status: edge.status } };
+      // `endedAt` records that it's over ("former manager", history kept); without it the edge is current.
+      let endedAt: string | undefined;
+      if (typeof args.endedAt === "string" && args.endedAt.trim()) {
+        endedAt = args.endedAt.trim() === "now" ? new Date().toISOString() : parseMeetingDate(args.endedAt) ?? undefined;
+        if (!endedAt) return { error: `Couldn't read endedAt "${args.endedAt}". Use YYYY-MM-DD, an ISO datetime or "now".` };
+      }
+      const { label, error } = cleanRelationshipLabel(args.label);
+      if (error) return { error };
+      const edge = addEdge(db, { workspaceId, sourceId: p.id, targetId: other.id, type, status, provenance, ...(label !== undefined ? { label } : {}), endedAt });
+      return {
+        linked: true,
+        edge: { id: edge.id, source: p.name, type, target: other.name, status: edge.status, ...(edge.label ? { label: edge.label } : {}), ...(edge.endedAt ? { ended: edge.endedAt } : {}) },
+      };
     }
     case "attendee": {
       const noteId = noteInWorkspace(db, args.noteId, workspaceId);

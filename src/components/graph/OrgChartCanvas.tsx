@@ -27,11 +27,10 @@ import { ORG_CARD_H, ORG_CARD_W, elbowPath, layoutOrg, layoutTree } from "@/lib/
 import { buildOrgChart, deriveLinks, findMe, pathTo } from "@/lib/people/network";
 import { RELATIONSHIP_LABELS } from "@/components/people/people-model";
 import { PersonAvatar } from "@/components/people/PersonAvatar";
-import { groupByTeam, peopleUnder, teamForest, type TeamNode } from "../../../shared/people/teams";
+import { NO_TEAM_KEY, groupByTeam, peopleUnder, teamForest, type TeamNode } from "../../../shared/people/teams";
 
 type OrgMode = "people" | "teams";
 const ZOOMS = [0.5, 0.67, 0.8, 1, 1.25, 1.5] as const;
-const teamKey = (t: string | undefined) => (t ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 
 /** Scrollable, zoomable stage: an SVG of links under absolutely placed cards. */
 function Stage({ width, height, zoom, scrollRef, onZoom, label, links, children }: {
@@ -62,7 +61,7 @@ function Stage({ width, height, zoom, scrollRef, onZoom, label, links, children 
   );
 }
 
-export function OrgChartCanvas({ onOpenTeam }: { onOpenTeam?: (name: string) => void } = {}) {
+export function OrgChartCanvas({ onOpenTeam }: { onOpenTeam?: (key: string) => void } = {}) {
   const open = useOpenPerson();
   const scrollRef = useRef<HTMLDivElement>(null);
   const { people, network, loading } = usePeopleNetwork();
@@ -83,9 +82,12 @@ export function OrgChartCanvas({ onOpenTeam }: { onOpenTeam?: (name: string) => 
 
   const groups = useMemo(() => groupByTeam(people, teams), [people, teams]);
   const forest = useMemo(() => teamForest(groups), [groups]);
-  const teamLayout = useMemo(() => layoutTree<TeamNode>(forest, { id: (n) => teamKey(n.group.team), children: (n) => n.children }), [forest]);
+  const teamLayout = useMemo(() => layoutTree<TeamNode>(forest, { id: (n) => n.group.key, children: (n) => n.children }), [forest]);
   const teamPos = useMemo(() => new Map(teamLayout.nodes.map((n) => [n.id, n])), [teamLayout]);
-  const teamNames = useMemo(() => groups.filter((g) => g.people.length > 0 && g.team !== "No team").map((g) => g.team).sort((a, b) => a.localeCompare(b)), [groups]);
+  const teamOptions = useMemo(() => groups
+    .filter((g) => g.people.length > 0 && g.key !== NO_TEAM_KEY)
+    .map((g) => ({ value: g.key, label: g.team }))
+    .sort((a, b) => a.label.localeCompare(b.label)), [groups]);
 
   const fit = () => {
     const el = scrollRef.current;
@@ -110,8 +112,9 @@ export function OrgChartCanvas({ onOpenTeam }: { onOpenTeam?: (name: string) => 
   if (people.length === 0) return <CanvasEmptyState message="No people yet. Add people in the People view and the reporting line shows up here." />;
 
   const onlyMe = chart.roots.length === 1 && chart.roots[0].children.length === 0 && chart.roots[0].alsoReportsTo.length === 0;
-  const hl = teamKey(highlight);
-  const dims = (team: string | undefined) => !!hl && teamKey(team) !== hl;
+  const hl = highlight;
+  const onHl = new Set(groups.find((g) => g.key === hl)?.people.map((p) => p.id) ?? []);
+  const dims = (personId: string | undefined) => !!hl && !onHl.has(personId ?? "");
 
   const toolbar = (
     <div className="flex min-h-12 flex-wrap items-center gap-2 px-3 py-2 border-b border-[var(--border-subtle)]">
@@ -119,10 +122,10 @@ export function OrgChartCanvas({ onOpenTeam }: { onOpenTeam?: (name: string) => 
         ariaLabel="Org chart of" size="sm" value={mode} onChange={setMode}
         options={[{ value: "people", label: "Reporting line" }, { value: "teams", label: "Teams" }]}
       />
-      {mode === "people" && teamNames.length > 0 && (
+      {mode === "people" && teamOptions.length > 0 && (
         <Select<string>
           ariaLabel="Highlight a team" value={highlight} onChange={setHighlight}
-          options={[{ value: "", label: "All teams" }, ...teamNames.map((t) => ({ value: t, label: t }))]}
+          options={[{ value: "", label: "All teams" }, ...teamOptions]}
         />
       )}
       <div className="ml-auto flex items-center gap-0.5">
@@ -168,7 +171,7 @@ export function OrgChartCanvas({ onOpenTeam }: { onOpenTeam?: (name: string) => 
               );
               const style = { left: x, top: y, width: ORG_CARD_W, height: ORG_CARD_H };
               return onOpenTeam ? (
-                <button key={id} type="button" style={style} onClick={() => onOpenTeam(g.team)} aria-label={`${g.team}, ${sub}. Open team`}
+                <button key={id} type="button" style={style} onClick={() => onOpenTeam(g.key)} aria-label={`${g.team}, ${sub}. Open team`}
                   className={cn(cls, "transition-shadow hover:shadow-elev-2", FOCUS_RING)}>{body}</button>
               ) : (
                 <div key={id} style={style} className={cls} aria-label={`${g.team}, ${sub}`}>{body}</div>
@@ -201,7 +204,7 @@ export function OrgChartCanvas({ onOpenTeam }: { onOpenTeam?: (name: string) => 
             const a = pos.get(l.from); const b = pos.get(l.to);
             if (!a || !b) return null;
             const onLine = myLine.has(l.from) && myLine.has(l.to);
-            const faded = dims(byId.get(l.to)?.team);
+            const faded = dims(l.to);
             return (
               <path
                 key={l.id} d={elbowPath(a.x + ORG_CARD_W / 2, a.y + ORG_CARD_H, b.x + ORG_CARD_W / 2, b.y)} fill="none"
@@ -231,8 +234,8 @@ export function OrgChartCanvas({ onOpenTeam }: { onOpenTeam?: (name: string) => 
                   "absolute flex items-center gap-2.5 rounded-lg border px-2.5 text-left shadow-elev-1 transition-[box-shadow,opacity] hover:shadow-elev-2",
                   FOCUS_RING,
                   isMe ? "border-[var(--accent)] bg-[var(--accent-dim)]" : myLine.has(id) ? "border-[color-mix(in_srgb,var(--accent)_55%,var(--border))] bg-[var(--surface-2)]" : "border-[var(--border-subtle)] bg-[var(--surface-2)]",
-                  dims(p.team) && "opacity-35",
-                  !!hl && !dims(p.team) && !isMe && "border-[var(--text-secondary)]",
+                  dims(p.id) && "opacity-35",
+                  !!hl && !dims(p.id) && !isMe && "border-[var(--text-secondary)]",
                 )}
               >
                 <PersonAvatar name={p.name} isMe={isMe} size="md" />
@@ -257,7 +260,7 @@ export function OrgChartCanvas({ onOpenTeam }: { onOpenTeam?: (name: string) => 
               <li key={p.id}>
                 <button
                   type="button" onClick={() => open(p.id)}
-                  className={cn("inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] py-0.5 pl-0.5 pr-2.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)]", FOCUS_RING, dims(p.team) && "opacity-40")}
+                  className={cn("inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] py-0.5 pl-0.5 pr-2.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)]", FOCUS_RING, dims(p.id) && "opacity-40")}
                 >
                   <PersonAvatar name={p.name} isMe={p.isMe} size="xs" />{p.name}
                 </button>

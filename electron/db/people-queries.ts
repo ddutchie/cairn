@@ -13,6 +13,7 @@
 import type Database from "better-sqlite3";
 import { ts } from "../../shared/people/clock";
 import { deleteMeeting, getPerson, updatePerson } from "../../shared/people/queries";
+import { mergePeople as mergeShared, type MergeResult } from "../../shared/people/merge";
 
 export * from "../../shared/people/queries";
 
@@ -20,7 +21,8 @@ type Db = Database.Database;
 
 /**
  * Tombstone a person and everything that points at them here: their edges,
- * attendance and mentions. Cards they own lose the owner; the persona note is
+ * attendance, mentions and team memberships. Cards they own lose the owner; a
+ * team they led keeps the id and reads as having no lead; the persona note is
  * left alone (it's the user's writing).
  */
 export function deletePerson(db: Db, id: string): void {
@@ -32,12 +34,25 @@ export function deletePerson(db: Db, id: string): void {
     ).run(now, now, id, id);
     db.prepare("UPDATE meeting_attendees SET deleted_at = ?, updated_at = ? WHERE person_id = ? AND deleted_at IS NULL").run(now, now, id);
     db.prepare("UPDATE note_mentions SET deleted_at = ?, updated_at = ? WHERE person_id = ? AND deleted_at IS NULL").run(now, now, id);
+    db.prepare("UPDATE team_memberships SET deleted_at = ?, updated_at = ? WHERE person_id = ? AND deleted_at IS NULL").run(now, now, id);
     db.prepare(
       "UPDATE task_cards SET owner_person_id = NULL, updated_at = ?, version = version + 1 WHERE owner_person_id = ? AND deleted_at IS NULL",
     ).run(now, id);
     db.prepare("UPDATE note_action_items SET owner_person_id = NULL WHERE owner_person_id = ?").run(id);
     db.prepare("DELETE FROM person_profile_cache WHERE person_id = ?").run(id);
   })();
+}
+
+/**
+ * Merge `dropId` into `keepId` (shared/people/merge.ts), then the desktop's
+ * own tables: checklist items they owned move over, and the Slack cache of
+ * the one going away is dropped.
+ */
+export function mergePeople(db: Db, keepId: string, dropId: string): MergeResult {
+  const out = mergeShared(db, keepId, dropId);
+  db.prepare("UPDATE note_action_items SET owner_person_id = ? WHERE owner_person_id = ?").run(keepId, dropId);
+  db.prepare("DELETE FROM person_profile_cache WHERE person_id = ?").run(dropId);
+  return out;
 }
 
 // ── Note lifecycle ────────────────────────────

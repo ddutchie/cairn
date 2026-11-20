@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * People view, "Teams": every team as a card, nested under the team it sits
- * in. A card says what the team owns, who leads it, who is on it and how
+ * People view, "Teams": every team (and guild, project, committee) as a
+ * card, nested under the team it sits in. A card says what the team owns, who leads it, who is on it and how
  * spread out it is; it opens the team's page beside the view, where the
  * details can be edited. People without a team are listed last. Nothing here
  * counts activity.
@@ -19,10 +19,9 @@ import { useOpenPerson } from "@/components/graph/peopleCanvasShared";
 import { cn } from "@/lib/utils";
 import { PeopleCanvasPage } from "./PeopleCanvasPage";
 import { AvatarStack, PersonAvatar } from "./PersonAvatar";
-import { NO_TEAM, groupByTeam, peopleUnder, teamForest, type TeamNode } from "../../../shared/people/teams";
+import { NO_TEAM_KEY, groupByTeam, peopleUnder, teamForest, type TeamNode } from "../../../shared/people/teams";
 import type { PersonSummary } from "../../../shared/types/people-view";
 
-const same = (a: string | null | undefined, b: string) => (a ?? "").trim().toLowerCase() === b.trim().toLowerCase();
 
 function TeamCard({ node, selected, onOpen, showPath }: { node: TeamNode; selected: boolean; onOpen: () => void; showPath: boolean }) {
   const people = useCairnStore((s) => s.people);
@@ -31,6 +30,7 @@ function TeamCard({ node, selected, onOpen, showPath }: { node: TeamNode; select
   const lead = info?.leadPersonId ? people.find((p) => p.id === info.leadPersonId) : undefined;
   const everyone = children.length ? peopleUnder(node) : group.people;
   const meta = [
+    info && info.kind !== "team" ? KIND_LABEL[info.kind] : null,
     children.length ? `${group.people.length} here, ${everyone.length} in all` : `${group.people.length} ${group.people.length === 1 ? "person" : "people"}`,
     group.timezones.length > 1 ? `${group.timezones.length} time zones` : null,
   ].filter(Boolean).join(" · ");
@@ -70,7 +70,9 @@ function TeamCard({ node, selected, onOpen, showPath }: { node: TeamNode; select
   );
 }
 
-function NewTeam({ onCreated }: { onCreated: (name: string) => void }) {
+const KIND_LABEL = { team: "Team", guild: "Guild", project: "Project", committee: "Committee" } as const;
+
+function NewTeam({ onCreated }: { onCreated: (key: string) => void }) {
   const createTeam = useCairnStore((s) => s.createTeam);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -81,7 +83,7 @@ function NewTeam({ onCreated }: { onCreated: (name: string) => void }) {
       onSubmit={async (e) => {
         e.preventDefault();
         const t = name.trim() ? await createTeam({ name }) : null;
-        if (t) { setOpen(false); setName(""); onCreated(t.name); }
+        if (t) { setOpen(false); setName(""); onCreated(t.id); }
       }}
     >
       <Input autoFocus aria-label="Team name" placeholder="Team name" value={name} onChange={(e) => setName(e.target.value)} className="w-44 py-1 text-xs"
@@ -96,14 +98,15 @@ const GRID = "grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(15.5rem,
 
 export function TeamsCanvas({ people, selectedTeam, onOpenTeam }: {
   people: readonly PersonSummary[];
+  /** The open team's group key (its id). */
   selectedTeam?: string | null;
-  onOpenTeam: (name: string) => void;
+  onOpenTeam: (key: string) => void;
 }) {
   const open = useOpenPerson();
   const { teams, selectedPersonId } = useCairnStore(useShallow((s) => ({ teams: s.teams, selectedPersonId: s.selectedPersonId })));
   const groups = useMemo(() => groupByTeam(people, teams), [people, teams]);
   const forest = useMemo(() => teamForest(groups), [groups]);
-  const loose = groups.find((g) => g.team === NO_TEAM)?.people ?? [];
+  const loose = groups.find((g) => g.key === NO_TEAM_KEY)?.people ?? [];
 
   if (people.length === 0 && teams.length === 0) {
     return <EmptyState icon={Users} title="No people yet" description="Add the people you work with and their teams show up here." className="h-full" />;
@@ -113,8 +116,8 @@ export function TeamsCanvas({ people, selectedTeam, onOpenTeam }: {
   const nested = forest.filter((n) => n.children.length > 0);
   const single = forest.filter((n) => n.children.length === 0);
   const card = (n: TeamNode, showPath = false) => (
-    <li key={n.group.team}>
-      <TeamCard node={n} showPath={showPath} selected={!!selectedTeam && same(selectedTeam, n.group.team)} onOpen={() => onOpenTeam(n.group.team)} />
+    <li key={n.group.key}>
+      <TeamCard node={n} showPath={showPath} selected={selectedTeam === n.group.key} onOpen={() => onOpenTeam(n.group.key)} />
     </li>
   );
   const descendants = (n: TeamNode): TeamNode[] => n.children.flatMap((c) => [c, ...descendants(c)]);
@@ -128,7 +131,7 @@ export function TeamsCanvas({ people, selectedTeam, onOpenTeam }: {
       )}
 
       {nested.map((root, i) => (
-        <section key={root.group.team} aria-label={root.group.team} className="mb-9">
+        <section key={root.group.key} aria-label={root.group.team} className="mb-9">
           <PanelHeading
             title={root.group.team}
             note={`${descendants(root).length + 1} teams, ${peopleUnder(root).length} people`}

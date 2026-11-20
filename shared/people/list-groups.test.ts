@@ -4,7 +4,7 @@ import { groupPeopleBy } from "./list-groups";
 
 const p = (id: string, name: string, extra: Partial<PersonSummary> = {}): PersonSummary => ({
   id, workspaceId: "w", name, aliases: [], emails: [], relationship: [], status: "confirmed", provenance: "explicit",
-  isMe: false, agentPrivate: false, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", ...extra,
+  isMe: false, agentPrivate: false, teams: [], createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", ...extra,
 });
 const now = new Date("2026-11-20T12:00:00Z");
 const people = [

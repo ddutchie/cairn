@@ -6,7 +6,7 @@
  * current date, like the card due dates, so "met 6 days ago" and "next 1:1
  * tomorrow" read right whenever the images are regenerated. Names are invented.
  */
-import type { Meeting, Person, PersonEdge, Relationship, Team } from "../../shared/types/people";
+import type { Meeting, Person, PersonEdge, Relationship, Team, TeamMembership } from "../../shared/types/people";
 import type { PeopleNetwork, PersonPage, PersonSummary, PersonTimelineItem } from "../../shared/types/people-view";
 import type { PersonProfile, PrepBrief } from "../../shared/people/oneonone";
 
@@ -16,8 +16,9 @@ const DAY = 86_400_000;
 export interface PeopleFixture {
   people: PersonSummary[];
   suggestions: PersonSummary[];
-  /** Team details; membership is each person's `team`. */
   teams: Team[];
+  /** Each person's membership of their `team`. */
+  memberships: TeamMembership[];
   pages: Record<string, PersonPage>;
   network: PeopleNetwork;
   profiles: Record<string, PersonProfile>;
@@ -36,9 +37,11 @@ export function buildPeopleFixture(now: Date = new Date()): PeopleFixture {
   };
   const created = at(-120);
 
+  // A person's `team` is their one membership here, of the team with id `team-<name>`.
   const person = (id: string, name: string, extra: Partial<Person> = {}): Person => ({
     id, workspaceId: WS, name, aliases: [], emails: [`${name.toLowerCase().replace(/[^a-z]+/g, ".")}@example.com`],
     relationship: [], status: "confirmed", provenance: "explicit", isMe: false, agentPrivate: false,
+    teams: extra.team ? [{ teamId: `team-${extra.team.toLowerCase()}`, name: extra.team, kind: "team", startedAt: created }] : [],
     createdAt: created, updatedAt: created, ...extra,
   });
   const summary = (p: Person, last?: number, next?: number): PersonSummary => ({
@@ -123,7 +126,7 @@ export function buildPeopleFixture(now: Date = new Date()): PeopleFixture {
     questions: ["What would make the tech lead role feel worth taking on now?", "Where is the sync work blocked on someone else?"],
     sources: [{ name: "Notes", status: "ok" }, { name: "Slack", status: "ok" }, { name: "GitHub", status: "ok" }],
   };
-  const team = (id: string, name: string, extra: Partial<Team> = {}): Team => ({ id, workspaceId: WS, name, links: [], createdAt: created, updatedAt: created, ...extra });
+  const team = (id: string, name: string, extra: Partial<Team> = {}): Team => ({ id, workspaceId: WS, name, kind: "team", links: [], createdAt: created, updatedAt: created, ...extra });
   const teams: Team[] = [
     team("team-platform", "Platform", { leadPersonId: priya.id, description: "Storage, sync and the services every other team builds on.", channel: "#platform" }),
     team("team-sync", "Sync", {
@@ -133,5 +136,8 @@ export function buildPeopleFixture(now: Date = new Date()): PeopleFixture {
     }),
     team("team-design", "Design", { leadPersonId: mei.id, description: "Product design and the design system." }),
   ];
-  return { people, suggestions, teams, pages, network, profiles, featuredId: ana.id, brief };
+  const memberships: TeamMembership[] = people.flatMap((p) => p.teams.map((t) => ({
+    id: `tm:${t.teamId}:${p.id}`, workspaceId: WS, teamId: t.teamId, personId: p.id, startedAt: t.startedAt, createdAt: created, updatedAt: created,
+  })));
+  return { people, suggestions, teams, memberships, pages, network, profiles, featuredId: ana.id, brief };
 }

@@ -210,8 +210,8 @@ function PersonSettings({ page, profile }: { page: PersonPageModel; profile: Per
       <Field label="Role">
         <ProfileInput field="title" personId={person.id} value={person.title ?? ""} placeholder="e.g. Senior Software Engineer" />
       </Field>
-      <Field label="Team">
-        <ProfileInput field="team" personId={person.id} value={person.team ?? ""} placeholder="e.g. Sync" />
+      <Field label="Teams">
+        <PersonTeams personId={person.id} teams={person.teams} />
       </Field>
       <Field label="Location">
         <ProfileInput field="location" personId={person.id} value={person.location ?? ""} timezone={person.timezone} placeholder="e.g. Berlin, Germany" />
@@ -339,6 +339,7 @@ function PersonSettings({ page, profile }: { page: PersonPageModel; profile: Per
           </div>
         </div>
       </Field>
+      <MergeDuplicate personId={person.id} name={person.name} />
       <div className="pt-4">
         <ConfirmButton
           variant="outline"
@@ -602,12 +603,86 @@ export function PersonPage({ page, compact = false }: { page: PersonPageModel | 
 }
 
 /**
+ * The teams someone is on, each removable (kept as history), plus adding them
+ * to another; joining never takes them off a team, so moving is take off and
+ * add. Past teams are listed under, quietly.
+ */
+function PersonTeams({ personId, teams }: { personId: string; teams: PersonPageModel["person"]["teams"] }) {
+  const { allTeams, memberships, updatePerson, addTeamMember, endTeamMember } = useCairnStore(useShallow((s) => ({
+    allTeams: s.teams, memberships: s.teamMemberships, updatePerson: s.updatePerson, addTeamMember: s.addTeamMember, endTeamMember: s.endTeamMember,
+  })));
+  const current = new Set(teams.map((t) => t.teamId));
+  const byId = new Map(allTeams.map((t) => [t.id, t]));
+  const past = memberships.filter((m) => m.personId === personId && m.endedAt && !current.has(m.teamId) && byId.has(m.teamId));
+  return (
+    <div className="space-y-1.5">
+      {teams.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5" aria-label="Their teams">
+          {teams.map((t) => (
+            <li key={t.teamId} className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border-subtle)] py-0.5 pl-2.5 pr-0.5 text-xs text-[var(--text-secondary)]">
+              {t.name}
+              {(t.role || t.kind !== "team") && <span className="text-2xs text-[var(--text-tertiary)]">&nbsp;· {t.role ?? t.kind}</span>}
+              <IconButton label={`Take them off ${t.name}`} size="sm" onClick={() => void endTeamMember(t.teamId, personId)}><X size={11} /></IconButton>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {allTeams.some((t) => !current.has(t.id)) && (
+          <Combobox<string>
+            ariaLabel="Add to a team" value={null} size="sm" placeholder="Add to a team" searchPlaceholder="Find a team"
+            options={allTeams.filter((t) => !current.has(t.id)).map((t) => ({ value: t.id, label: t.name, description: t.kind !== "team" ? t.kind : undefined }))}
+            onChange={(teamId) => void addTeamMember({ teamId, personId })}
+          />
+        )}
+        <div className="min-w-0 flex-1">
+          <BlurInput ariaLabel="Move to a new team" placeholder={teams.length ? "Or move to a new team" : "e.g. Sync"} value="" onSave={(v) => { if (v.trim()) void updatePerson(personId, { team: v }); }} />
+        </div>
+      </div>
+      {past.length > 0 && (
+        <p className="text-2xs text-[var(--text-tertiary)]">
+          Before: {past.map((m) => `${byId.get(m.teamId)!.name} (until ${formatDate(m.endedAt!)})`).join(", ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Fold a duplicate into this person: pick them, then confirm. */
+function MergeDuplicate({ personId, name }: { personId: string; name: string }) {
+  const { people, suggestions, mergePeople } = useCairnStore(useShallow((s) => ({ people: s.people, suggestions: s.peopleSuggestions, mergePeople: s.mergePeople })));
+  const [other, setOther] = useState<string | null>(null);
+  const candidates = [...people, ...suggestions].filter((p) => p.id !== personId);
+  if (candidates.length === 0) return null;
+  const picked = candidates.find((p) => p.id === other);
+  return (
+    <Field label="Duplicate">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Combobox<string>
+          ariaLabel="Duplicate of this person" value={other} size="sm" placeholder="Same person as…" searchPlaceholder="Find a person"
+          options={candidates.map((p) => ({ value: p.id, label: p.name, description: p.status === "suggested" ? "Suggested" : p.title, keywords: p.aliases.join(" ") }))}
+          onChange={setOther}
+        />
+        {picked && (
+          <ConfirmButton size="sm" variant="outline" confirmLabel={`Merge ${picked.name} into ${name}?`} onConfirm={() => { void mergePeople(personId, picked.id); setOther(null); }}>
+            Merge into {name.split(" ")[0]}
+          </ConfirmButton>
+        )}
+      </div>
+      <p className="mt-1 text-2xs text-[var(--text-tertiary)]">Their meetings, notes, tasks and teams move here; their name becomes an alias.</p>
+    </Field>
+  );
+}
+
+/**
  * A person capture or an agent proposed (an attendee name, an inferred fact)
  * is not in the list until confirmed. Say so on their page, which chat and
  * notes can open directly, and let the user settle it there.
  */
 function SuggestionBanner({ page }: { page: PersonPageModel }) {
-  const { confirm, dismiss } = useCairnStore(useShallow((s) => ({ confirm: s.confirmPersonSuggestion, dismiss: s.dismissPersonSuggestion })));
+  const { confirm, dismiss, people, mergePeople } = useCairnStore(useShallow((s) => ({
+    confirm: s.confirmPersonSuggestion, dismiss: s.dismissPersonSuggestion, people: s.people, mergePeople: s.mergePeople,
+  })));
   const { person } = page;
   if (person.status !== "suggested" && person.status !== "dismissed") return null;
   const dismissed = person.status === "dismissed";
@@ -619,6 +694,14 @@ function SuggestionBanner({ page }: { page: PersonPageModel }) {
           : "Suggested from a note or by the assistant. Confirm to add them to your people."}
       </p>
       <Button size="xs" variant="accent" onClick={() => void confirm(person.id)}>{dismissed ? "Add back" : "Confirm"}</Button>
+      {!dismissed && people.length > 0 && (
+        <Combobox<string>
+          ariaLabel="Same person as" value={null} size="sm" align="end" placeholder="Same as…" searchPlaceholder="Find who they are"
+          options={people.filter((p) => p.id !== person.id).map((p) => ({ value: p.id, label: p.name, description: p.title, keywords: p.aliases.join(" ") }))}
+          // The person you already have stays; this suggestion folds into them.
+          onChange={(id) => void mergePeople(id, person.id)}
+        />
+      )}
       {!dismissed && <Button size="xs" variant="ghost" onClick={() => void dismiss(person.id)}>Dismiss</Button>}
     </div>
   );

@@ -38,10 +38,24 @@ export function registerPeopleHandlers(ctx: DbContext): void {
   registerContractHandle("db:people:edge:update", (_e, { id, patch }) => handle(() => pq.updateEdge(ctx.db, id, patch)));
   registerContractHandle("db:people:edge:remove", (_e, { id }) => handle(() => pq.removeEdge(ctx.db, id)));
 
+  registerContractHandle("db:people:merge", (_e, { keepId, dropId }) =>
+    handle(() => {
+      const { person, meetingNoteIds } = pq.mergePeople(ctx.db, keepId, dropId);
+      // The merged-away name leaves the attendee lists in those meeting notes' frontmatter.
+      if (meetingNoteIds.length) refreshMeetingFrontmatter(ctx.db, ctx.workspacePath, meetingNoteIds, suppressNextChange);
+      return person;
+    }),
+  );
+
   registerContractHandle("db:people:teams:list", (_e, { workspaceId }) => handle(() => tq.listTeams(ctx.db, workspaceId)));
   registerContractHandle("db:people:team:create", (_e, input) => handle(() => tq.createTeam(ctx.db, input)));
   registerContractHandle("db:people:team:update", (_e, { id, patch }) => handle(() => tq.updateTeam(ctx.db, id, patch)));
-  registerContractHandle("db:people:team:delete", (_e, { id, keepMembers }) => handle(() => tq.deleteTeam(ctx.db, id, { keepMembers })));
+  registerContractHandle("db:people:team:delete", (_e, { id }) => handle(() => tq.deleteTeam(ctx.db, id)));
+  registerContractHandle("db:people:team:merge", (_e, { keepId, dropId }) => handle(() => tq.mergeTeams(ctx.db, keepId, dropId)));
+  registerContractHandle("db:people:memberships:list", (_e, { workspaceId }) => handle(() => tq.listMemberships(ctx.db, workspaceId)));
+  registerContractHandle("db:people:team:member:add", (_e, input) => handle(() => tq.addMember(ctx.db, input)));
+  registerContractHandle("db:people:team:member:end", (_e, { teamId, personId, endedAt }) => handle(() => tq.endMember(ctx.db, teamId, personId, endedAt)));
+  registerContractHandle("db:people:team:member:delete", (_e, { teamId, personId }) => handle(() => tq.deleteMembership(ctx.db, teamId, personId)));
 
   registerContractHandle("db:people:meetings", (_e, { personId, limit }) => handle(() => pq.listPersonMeetings(ctx.db, personId, limit)));
   registerContractHandle("db:people:mentionNoteIds", (_e, { personId }) => handle(() => pq.listPersonMentionNoteIds(ctx.db, personId)));

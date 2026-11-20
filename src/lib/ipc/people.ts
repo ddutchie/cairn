@@ -6,7 +6,7 @@
 
 import type {
   Meeting, MeetingAttendee, PeopleStatus, Person, PersonCreateInput, PersonEdge, PersonPatch, PersonRelation,
-  Team, TeamCreateInput, TeamPatch,
+  AddMemberInput, Team, TeamCreateInput, TeamMembership, TeamPatch,
 } from "../../../shared/types/people";
 import type { MigrationApprovals, MigrationInventory, MigrationResult } from "../../../shared/types/people-migration";
 import type {
@@ -35,7 +35,14 @@ export const peopleClient = {
   teams: (workspaceId: string): Promise<Team[]> => people((p) => p.teams.list(workspaceId)),
   createTeam: (input: TeamCreateInput): Promise<Team> => people((p) => p.teams.create(input)),
   updateTeam: (id: string, patch: TeamPatch): Promise<Team> => people((p) => p.teams.update(id, patch)),
-  deleteTeam: (id: string, keepMembers?: boolean): Promise<void> => people((p) => p.teams.delete(id, keepMembers)),
+  deleteTeam: (id: string): Promise<void> => people((p) => p.teams.delete(id)),
+  mergeTeams: (keepId: string, dropId: string): Promise<Team> => people((p) => p.teams.merge(keepId, dropId)),
+  memberships: (workspaceId: string): Promise<TeamMembership[]> => people((p) => p.teams.memberships(workspaceId)),
+  addMember: (input: AddMemberInput): Promise<TeamMembership> => people((p) => p.teams.addMember(input)),
+  endMember: (teamId: string, personId: string, endedAt?: string): Promise<void> => people((p) => p.teams.endMember(teamId, personId, endedAt)),
+  deleteMember: (teamId: string, personId: string): Promise<void> => people((p) => p.teams.deleteMember(teamId, personId)),
+  /** Fold `dropId` into `keepId`; resolves with who stays. */
+  merge: (keepId: string, dropId: string): Promise<Person> => people((p) => p.merge(keepId, dropId)),
   meetings: (personId: string, limit?: number): Promise<Meeting[]> => people((p) => p.meetings(personId, limit)),
   mentionNoteIds: (personId: string): Promise<string[]> => people((p) => p.mentionNoteIds(personId)),
   ownedCardIds: (personId: string): Promise<string[]> => people((p) => p.ownedCardIds(personId)),

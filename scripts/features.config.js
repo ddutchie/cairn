@@ -273,10 +273,10 @@ const FEATURES = [
     description:
       "Teams have their own page: what they own, who leads them and where they sit. The assistant can read and update them, and the org chart, list, Bridges and Map got a design pass.",
     highlights: [
-      "Team pages: Describe a team, set its lead and parent team, add links, and move people between teams.",
-      "Ask about teams: The assistant lists teams and fills them in for you.",
-      "Org chart by team: Highlight one team, or switch to the team tree.",
-      "Group, zoom and turn: Group the list by team or place, zoom the map, or spin the globe.",
+      "Team pages: Describe a team, set its lead and parent team, give members a role, and see who used to be on it.",
+      "Guilds and projects: Someone has one team and can be in any number of guilds, projects and committees.",
+      "Ask about teams: The assistant lists teams, fills them in, and merges duplicate teams or people.",
+      "Org chart by team: Highlight one team, or switch to the team tree; group the list by team or place, and spin the globe.",
     ],
   },
 ];

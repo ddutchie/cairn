@@ -11,7 +11,7 @@ const person = (name: string, extra: Partial<PersonSummary> & { rel?: Relationsh
   return {
     id: name.toLowerCase(), workspaceId: "ws", name, aliases: [], emails: [],
     relationship: rel.map((type): Relationship => ({ type, provenance: "explicit" })),
-    status: "confirmed", provenance: "explicit", isMe: false, agentPrivate: false,
+    status: "confirmed", provenance: "explicit", isMe: false, agentPrivate: false, teams: [],
     createdAt: `2026-01-${String(n).padStart(2, "0")}`, updatedAt: "x", ...rest,
   };
 };

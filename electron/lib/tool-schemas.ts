@@ -14,7 +14,7 @@
 import * as z from "zod";
 
 import { isCairnReadTool } from "../../shared/agent/tool-names";
-import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION_DESKTOP, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION, TEAM_INFO_DESCRIPTION } from "../../shared/agent/people-tools";
+import { EDGE_ENDED_DESCRIPTION, PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION_DESKTOP, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION, TEAM_INFO_DESCRIPTION } from "../../shared/agent/people-tools";
 
 // ── Shared field shapes ────────────────────────────────────────────────────────
 
@@ -228,8 +228,8 @@ export const TOOL_SCHEMAS = {
   people: {
     description: PEOPLE_TOOL_DESCRIPTION_DESKTOP,
     schema: z.object({
-      action:       z.enum(["query", "get", "timeline", "relationships", "inventory", "teams", "upsert", "link", "team_upsert"]),
-      personId:     sIdOpt.describe("get/timeline/relationships/upsert: the person (or pass name)"),
+      action:       z.enum(["query", "get", "timeline", "relationships", "inventory", "teams", "upsert", "link", "archive", "merge", "team_upsert", "team_delete"]),
+      personId:     sIdOpt.describe("get/timeline/relationships/upsert/archive: the person (or pass name); merge: the one who stays"),
       name:         sStrOpt.describe("query: name filter; get/upsert: the person's name"),
       relationship: sStrOpt.describe("query: only people with this relationship to the user (e.g. direct_report, manager, peer, stakeholder, mentor)"),
       status:       z.enum(["confirmed", "suggested", "dismissed"]).optional().describe("query: filter; upsert/link: status of what you write (default confirmed for stated facts)"),
@@ -244,13 +244,17 @@ export const TOOL_SCHEMAS = {
       title:        sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.title),
       team:         sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.team),
       teamInfo:     z.object({
+        kind:        z.enum(["team", "guild", "project", "committee"]).optional(),
         description: sStrOpt,
         lead:        sStrOpt,
         parentTeam:  sStrOpt,
         channel:     sStrOpt,
         links:       z.array(z.object({ label: sStrOpt, url: z.string() })).optional(),
         members:     z.array(z.string()).optional(),
+        role:        sStrOpt,
+        removeMembers: z.array(z.string()).optional(),
         rename:      sStrOpt,
+        mergeInto:   sStrOpt,
       }).optional().describe(TEAM_INFO_DESCRIPTION),
       location:     sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.location),
       timezone:     sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.timezone),
@@ -258,9 +262,11 @@ export const TOOL_SCHEMAS = {
       personaNoteId: sIdOpt.describe("upsert: the note about this person"),
       link:         z.enum(["edge", "attendee", "mention"]).optional().describe("link: what to link"),
       edgeType:     z.enum(["manager_of", "mentor_of", "buddy_of", "stakeholder_of", "partner"]).optional().describe("link edge: personId <edgeType> otherPersonId"),
-      otherPersonId: sIdOpt.describe("link edge: the other person"),
+      otherPersonId: sIdOpt.describe("link edge: the other person; merge: the duplicate that folds into personId"),
+      endedAt:      sStrOpt.describe(EDGE_ENDED_DESCRIPTION),
+      label:        sStrOpt.describe("link edge: a short qualifier, e.g. 'dotted line'"),
       noteId:       sIdOpt.describe("link attendee/mention: the note"),
-      remove:       sBoolOpt.describe("link: remove instead of add"),
+      remove:       sBoolOpt.describe("link: remove instead of add (an edge is deleted; to keep it as history pass endedAt instead); archive: restore"),
       limit:        z.number().optional().default(25),
     }),
   },

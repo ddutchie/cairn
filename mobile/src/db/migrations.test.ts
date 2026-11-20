@@ -17,6 +17,11 @@ function fakeDb(startVersion: number, opts: { failOnSql?: RegExp } = {}) {
       return null;
     },
     getAllSync: () => [],
+    // Shared queries run through createExpoSyncDb; an empty database answers every read with no rows.
+    prepareSync: () => ({
+      executeSync: () => ({ changes: 0, lastInsertRowId: 0, getFirstSync: () => null, getAllSync: () => [] }),
+      finalizeSync: () => {},
+    }),
     execSync: (sql: string) => {
       if (opts.failOnSql?.test(sql)) throw new Error("boom");
       const m = /PRAGMA user_version = (\d+)/.exec(sql);

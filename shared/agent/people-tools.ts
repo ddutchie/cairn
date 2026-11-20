@@ -14,7 +14,7 @@ export const PEOPLE_ARG_DESCRIPTIONS = {
 /** The profile fields `upsert` can set (same words on every surface). */
 export const PROFILE_FIELD_DESCRIPTIONS = {
   title: "upsert: job title or role, e.g. 'Senior Software Engineer'. Fills a gap; never replaces what the user set unless provenance is explicit",
-  team: "upsert: the person's team or org, e.g. 'Sync' (joins that team); teams/team_upsert: the team's name",
+  team: "upsert: the person's home team, e.g. 'Sync' (moves them there and off their other teams; guilds and projects stay). teams/team_upsert/team_delete: the team's name or teamId",
   location: "upsert: where they are, e.g. 'Berlin, Germany'",
   timezone: "upsert: IANA time zone, e.g. 'Europe/Berlin'",
   slackId: "upsert: their Slack member id (U0123ABCD), used to read their Slack profile",
@@ -26,11 +26,15 @@ export const RELATIONSHIP_LABEL_DESCRIPTION =
 
 /** What `teamInfo` on `team_upsert` holds (same words on every surface). */
 export const TEAM_INFO_DESCRIPTION =
-  "team_upsert: the team's details. Every field is optional; empty string clears. description: what the team owns and works on; lead: person name or id; parentTeam: the team it sits under (created if new); channel: e.g. '#sync'; links: [{label, url}] (replaces the list); members: person names or ids to put on this team; rename: a new name (members move with it)";
+  "team_upsert: the team's details. Every field is optional; empty string clears. kind: team (default), guild, project or committee (someone has one home team and any number of the others); description: what the team owns and works on; lead: person name or id (also joins the team); parentTeam: an existing team it sits under; channel: e.g. '#sync'; links: [{label, url}] (replaces the list); members: person names or ids who join (nobody leaves another team); role: their part on the team for those members, e.g. 'Embedded designer'; removeMembers: people who leave (kept as history); rename: a new name (members stay); mergeInto: another team (name or teamId) to fold this one into, for two teams that are one";
+
+/** What `endedAt` on `link` means. */
+export const EDGE_ENDED_DESCRIPTION =
+  "link edge: when the relationship ended (YYYY-MM-DD, ISO datetime or 'now'), making it a former one; leave out for a current relationship (adding an ended edge again makes it current)";
 
 /** The `people` tool's description for the model. */
 export const PEOPLE_TOOL_DESCRIPTION =
-  "People the user works with, their meetings and relationships. Reads: 'query' (by name, relationship or status; empty lists everyone), 'get' (one person: details, relationships, persona note id), 'timeline' (their meetings, mentions and owned tasks, newest first), 'relationships' (who manages/mentors/partners whom). 'teams' (every team with its lead, parent team, members and details; pass team for one). Writes: 'upsert' (create or update a person), 'link' (an edge between two people, an attendee on a meeting note, or a mention) and 'team_upsert' (create or update a team's details and members). Anything you infer rather than read stated goes in as status 'suggested' for the user to confirm.";
+  "People the user works with, their meetings and relationships. Reads: 'query' (by name, relationship or status; empty lists everyone), 'get' (one person: details, relationships, persona note id), 'timeline' (their meetings, mentions and owned tasks, newest first), 'relationships' (who manages/mentors/partners whom; a 'manager' or 'direct report' relationship to the user is the same fact as the edge). 'teams' (every team with its kind, lead, parent team, members with roles and details; pass team for one, with past members). Writes: 'upsert' (create or update a person), 'link' (an edge between two people, with endedAt for a former one; an attendee on a meeting note; or a mention), 'archive' (hide someone who left; remove: true brings them back), 'merge' (otherPersonId is the same person as this one: their meetings, notes and teams move here and the other is removed), 'team_upsert' (create or update a team, add or remove members, merge it into another) and 'team_delete'. Anything you infer rather than read stated goes in as status 'suggested' for the user to confirm.";
 
 /**
  * Desktop adds the read-only `inventory` action (a scan of person and meeting notes

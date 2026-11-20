@@ -1,6 +1,8 @@
 # People layer — integration plan
 
 > **Update (3.3.0): the `feature.people` flag, the mobile device switch and the preview unlock described below were removed. People ships on by default; the sections that mention them are historical.**
+>
+> **Update (3.3.0, teams): decision 7 ("no group entities") was reversed. Teams, guilds, projects and committees are entities with memberships, and structural relationships to you are kept as edges. See "Teams and structure" and "Later".**
 
 
 **Status:** In progress. W1 (schema release) implemented on
@@ -372,12 +374,19 @@ attendees in a structured field, and Cairn links them deterministically from the
    the source note. Inferred facts always start as `suggested`.
 4. **Edges stored one way, inverse derived.** `manager_of`, `mentor_of`,
    `buddy_of`, `stakeholder_of`, `partner` (symmetric); queries derive `reports_to`
-   etc. "Former" is `ended_at` on the edge, not a separate type.
+   etc. "Former" is `ended_at` on the edge, not a separate type. One row per
+   pair: adding an ended edge again makes it current and replaces the earlier
+   stint (only the latest is kept).
 5. **Relationship-to-me is an open set:** known types (`direct_report`, `manager`,
    `peer`, `stakeholder`, `mentor`, `buddy`, `recruiter`, `candidate`) plus a free
-   label. Multi-valued (Morel is stakeholder and mentor).
+   label. Multi-valued (Morel is stakeholder and mentor). The structural ones
+   (`direct_report`, `manager`, `mentor`, `buddy`, `stakeholder`) are the same
+   fact as an edge between that person and you, and are kept as one (see
+   "Teams and structure").
 6. **Candidates are people** with a `stage` field.
-7. **No group entities.** "Team" owners keep their owner text and stay unassigned.
+7. ~~**No group entities.**~~ Reversed in 3.3.0: teams are entities with
+   memberships ("Teams and structure"). Action items owned by a team still keep
+   their owner text and stay unassigned.
 8. **Meetings are their own entity** (option D from the review). With the prep
    brief and cadence nudges in the same launch, meetings must exist before any
    note does: Today's calendar events carry attendees, a 1:1 is "upcoming"
@@ -459,6 +468,32 @@ CREATE TABLE note_mentions (
   UNIQUE (note_id, person_id)
 );
 
+-- Teams (protocol 7, 3.3.0): see "Teams and structure"
+CREATE TABLE teams (
+  id             TEXT PRIMARY KEY,   -- team:<workspace>:<folded name it was made with>, kept through renames
+  workspace_id   TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  kind           TEXT NOT NULL DEFAULT 'team',  -- team|guild|project|committee
+  description    TEXT,               -- what it owns
+  lead_person_id TEXT,
+  parent_team_id TEXT,               -- the team it sits under
+  channel        TEXT,
+  links          TEXT NOT NULL DEFAULT '[]',    -- JSON [{label, url}]
+  created_at, updated_at, hlc, deleted_at
+);
+
+CREATE TABLE team_memberships (
+  id           TEXT PRIMARY KEY,     -- tm:<team id>:<person id>, one per pair
+  workspace_id TEXT NOT NULL,
+  team_id      TEXT NOT NULL,
+  person_id    TEXT NOT NULL,
+  role         TEXT,                 -- free text: "Tech lead", "Embedded from Design"
+  started_at   TEXT,                 -- NULL when unknown (adopted from people.team)
+  ended_at     TEXT,                 -- set when they leave; the row stays as history
+  created_at, updated_at, hlc, deleted_at
+);
+-- people.team (TEXT) from the first builds is no longer read or written.
+
 ALTER TABLE notes      ADD COLUMN meeting_id      TEXT REFERENCES meetings(id) ON DELETE SET NULL;
 ALTER TABLE task_cards ADD COLUMN owner_person_id TEXT REFERENCES people(id)   ON DELETE SET NULL;
 
@@ -488,6 +523,82 @@ CREATE TABLE note_action_items (         -- rebuilt from note bodies, like relat
 - **Graph:** `GraphNodeType` gains `"person" | "meeting"`; `GraphEdgeType` gains
   `"attended" | "mentions" | "reports-to" | "mentor" | "partner" | "stakeholder"`,
   computed in the same incremental pass as today's auto-relationships.
+
+## Teams and structure
+
+Added in 3.3.0 (desktop migration v69, mobile v14, sync protocol 7). Code:
+`shared/people/team-queries.ts`, `shared/people/teams.ts` (grouping, tree),
+`shared/people/chip-edges.ts`, `shared/people/merge.ts`,
+`shared/people/adopt.ts`.
+
+**Teams.** A `teams` row is a group: a team, a guild, a project or a
+committee (`kind`). Its id comes from the workspace and the folded name it
+was made with (`teamRowId`), so two devices that each make "Sync" before they
+sync make one row. The id never changes: a rename is one row, and nobody's
+membership moves. A later team whose name folds to an id still held by a
+renamed one takes `~2`, `~3`. A removed team made again revives its row. The
+team tree comes from `parent_team_id`; a parent that is gone or a loop from
+two devices' edits makes a team a root (checked on write and on read).
+
+**Memberships.** `team_memberships` says who is on which team, one row per
+(team, person) with a deterministic id, a free-text role and the dates they
+joined and left. Someone has one home team of kind "team" at a time
+(`Person.team`, the first current membership of that kind) and any number of
+guilds, projects and committees beside it (`Person.teams`).
+
+- Joining (`addMember`) never takes anyone off another team. "Move to team X"
+  (`setHomeTeam`, `PersonPatch.team`, `upsert` with `team`) ends their other
+  memberships of kind "team" only.
+- Leaving (`endMember`) sets `ended_at`, so "who was on Payments in Q2" can be
+  answered. Joining again reuses the row: a new `started_at`, `ended_at`
+  cleared (only the latest stint is kept, as for edges).
+- Deleting a team tombstones its memberships; teams under it move up to its
+  parent.
+
+**Duplicate teams.** Two teams can still end up with one name (two devices
+renamed different teams to it before they synced, or old rows with random
+ids). Both are listed, never hidden: the team page says so and offers "Merge
+into this one", and the agent's `teams` read marks them `duplicateName`.
+`mergeTeams` moves members (one stint covering both when someone was on
+each), roles, the teams under it and any missing details, then removes the
+other team.
+
+**Lead.** `lead_person_id` is a team attribute, not a reporting line. The
+team page notes quietly when the lead isn't on the team or nobody on it
+reports to them; both can be right (a tech lead manages nobody).
+
+**Who manages whom: one rule.** A structural chip on someone and the edge
+between them and you are one fact (`chip-edges.ts`):
+
+| Chip on X | Edge |
+|---|---|
+| `direct_report` | you `manager_of` X |
+| `manager` | X `manager_of` you |
+| `mentor` | X `mentor_of` you |
+| `buddy` | X `buddy_of` you |
+| `stakeholder` | X `stakeholder_of` you |
+
+Writing the chip writes the edge; taking it off ends the edge (it reads
+"former manager"). Adding, ending or removing the edge sets or clears the
+chip. On read, a confirmed edge for the pair decides, current or ended, and
+the chip only counts where there is no edge, which settles a sync race the
+same way on every device. Without a "me" person there are no edges to you,
+so chips stand alone; marking someone as "me" turns their chips into edges.
+`peer`, `recruiter`, `candidate` and `other` stay chips only.
+
+**Merging people.** `mergePeople(keep, drop)` folds a duplicate (capture made
+"Sam" while "Sam Whitfield" existed) into the one that stays: attendance
+(every source's claim kept), mentions, edges (an edge between the two goes),
+cards owned, teams led, memberships, and on desktop the checklist index. The
+one that stays takes the other's name as an alias, their emails and
+relationships, and any detail it lacks. The suggestion banner on a person's
+page offers "Same as…", and Settings has "Duplicate".
+
+**Adoption.** The migrations turn each person's free-text `people.team` into
+a membership (only for people with no membership rows, so it never undoes a
+later change) and every structural chip into an edge to you, with ids from
+the data so two devices write the same rows. A peer still on an older build
+is stamped `behind`; team edits it makes to `people.team` are not read.
 
 ## Capture
 
@@ -614,9 +725,15 @@ pattern (`useScopedData`, `useFontScale`, `useContainerDims`).
 
 - **One new tool `people`** in `TOOL_SCHEMAS`, with `action`: `query` (by
   relationship, name, edge; "who owns X" via persona search), `get`, `timeline`,
-  `relationships`, `upsert`, `link` (edge, attendee, mention), `inventory`
-  (read-only migration manifest), `prep`. `upsert` and `link` take `status` and
-  `provenance`; anything an agent infers goes in as `suggested`.
+  `relationships`, `teams`, `inventory` (read-only migration manifest, desktop),
+  and the writes `upsert`, `link` (edge with optional `endedAt`/`label`,
+  attendee, mention), `archive` (`remove: true` restores), `merge` (fold
+  `otherPersonId` into `personId`), `team_upsert` (`teamInfo`: kind, details,
+  lead, existing parent team, members with a role, `removeMembers`, rename,
+  `mergeInto`) and `team_delete`. Writes take `status` and `provenance`;
+  anything an agent infers goes in as `suggested`, and an inferred team write
+  only fills gaps. A `parentTeam` that doesn't exist is an error (a typo must
+  not make a team).
 - `ensure_note` / `update_notes` gain `attendees` + `date`; `create_task` /
   `update_tasks` gain `owner`.
 - Approval: `upsert`/`link` are writes (`tool-risk.ts`,
@@ -696,6 +813,35 @@ can start against fixtures).
   default, so the shortcut table must say so), screenshots.
 - Flag removed (or defaulted on) in the launch release.
 
+## Later
+
+Not built yet; picked from the 3.3.0 data-model review (gaps H, I, K) and
+what the teams work left.
+
+- **Employment facts:** start date or tenure, level, and whether someone left
+  the company (`employment_status`, `left_at`), distinct from `archived_at`
+  (hidden from the list). Start with `left_at` and an `org` field.
+- **Organisations for outside people:** an `org` (company) on people, for
+  stakeholders, recruiters and candidates outside your company.
+- **A team's meetings:** `meetings.team_id` for team rituals (standups,
+  retros), so a team page can show its last and next meeting.
+- **1:1 topics and goals** as data rather than only notes and the generated
+  prep brief (`shared/people/oneonone.ts`).
+- **Edge history:** `started_at` on `person_edges`, or one row per stint, so a
+  second stint as someone's manager doesn't replace the first.
+- **A departed lead:** a team whose lead was deleted or archived keeps the id
+  and reads as having no lead; say "lead left" on the team page instead.
+- **Private teams:** `agent_private` on `teams`, so a sensitive description
+  ("reorg candidates") stays out of agent reads like a private persona note.
+- **Mobile Teams screens:** mobile reads and writes teams only through the
+  chat tool; its People list also doesn't pin "You" first yet
+  (`groupPeopleBy`).
+- **Move `buildOrgChart`/`deriveLinks` to `shared/`** so the agent and mobile
+  can answer "who is X's manager" with the org chart's own rule (matrix
+  reporting, cycles) rather than reading edges.
+- **Late `people.team` edits from older peers:** re-run adoption after sync
+  for people who still have no memberships, if older builds linger.
+
 ## Risks
 
 | Risk | Mitigation |
@@ -706,6 +852,8 @@ can start against fixtures).
 | Duplicate meetings (calendar + note) | Suggested merge on same day + attendee overlap |
 | Big-bang launch hides problems until late | Flagged merges to `main`; daily use on Gerard's builds; pilot corpus as gate |
 | Tool budget creep | One `people` tool; measured before merge |
+| Team rename races (whole-row last-writer-wins) | Fixed team ids and membership rows: a rename is one row, members never rewritten |
+| Duplicate teams or people | Deterministic ids where the key is natural; explicit merge for the rest, never hidden |
 | Profile fetch slows the page | Cache first, background refresh |
 | Surveillance feel | Prep describes topics, never activity counts; no metrics on the person page |
 | Persona exposure to agents | Per-person private flag, enforced in one shared read path |
