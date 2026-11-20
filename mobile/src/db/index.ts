@@ -144,6 +144,7 @@ function openSource(workspaceId: string): SourceHandle {
  */
 export function setActiveSource(workspaceId: string): { db: SQLite.SQLiteDatabase; engine: SyncEngine } {
   const handle = openSource(workspaceId);
+  _forgotten.delete(workspaceId);
   _activeWorkspaceId = workspaceId;
   metaSet("active_source", workspaceId);
   return { db: handle.db, engine: handle.engine };
@@ -186,20 +187,55 @@ export function getEngine(): SyncEngine {
 export function resetActiveSource(): void {
   const ws = metaGet("active_source");
   if (ws) {
-    const name = sourceDbName(ws);
-    // Open-then-close guarantees the file exists, so any delete error below is
-    // a real failure rather than "never created".
-    try {
-      (_sources.get(ws)?.db ?? SQLite.openDatabaseSync(name)).closeSync();
-    } catch {
-      /* already closed, or won't open: delete it anyway */
-    }
-    _sources.delete(ws);
-    SQLite.deleteDatabaseSync(name);
+    deleteSourceDb(ws);
     metaSet(`oplog_recover.${ws}`, "1");
   }
   metaDb().runSync("DELETE FROM meta WHERE key = 'active_source'");
   _activeWorkspaceId = null;
+}
+
+/** Close (if open) and delete a source's local database file. Throws if the file can't be deleted. */
+function deleteSourceDb(ws: string): void {
+  const name = sourceDbName(ws);
+  // Open-then-close guarantees the file exists, so any delete error below is
+  // a real failure rather than "never created".
+  try {
+    (_sources.get(ws)?.db ?? SQLite.openDatabaseSync(name)).closeSync();
+  } catch {
+    /* already closed, or won't open: delete it anyway */
+  }
+  _sources.delete(ws);
+  SQLite.deleteDatabaseSync(name);
+}
+
+/** Sources removed from this phone this session; stops an in-flight sync re-publishing their oplog. */
+const _forgotten = new Set<string>();
+
+/** True when `ws` was removed from this phone and not re-opened since. */
+export function isSourceForgotten(ws: string): boolean {
+  return _forgotten.has(ws);
+}
+
+/**
+ * Remove a workspace from this phone: delete its local database and, if it was
+ * the active source, clear the selection. Unlike `resetActiveSource` this is a
+ * deliberate removal, so no `oplog_recover` flag is set (the caller also deletes
+ * this phone's published oplog). Reconnecting later downloads it afresh.
+ * Throws (leaving everything in place) when the file can't be deleted.
+ */
+export function forgetSource(ws: string): void {
+  _forgotten.add(ws); // set first: any sync that wakes mid-removal must not write
+  try {
+    deleteSourceDb(ws);
+  } catch (e) {
+    _forgotten.delete(ws);
+    throw e;
+  }
+  metaDb().runSync("DELETE FROM meta WHERE key = ?", `oplog_recover.${ws}`);
+  if (metaGet("active_source") === ws) {
+    metaDb().runSync("DELETE FROM meta WHERE key = 'active_source'");
+  }
+  if (_activeWorkspaceId === ws) _activeWorkspaceId = null;
 }
 
 /** Remove every meta key starting with `prefix` (LIKE wildcards in it are escaped). */

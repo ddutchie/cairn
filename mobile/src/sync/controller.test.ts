@@ -9,6 +9,11 @@ const h = vi.hoisted(() => ({
   backgroundTime: 0,
   released: 0,
   events: [] as string[],
+  removeFiles: vi.fn(async () => 2),
+  forget: vi.fn(),
+  icloud: true,
+  active: "ws1",
+  setActive: vi.fn(),
 }));
 
 vi.mock("react-native", () => ({
@@ -28,7 +33,15 @@ vi.mock("./write-signal", () => ({
     return () => { h.writeListener = null; };
   },
 }));
-vi.mock("@/db", () => ({ setActiveSource: () => {}, getActiveSource: () => "ws1" }));
+vi.mock("@/db", () => ({
+  setActiveSource: (ws: string) => { h.active = ws; h.setActive(ws); },
+  getActiveSource: () => h.active,
+  getDeviceId: () => "mobile_me",
+  forgetSource: (ws: string) => h.forget(ws),
+}));
+vi.mock("@/notes/note-draft", () => ({ clearWorkspaceDrafts: () => {} }));
+vi.mock("./folder", () => ({ getSyncFolderPath: async () => "folder", iCloudAvailable: async () => h.icloud }));
+vi.mock("./fs-transport", () => ({ removeWorkspaceFromFolder: h.removeFiles }));
 vi.mock("@modules/background-time", () => {
   const holdBackgroundTime = () => {
     h.backgroundTime++;
@@ -55,7 +68,7 @@ vi.mock("@modules/background-time", () => {
 });
 vi.mock("@/dev/demo-seed", () => ({ isDemoSource: () => false, openDemoWorkspace: () => {} }));
 
-const { startAutoSync, stopAutoSync } = await import("./controller");
+const { startAutoSync, stopAutoSync, removeSource, onActiveSourceRemoved } = await import("./controller");
 
 const OK = { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: true };
 
@@ -134,5 +147,50 @@ describe("sync controller", () => {
     h.appStateListener?.("background");
     await vi.advanceTimersByTimeAsync(0);
     expect(h.syncNow).not.toHaveBeenCalled();
+  });
+});
+
+describe("removeSource", () => {
+  beforeEach(() => {
+    h.removeFiles.mockClear();
+    h.forget.mockClear();
+    h.setActive.mockClear();
+    h.icloud = true;
+    h.active = "ws1";
+  });
+
+  it("deletes the shared oplog files, then the local copy", async () => {
+    const res = await removeSource("ws2");
+    expect(h.removeFiles).toHaveBeenCalledWith("folder", "mobile_me", "ws2");
+    expect(h.forget).toHaveBeenCalledWith("ws2");
+    expect(res.deletedFromFolder).toBe(2);
+    expect(h.setActive).not.toHaveBeenCalled(); // not the active one: nothing to switch
+  });
+
+  it("switches to the fallback when the active workspace is removed", async () => {
+    await removeSource("ws1", "ws2");
+    expect(h.setActive).toHaveBeenCalledWith("ws2");
+  });
+
+  it("returns to onboarding when the active workspace is removed and nothing is left", async () => {
+    const cleared = vi.fn();
+    const off = onActiveSourceRemoved(cleared);
+    await removeSource("ws1");
+    off();
+    expect(cleared).toHaveBeenCalledTimes(1);
+  });
+
+  it("still removes the local copy when iCloud is unreachable", async () => {
+    h.icloud = false;
+    const res = await removeSource("ws2");
+    expect(h.removeFiles).not.toHaveBeenCalled();
+    expect(h.forget).toHaveBeenCalledWith("ws2");
+    expect(res.deletedFromFolder).toBeNull();
+  });
+
+  it("keeps the local copy if the shared files can't be deleted", async () => {
+    h.removeFiles.mockRejectedValueOnce(new Error("iCloud busy"));
+    await expect(removeSource("ws2")).rejects.toThrow("iCloud busy");
+    expect(h.forget).not.toHaveBeenCalled();
   });
 });

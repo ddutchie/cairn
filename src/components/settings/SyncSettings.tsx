@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { FolderSync, FolderOpen, AlertCircle, CheckCircle2 } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { SettingsGroup, SettingsRow } from "./shared";
 import { openConflictModal } from "@/lib/sync-client";
 import { SyncActivityPanel } from "./SyncActivityPanel";
@@ -45,6 +46,20 @@ export function SyncSettings() {
     await syncClient.clearFolder();
     setFolder(null);
     setLast(null);
+  };
+
+  // Disconnect AND delete this workspace's oplog + blobs from the shared folder.
+  // Phones are told via a marker; reconnecting the same folder re-syncs it.
+  const onRemove = async () => {
+    if (!hasElectron("sync")) return;
+    setBusy(true);
+    try {
+      await syncClient.removeFromFolder();
+      setFolder(null);
+      setLast(null);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onSyncNow = async () => {
@@ -120,6 +135,21 @@ export function SyncSettings() {
               Review {last.conflictCopies} {last.conflictCopies === 1 ? "conflict" : "conflicts"}…
             </button>
           )}
+
+          <hr className="border-[var(--border)] opacity-30" />
+
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-xs font-semibold text-[var(--text-primary)]">Disconnect and remove from folder</div>
+              <p className="text-xs text-[var(--text-tertiary)] mt-0.5 max-w-sm">
+                Deletes this workspace&apos;s sync files (change log and images) from the folder and tells your phone it
+                was removed. Your workspace here is untouched. Choose the same folder again to re-sync it.
+              </p>
+            </div>
+            <ConfirmButton variant="ghost" size="sm" onConfirm={onRemove} disabled={busy} confirmLabel="Remove files?" showCancel>
+              Remove…
+            </ConfirmButton>
+          </div>
 
           <hr className="border-[var(--border)] opacity-30" />
 

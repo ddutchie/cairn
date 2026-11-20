@@ -16,12 +16,14 @@ import {
   readDir,
   exist,
   startDownloadingUbiquitousItem,
+  unlink,
   PathUtils,
 } from "react-native-cloud-store";
 import * as Crypto from "expo-crypto";
 import type { OplogEntry } from "@cairn/shared/sync/engine";
 import { parseWorkspaceIdFromOplogName } from "@cairn/shared/sync/oplog-name";
 import { isOplogEntry } from "@cairn/shared/sync/oplog-guard";
+import { parseRemovalMarkerName, removalMarkerName, serializeRemovalMarker } from "@cairn/shared/sync/removal-marker";
 
 /** This device's oplog file for a given source workspace. */
 function oplogFileName(deviceId: string, workspaceId: string): string {
@@ -103,7 +105,8 @@ function workspaceNameFromEntries(entries: OplogEntry[], workspaceId: string): s
  * oplog filenames and collecting the distinct <workspaceId> suffixes, resolving
  * each workspace's display name from its oplog contents when available. Excludes
  * files this device itself wrote (its own writeback), so the picker shows the
- * desktop-published workspaces.
+ * desktop-published workspaces. Workspaces the desktop removed (marker file) are
+ * left out.
  */
 export async function listSources(folder: string, selfDeviceId: string): Promise<SyncSource[]> {
   let entries: string[] = [];
@@ -113,6 +116,12 @@ export async function listSources(folder: string, selfDeviceId: string): Promise
     return [];
   }
   const selfPrefix = `oplog-${selfDeviceId}-`;
+  // Workspaces the desktop removed from the folder: not offered for connecting.
+  const removed = new Set<string>();
+  for (const entryPath of entries) {
+    const id = parseRemovalMarkerName(baseName(entryPath));
+    if (id) removed.add(id);
+  }
   // workspaceId -> the raw dir entries (files) that belong to it.
   const filesByWorkspace = new Map<string, { name: string; raw: string }[]>();
   for (const entryPath of entries) {
@@ -122,7 +131,7 @@ export async function listSources(folder: string, selfDeviceId: string): Promise
     // the "-" delimiter rule (deviceId has no "-", workspaceId may) stays in
     // one place; legacy unsuffixed files return null and are skipped.
     const workspaceId = parseWorkspaceIdFromOplogName(name);
-    if (!workspaceId) continue;
+    if (!workspaceId || removed.has(workspaceId)) continue;
     const list = filesByWorkspace.get(workspaceId) ?? [];
     list.push({ name, raw: entryPath });
     filesByWorkspace.set(workspaceId, list);
@@ -142,6 +151,51 @@ export async function listSources(folder: string, selfDeviceId: string): Promise
   }
   out.sort((a, b) => (a.name ?? a.workspaceId).localeCompare(b.name ?? b.workspaceId));
   return out;
+}
+
+/**
+ * True when the desktop removed `workspaceId` from the shared folder (it left a
+ * `removed-<workspaceId>.json` marker). A phone that sees this stops publishing
+ * its own oplog, which would otherwise resurrect the workspace for every device.
+ */
+export async function hasRemovalMarker(folder: string, workspaceId: string): Promise<boolean> {
+  const marker = PathUtils.join(folder, removalMarkerName(workspaceId));
+  if (await exist(marker)) return true;
+  // An iCloud placeholder shows up as ".<name>.icloud" until it is downloaded.
+  try {
+    const entries = await readDir(folder);
+    return entries.some((e) => parseRemovalMarkerName(baseName(e)) === workspaceId);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remove a workspace from the shared folder: delete EVERY device's oplog for it
+ * (this phone's and the desktop's) and leave a removal marker so other phones
+ * stop re-publishing it. Nothing is lost for a device that still holds the
+ * workspace: a desktop that is still connected rewrites its oplog on its next
+ * tick (and clears the marker), which brings the workspace back on the phone.
+ * Resolves with how many oplog files were deleted; throws if one can't be.
+ */
+export async function removeWorkspaceFromFolder(folder: string, deviceId: string, workspaceId: string): Promise<number> {
+  // Marker first: if we're interrupted halfway, phones still see "removed".
+  await writeFile(
+    PathUtils.join(folder, removalMarkerName(workspaceId)),
+    serializeRemovalMarker({ workspaceId, removedAt: new Date().toISOString(), deviceId }),
+    { override: true },
+  );
+  let deleted = 0;
+  for (const entryPath of await readDir(folder)) {
+    if (!isOplogForWorkspace(baseName(entryPath), workspaceId)) continue;
+    // Delete by the raw entry name: an undownloaded file is a ".<name>.icloud" placeholder.
+    const rawName = entryPath.split("/").filter(Boolean).pop() ?? entryPath;
+    const path = PathUtils.join(folder, rawName);
+    lastWrittenDigest.delete(PathUtils.join(folder, baseName(entryPath)));
+    await unlink(path);
+    deleted++;
+  }
+  return deleted;
 }
 
 /** Digest of the last oplog text this process wrote, per file path. */

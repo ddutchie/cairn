@@ -13,7 +13,10 @@ import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import * as q from "../db/queries";
-import { getDesktopEngine, resetDesktopEngine, restoreDeletedNote, repairNoteFile } from "./desktop-sync";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { getDesktopEngine, resetDesktopEngine, restoreDeletedNote, repairNoteFile, setSyncFolder, getSyncFolder, syncDesktop, removeWorkspaceFromSyncFolder } from "./desktop-sync";
 import type { ConflictResolveDeps } from "./desktop-sync";
 
 /**
@@ -139,5 +142,44 @@ describe("restore → file projection", () => {
       reason: "deleted",
     });
     expect(state.calls).toEqual([]);
+  });
+});
+
+describe("remove workspace from sync folder", () => {
+  it("deletes this desktop's oplog, leaves a marker, disconnects — and reconnecting republishes and clears it", async () => {
+    const db = new BetterSqlite3(":memory:");
+    applySchema(db);
+    resetDesktopEngine();
+    q.createWorkspace(db, { id: "ws1", name: "WS" });
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-remove-"));
+    try {
+      setSyncFolder(db, folder);
+      await syncDesktop(db);
+      const oplog = fs.readdirSync(folder).filter((f) => f.startsWith("oplog-") && f.endsWith("-ws1.ndjson"));
+      expect(oplog).toHaveLength(1);
+
+      expect(await removeWorkspaceFromSyncFolder(db)).toEqual({ removed: true });
+      expect(fs.readdirSync(folder)).toEqual(["removed-ws1.json"]);
+      expect(getSyncFolder(db)).toBeNull();
+      // Disconnected: a tick does not touch the folder.
+      await syncDesktop(db);
+      expect(fs.readdirSync(folder)).toEqual(["removed-ws1.json"]);
+
+      // Same folder again: workspace is republished and the marker cleared.
+      setSyncFolder(db, folder);
+      await syncDesktop(db);
+      expect(fs.readdirSync(folder)).toEqual(oplog);
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+      db.close();
+    }
+  });
+
+  it("only disconnects when no folder is connected", async () => {
+    const db = new BetterSqlite3(":memory:");
+    applySchema(db);
+    resetDesktopEngine();
+    expect(await removeWorkspaceFromSyncFolder(db)).toEqual({ removed: false });
+    db.close();
   });
 });

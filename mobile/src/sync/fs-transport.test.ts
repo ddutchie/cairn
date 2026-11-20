@@ -12,6 +12,9 @@ vi.mock("react-native-cloud-store", () => ({
   readDir: async () => [...h.files.keys()],
   exist: async (path: string) => h.files.has(path),
   startDownloadingUbiquitousItem: async () => {},
+  unlink: async (path: string) => {
+    h.files.delete(path);
+  },
   PathUtils: {
     join: (...parts: string[]) => parts.join("/"),
     iCloudRemoveDotExt: (n: string) => n,
@@ -23,7 +26,7 @@ vi.mock("expo-crypto", () => ({
   digestStringAsync: async (_: string, text: string) => `${text.length}:${text}`,
 }));
 
-const { writeOwnOplog, readOwnOplog } = await import("./fs-transport");
+const { writeOwnOplog, readOwnOplog, removeWorkspaceFromFolder, hasRemovalMarker, listSources } = await import("./fs-transport");
 
 const entry = (id: string) =>
   ({ id, entity: "notes", entity_id: id, op: "put", payload: {}, hlc: "1", origin: "d" }) as never;
@@ -61,5 +64,35 @@ describe("readOwnOplog", () => {
       ({ hlc: `000000000001:000${counter}:dev4`, origin: "dev4", entity: "notes", entity_id: id, op: "put", payload: {} }) as never;
     await writeOwnOplog("f", "dev4", "ws", [own("a", 1), own("b", 2)]);
     expect((await readOwnOplog("f", "dev4", "ws")).map((e) => e.entity_id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("removeWorkspaceFromFolder", () => {
+  it("deletes every device's oplog for the workspace, writes a marker, and leaves other workspaces alone", async () => {
+    h.files.set("f/oplog-desktop_1-ws-a.ndjson", "x");
+    h.files.set("f/oplog-mobile_2-ws-a.ndjson", "x");
+    h.files.set("f/oplog-desktop_1-ws-b.ndjson", "x");
+    expect(await removeWorkspaceFromFolder("f", "mobile_2", "ws-a")).toBe(2);
+    expect([...h.files.keys()].sort()).toEqual(["f/oplog-desktop_1-ws-b.ndjson", "f/removed-ws-a.json"]);
+    expect(await hasRemovalMarker("f", "ws-a")).toBe(true);
+  });
+  it("lets this device publish again afterwards", async () => {
+    await writeOwnOplog("f", "mobile_3", "ws-c", [entry("a")]);
+    await removeWorkspaceFromFolder("f", "mobile_3", "ws-c");
+    expect(await writeOwnOplog("f", "mobile_3", "ws-c", [entry("a")])).toBe(true);
+  });
+});
+
+describe("removal markers", () => {
+  it("detects a marker for the workspace only", async () => {
+    h.files.set("f/removed-ws-a.json", "{}");
+    expect(await hasRemovalMarker("f", "ws-a")).toBe(true);
+    expect(await hasRemovalMarker("f", "ws-b")).toBe(false);
+  });
+  it("listSources skips a workspace the desktop removed", async () => {
+    h.files.set("f/oplog-desktop_1-ws-a.ndjson", "");
+    h.files.set("f/oplog-desktop_1-ws-b.ndjson", "");
+    h.files.set("f/removed-ws-a.json", "{}");
+    expect((await listSources("f", "me")).map((s) => s.workspaceId)).toEqual(["ws-b"]);
   });
 });
