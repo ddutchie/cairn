@@ -17,6 +17,7 @@ import {
   type ThemeToken,
 } from "../../../shared/ui/graph";
 import type { LayoutLink } from "./force-layout";
+import { isOnScreen } from "./focus-pan";
 import {
   createForceLayoutClient,
   rememberLayout,
@@ -33,6 +34,8 @@ export interface EdgeLook {
   dash?: boolean;
   /** Stroke width in world px (default 1). */
   width?: number;
+  /** Draw an arrowhead at the target end (source acts on target: "manages", "mentors"). */
+  directed?: boolean;
 }
 
 /** How one node is drawn, overriding the style its type gets. */
@@ -153,6 +156,8 @@ type SceneCache = {
   themeSig: string;
   edges: { stroke: string; width: number; dash: boolean; path: Path2D }[];
   fills: { fill: string; path: Path2D }[];
+  /** Arrowheads of directed edges: tip position (world), heading and colour. Drawn at a fixed screen size. */
+  arrows: { x: number; y: number; angle: number; fill: string }[];
 };
 
 function buildScene(
@@ -167,6 +172,7 @@ function buildScene(
 ): SceneCache {
   // One path per distinct stroke style.
   const edgeBatches = new Map<string, { stroke: string; width: number; dash: boolean; path: Path2D }>();
+  const arrows: SceneCache["arrows"] = [];
   for (const l of links) {
     const s = l.source as SimNode, tg = l.target as SimNode;
     if (s.x == null || s.y == null || tg.x == null || tg.y == null) continue;
@@ -185,6 +191,14 @@ function buildScene(
     if (!b) edgeBatches.set(key, (b = { stroke, width: w, dash: st.dash, path: new Path2D() }));
     b.path.moveTo(s.x, s.y);
     b.path.lineTo(tg.x, tg.y);
+    if (l.look?.directed) {
+      // The head stops at the target node's rim, not its centre.
+      const dx = tg.x - s.x, dy = tg.y - s.y, len = Math.hypot(dx, dy);
+      if (len > 0) {
+        const rim = radiusOf(tg) + 1.5;
+        arrows.push({ x: tg.x - (dx / len) * rim, y: tg.y - (dy / len) * rim, angle: Math.atan2(dy, dx), fill: stroke });
+      }
+    }
   }
 
   // Plain circles batched by fill; the selected node is drawn separately
@@ -209,6 +223,7 @@ function buildScene(
     themeSig: meta.themeSig,
     edges: [...edgeBatches.values()],
     fills: [...fillBatches].map(([fill, path]) => ({ fill, path })),
+    arrows,
   };
 }
 
@@ -419,7 +434,7 @@ function ForceGraphCanvasImpl({
   const edgeFingerprint = useMemo(() => visibleEdges
     .map((e, i) => {
       const { look, text } = edgeLooks[i];
-      return `${e.source}-${e.target}:${e.type}:${e.weight ?? 1}${look ? `:${look.token}/${look.opacity}/${look.dash ? 1 : 0}/${look.width ?? ""}` : ""}${text ? `:${text}` : ""}`;
+      return `${e.source}-${e.target}:${e.type}:${e.weight ?? 1}${look ? `:${look.token}/${look.opacity}/${look.dash ? 1 : 0}/${look.width ?? ""}/${look.directed ? 1 : 0}` : ""}${text ? `:${text}` : ""}`;
     })
     .join(","), [visibleEdges, edgeLooks]);
   const looksRef = useRef({ nodeLooks, edgeLooks });
@@ -779,6 +794,22 @@ function ForceGraphCanvasImpl({
     }
     ctx.globalAlpha = 1;
     ctx.setLineDash([]);
+    // Arrowheads keep their screen size at any zoom: 7px long, 5px wide.
+    for (const a of scene.arrows) {
+      if (!inView(a.x, a.y)) continue;
+      ctx.save();
+      ctx.translate(a.x, a.y);
+      ctx.rotate(a.angle);
+      ctx.scale(1 / t.k, 1 / t.k);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(-7, -2.6);
+      ctx.lineTo(-7, 2.6);
+      ctx.closePath();
+      ctx.fillStyle = a.fill;
+      ctx.fill();
+      ctx.restore();
+    }
     for (const f of scene.fills) {
       ctx.fillStyle = f.fill;
       ctx.fill(f.path);
@@ -878,21 +909,22 @@ function ForceGraphCanvasImpl({
   }, [dims]);
 
   // A keyboard user moving through the list beside the canvas: if the focused node is
-  // off-screen (or under the edge), pan to it so the highlight is actually visible.
+  // off-screen (or under the edge), pan to it so the highlight is actually visible. This
+  // includes compact graphs: the fit stops shrinking at 0.2, so a large one can overflow.
   useEffect(() => {
-    if (!focusNodeId || compact) return;
+    if (!focusNodeId) return;
     const canvas = canvasRef.current, zoom = zoomRef.current;
+    if (!canvas || !zoom) return;
+    const selection = d3.select<HTMLCanvasElement, unknown>(canvas);
+    // A pan to the previous person may still be running; stop it, then judge from where the view is now.
+    selection.interrupt();
     const node = nodesRef.current.find((n) => n.id === focusNodeId);
-    if (!canvas || !zoom || node?.x == null || node.y == null) return;
-    const t = transformRef.current;
+    if (node?.x == null || node.y == null) return;
     const { width, height } = dimsRef.current;
-    const sx = node.x * t.k + t.x, sy = node.y * t.k + t.y;
-    const margin = 48;
-    if (sx >= margin && sx <= width - margin && sy >= margin && sy <= height - margin) return;
+    if (isOnScreen(transformRef.current, node.x, node.y, width, height)) return;
     userInteractedRef.current = true;
-    d3.select<HTMLCanvasElement, unknown>(canvas).transition().duration(300)
-      .call(zoom.translateTo, node.x, node.y);
-  }, [focusNodeId, compact]);
+    selection.transition().duration(300).call(zoom.translateTo, node.x, node.y);
+  }, [focusNodeId]);
 
   // redraw whenever selection / threshold / hull-toggle / label-mode / font scale changes
   useEffect(() => { draw(); }, [selectedNodeId, focusNodeId, semanticThreshold, showHulls, labelMode, draw]);

@@ -65,7 +65,7 @@ export function buildPeopleGraph(
       if (l.kind === "meeting") {
         return { token: LINK_TOKEN.meeting, opacity: 0.55, dash: true, width: 0.8 + Math.log2(l.weight + 1) * 0.7 };
       }
-      return { token: LINK_TOKEN[l.kind], opacity: l.ended ? 0.45 : 0.85, dash: l.ended, width: 1.5 };
+      return { token: LINK_TOKEN[l.kind], opacity: l.ended ? 0.45 : 0.85, dash: l.ended, width: 1.5, directed: l.directed };
     },
     node: (n) => {
       if (n.id === focusId) return { token: "accent", radius: 10, label: true, pin: true };

@@ -34,6 +34,10 @@ describe("buildPeopleGraph", () => {
     const [former, meet, live] = graph.edges.map((e) => styling.edge!(e)!);
     expect(former).toMatchObject({ token: LINK_TOKEN.mentor, dash: true });
     expect(live).toMatchObject({ token: LINK_TOKEN.reporting, dash: false, opacity: 0.85 });
+    expect(live.directed).toBe(false);
+    const directed = buildPeopleGraph(people, [link({ id: "d", kind: "reporting", source: "me", target: "a", directed: true })], null, "ws");
+    expect(directed.styling.edge!(directed.graph.edges[0])!.directed).toBe(true);
+    expect(meet.directed).toBeUndefined();
     expect(meet.dash).toBe(true);
     expect(meet.width).toBeCloseTo(0.8 + Math.log2(4) * 0.7);
     expect(styling.node!(graph.nodes[0])).toMatchObject({ token: "accent", label: true });
