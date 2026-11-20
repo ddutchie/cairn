@@ -40,6 +40,7 @@ import {
 import { peopleClient } from "@/lib/ipc/people";
 import { applicableFields, PROFILE_FIELD_LABEL, type AutofillProposal } from "../../../shared/people/autofill";
 import { ConnectionsGraph } from "./ConnectionsGraph";
+import { PlaceInput } from "./PlaceInput";
 import { NextMeeting, ProfileLine, slackStatusText, usePersonProfile } from "./PersonOneOnOne";
 import type { PersonProfile } from "../../../shared/people/oneonone";
 
@@ -152,21 +153,23 @@ function ProfileInput({ field, personId, value, placeholder, timezone }: { field
   const updatePerson = useCairnStore((s) => s.updatePerson);
   const [error, setError] = useState<string | null>(null);
   const label = { title: "Role", team: "Team", location: "Location", timezone: "Time zone" }[field];
+  const save = (v: string, picked?: string) => {
+    const { value: clean, error: err } = cleanProfileFieldWithPlaces(field, v);
+    setError(err ?? null);
+    if (err) return;
+    // A place that names a zone fills an empty time zone (never replaces one that is set).
+    const zone = field === "location" && !timezone ? picked ?? zoneForPlace(clean) : null;
+    void updatePerson(personId, { [field]: clean ?? null, ...(zone ? { timezone: zone } : {}) });
+  };
+  const suggests = field === "location" || field === "timezone";
   return (
     <>
-      <BlurInput
-        ariaLabel={label}
-        placeholder={placeholder}
-        value={value}
-        onSave={(v) => {
-          const { value: clean, error: err } = cleanProfileFieldWithPlaces(field, v);
-          setError(err ?? null);
-          if (err) return;
-          // A place that names a zone fills an empty time zone (never replaces one that is set).
-          const zone = field === "location" && !timezone ? zoneForPlace(clean) : null;
-          void updatePerson(personId, { [field]: clean ?? null, ...(zone ? { timezone: zone } : {}) });
-        }}
-      />
+      {suggests ? (
+        // Keyed by the saved value, like BlurInput: a save or outside change starts a fresh draft.
+        <PlaceInput key={value} mode={field} ariaLabel={label} placeholder={placeholder} value={value} onCommit={save} />
+      ) : (
+        <BlurInput ariaLabel={label} placeholder={placeholder} value={value} onSave={(v) => save(v)} />
+      )}
       {error && <p role="alert" className="mt-1 text-2xs text-[var(--danger)]">{error}</p>}
     </>
   );

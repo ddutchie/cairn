@@ -12,7 +12,7 @@
  */
 
 import { cityMapping } from "city-timezones";
-import { registerPlaceResolver, type PlaceInfo } from "./place-zone";
+import { registerPlaceResolver, registerPlaceSearch, type PlaceInfo, type PlaceMatch } from "./place-zone";
 import { ZONE_COORDS } from "./zone-coords";
 
 interface Entry {
@@ -26,6 +26,8 @@ interface Entry {
   lat: number;
   lon: number;
   pop: number;
+  /** How the place reads in a suggestion: "San Francisco, California, US". */
+  label: string;
 }
 
 /** Dataset cells are strings, but a few rows carry numbers or nulls. */
@@ -75,6 +77,7 @@ for (const c of cityMapping) {
   const e: Entry = {
     city: fold(str(c.city_ascii) || str(c.city)), province: fold(str(c.province)), iso2: str(c.iso2).toLowerCase(),
     country: fold(str(c.country)), state: str(c.state_ansi).toLowerCase(), zone, lat: Number(c.lat), lon: Number(c.lng), pop: Number(c.pop) || 0,
+    label: [str(c.city), str(c.province) !== str(c.city) ? str(c.province) : "", str(c.iso2)].filter(Boolean).join(", "),
   };
   entries.push(e);
   push(byCity, e.city, e);
@@ -145,4 +148,26 @@ function resolve(place: string): PlaceInfo | null {
   return null;
 }
 
+/** Most populous first, so the first suggestions for "san" are cities people have heard of. */
+const byPopulation = [...entries].sort((a, b) => b.pop - a.pop);
+
+/** "City" or "City, State/Country" prefixes: "san fr", "portland, or", "paris, fr". */
+function search(query: string, limit: number): PlaceMatch[] {
+  const [first, ...rest] = fold(query).split(",").map((p) => p.trim()).filter(Boolean);
+  if (!first) return [];
+  const city = PLACE_ALIAS[first] ?? first;
+  const out: PlaceMatch[] = [];
+  const seen = new Set<string>();
+  for (const e of byPopulation) {
+    if (!e.city.startsWith(city)) continue;
+    if (rest.length && !rest.every((h) => matches(e, h) || e.province.startsWith(h) || e.country.startsWith(h))) continue;
+    if (seen.has(e.label)) continue;
+    seen.add(e.label);
+    out.push({ label: e.label, zone: e.zone, coords: [e.lat, e.lon] });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 registerPlaceResolver(resolve);
+registerPlaceSearch(search);

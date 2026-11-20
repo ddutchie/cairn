@@ -46,3 +46,48 @@ export function cleanProfileFieldWithPlaces(field: ProfileField, raw: unknown): 
   const zone = zoneForPlace(raw);
   return zone ? { value: zone } : { error: `"${raw.trim()}" isn't a time zone. Use an IANA name like Europe/Berlin, or a city.` };
 }
+
+/** A suggestion for a place being typed. */
+export interface PlaceMatch {
+  /** "San Francisco, California, US". */
+  label: string;
+  zone: string;
+  coords: readonly [lat: number, lon: number];
+}
+
+type PlaceSearch = (query: string, limit: number) => PlaceMatch[];
+let search: PlaceSearch | null = null;
+
+/** Called by `place-data.ts`. */
+export function registerPlaceSearch(fn: PlaceSearch | null): void {
+  search = fn;
+}
+
+/** Cities that start with what has been typed, biggest first ("san fr" gives San Francisco). Empty without the city data. */
+export function searchPlaces(query: string, limit = 8): PlaceMatch[] {
+  const q = query.trim();
+  return q.length >= 2 && search ? search(q, limit) : [];
+}
+
+const fold = (s: string) => s.normalize("NFKD").replace(/\p{M}+/gu, "").toLowerCase().replace(/[_/]+/g, " ").replace(/\s+/g, " ").trim();
+let zoneNames: string[] | null = null;
+
+/** IANA zone names matching what has been typed, the last part (the city) first: "los" gives America/Los_Angeles. */
+export function searchZones(query: string, limit = 8): string[] {
+  const q = fold(query);
+  if (q.length < 2) return [];
+  if (!zoneNames) {
+    try {
+      zoneNames = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
+    } catch {
+      zoneNames = [];
+    }
+  }
+  const starts: string[] = [], contains: string[] = [];
+  for (const z of zoneNames) {
+    const full = fold(z), city = fold(z.split("/").pop() ?? z);
+    if (city.startsWith(q) || full.startsWith(q)) starts.push(z);
+    else if (full.includes(q)) contains.push(z);
+  }
+  return [...starts, ...contains].slice(0, limit);
+}

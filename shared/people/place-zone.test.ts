@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import "./place-data";
-import { cleanProfileFieldWithPlaces, placeInfo, zoneForPlace } from "./place-zone";
+import { cleanProfileFieldWithPlaces, placeInfo, searchPlaces, searchZones, zoneForPlace } from "./place-zone";
 import { ZONE_COORDS } from "./zone-coords";
 import { zoneOffsetMinutes } from "./zones";
 
@@ -55,5 +55,23 @@ describe("cleanProfileField with a place as time zone", () => {
     expect(cleanProfileFieldWithPlaces("timezone", "Montreal")).toEqual({ value: "America/Toronto" });
     expect(cleanProfileFieldWithPlaces("timezone", "Europe/Berlin")).toEqual({ value: "Europe/Berlin" });
     expect(cleanProfileFieldWithPlaces("timezone", "Narnia").error).toMatch(/isn't a time zone/);
+  });
+});
+
+describe("suggestions", () => {
+  it("completes a city, biggest first, and narrows with a state or country", () => {
+    const sf = searchPlaces("san fr");
+    expect(sf[0]).toMatchObject({ label: "San Francisco, California, US", zone: "America/Los_Angeles" });
+    expect(searchPlaces("portland, or")[0].label).toBe("Portland, Oregon, US");
+    expect(searchPlaces("sf bay area")[0].zone).toBe("America/Los_Angeles");
+    expect(searchPlaces("montr")[0].zone).toBe("America/Toronto");
+    expect(searchPlaces("s")).toEqual([]); // too short to be useful
+    expect(searchPlaces("zzzz")).toEqual([]);
+  });
+
+  it("completes IANA zone names by their city part first", () => {
+    expect(searchZones("los")[0]).toBe("America/Los_Angeles");
+    expect(searchZones("europe/ber")).toContain("Europe/Berlin");
+    expect(searchZones("x")).toEqual([]);
   });
 });
