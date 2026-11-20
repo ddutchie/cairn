@@ -17,7 +17,7 @@ import {
   type ThemeToken,
 } from "../../../shared/ui/graph";
 import type { LayoutLink } from "./force-layout";
-import { isOnScreen } from "./focus-pan";
+import { planFocusPan } from "./focus-pan";
 import {
   createForceLayoutClient,
   rememberLayout,
@@ -476,6 +476,9 @@ function ForceGraphCanvasImpl({
   }, []);
   useEffect(() => cancelTween, [cancelTween]);
 
+  // Pan to the keyboard-focused node (defined further down; a ref so the layout callbacks can call it).
+  const revealFocusedRef = useRef<(interrupt: boolean) => void>(() => {});
+  const revealTimerRef = useRef(0);
   const finishLayout = useCallback(() => {
     layoutStateRef.current = "settled";
     canvasRef.current?.setAttribute("data-layout", "settled");
@@ -483,6 +486,9 @@ function ForceGraphCanvasImpl({
     if (!userInteractedRef.current) zoomFit(true);
     didInitialFitRef.current = true;
     rememberCurrent();
+    // A focus that landed before the first layout frame had no position to pan to: retry once the fit has landed.
+    window.clearTimeout(revealTimerRef.current);
+    if (propsRef.current.focusNodeId) revealTimerRef.current = window.setTimeout(() => revealFocusedRef.current(false), 450);
   }, [zoomFit, rememberCurrent]);
 
   const startTween = useCallback((gen: number, from: Float32Array, to: Float32Array) => {
@@ -911,20 +917,24 @@ function ForceGraphCanvasImpl({
   // A keyboard user moving through the list beside the canvas: if the focused node is
   // off-screen (or under the edge), pan to it so the highlight is actually visible. This
   // includes compact graphs: the fit stops shrinking at 0.2, so a large one can overflow.
-  useEffect(() => {
-    if (!focusNodeId) return;
+  // Runs on a focus change and again when the layout settles (focus can land before the
+  // first layout frame, when the node has no position yet).
+  const revealFocused = useCallback((interrupt: boolean) => {
+    const id = propsRef.current.focusNodeId;
     const canvas = canvasRef.current, zoom = zoomRef.current;
-    if (!canvas || !zoom) return;
+    if (!id || !canvas || !zoom) return;
     const selection = d3.select<HTMLCanvasElement, unknown>(canvas);
     // A pan to the previous person may still be running; stop it, then judge from where the view is now.
-    selection.interrupt();
-    const node = nodesRef.current.find((n) => n.id === focusNodeId);
-    if (node?.x == null || node.y == null) return;
+    if (interrupt) selection.interrupt();
+    const node = nodesRef.current.find((n) => n.id === id);
     const { width, height } = dimsRef.current;
-    if (isOnScreen(transformRef.current, node.x, node.y, width, height)) return;
+    if (planFocusPan(node, transformRef.current, width, height) !== "pan" || node?.x == null || node.y == null) return;
     userInteractedRef.current = true;
     selection.transition().duration(300).call(zoom.translateTo, node.x, node.y);
-  }, [focusNodeId]);
+  }, []);
+  useEffect(() => { revealFocusedRef.current = revealFocused; }, [revealFocused]);
+  useEffect(() => { revealFocused(true); }, [focusNodeId, revealFocused]);
+  useEffect(() => () => window.clearTimeout(revealTimerRef.current), []);
 
   // redraw whenever selection / threshold / hull-toggle / label-mode / font scale changes
   useEffect(() => { draw(); }, [selectedNodeId, focusNodeId, semanticThreshold, showHulls, labelMode, draw]);

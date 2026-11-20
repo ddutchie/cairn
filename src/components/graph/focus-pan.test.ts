@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isOnScreen, toScreen } from "./focus-pan";
+import { isOnScreen, planFocusPan, toScreen } from "./focus-pan";
 
 const W = 400, H = 240;
 
@@ -27,5 +27,19 @@ describe("isOnScreen", () => {
     expect(isOnScreen(halfway, node.x, node.y, W, H)).toBe(false); // still needs its own pan
     expect(isOnScreen(halfway, 300, 0, W, H)).toBe(false); // x = -200 on screen
     expect(isOnScreen({ k: 1, x: -150, y: 100 }, 300, 0, W, H)).toBe(true);
+  });
+});
+
+describe("planFocusPan", () => {
+  const t = { k: 0.2, x: W / 2, y: H / 2 };
+
+  it("waits for a node the layout has not placed yet, then pans once it has a position (large graph)", () => {
+    // Focus lands before the first layout frame: no position, so wait and retry.
+    expect(planFocusPan({}, t, W, H)).toBe("wait");
+    expect(planFocusPan(undefined, t, W, H)).toBe("wait");
+    // The layout posts a position far outside the fitted view: now it pans.
+    expect(planFocusPan({ x: 3000, y: 0 }, t, W, H)).toBe("pan");
+    // And a node already in view needs nothing.
+    expect(planFocusPan({ x: 10, y: 10 }, t, W, H)).toBe("none");
   });
 });

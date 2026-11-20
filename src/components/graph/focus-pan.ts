@@ -17,3 +17,18 @@ export function isOnScreen(t: ViewTransform, x: number, y: number, width: number
   const s = toScreen(t, x, y);
   return s.x >= margin && s.x <= width - margin && s.y >= margin && s.y <= height - margin;
 }
+
+/**
+ * What to do for a focused node: `wait` while the layout hasn't given it a
+ * position (try again when it has), `none` when it is already on screen,
+ * `pan` when it is not.
+ */
+export function planFocusPan(
+  node: { x?: number | null; y?: number | null } | undefined,
+  t: ViewTransform,
+  width: number,
+  height: number,
+): "wait" | "none" | "pan" {
+  if (!node || node.x == null || node.y == null) return "wait";
+  return isOnScreen(t, node.x, node.y, width, height) ? "none" : "pan";
+}
