@@ -19,7 +19,7 @@
 
 import type Database from "better-sqlite3";
 import { SyncEngine } from "../../shared/sync/engine";
-import { writeOplogFileAsync, readPeerOplogsAsync } from "../../shared/sync/transport";
+import { writeOplogFileAsync, readPeerOplogsAsync, removeWorkspaceFromFolder, clearRemovalMarker } from "../../shared/sync/transport";
 import { inspectConflict, cleanConflictTitle } from "../../shared/sync/conflict";
 import { errMsg } from "../host-shared/errors";
 import { registerAttachments, syncAttachments, type AttachmentSyncResult } from "./attachments";
@@ -240,6 +240,29 @@ export function setSyncFolder(db: Database.Database, folderPath: string): void {
 export function clearSyncFolder(db: Database.Database): void {
   syncFolderCache.set(db, null);
   db.prepare("DELETE FROM sync_state WHERE key = ?").run(FOLDER_KEY);
+}
+
+/**
+ * Disconnect AND take this workspace out of the shared folder: deletes this
+ * desktop's oplog + attachment blobs for it and leaves a removal marker so
+ * phones stop publishing it and offer to delete their copy. Reconnecting the
+ * same folder republishes everything and clears the marker, so it re-syncs.
+ * The local workspace data is untouched. Returns whether anything was removed.
+ */
+export function removeWorkspaceFromSyncFolder(db: Database.Database): Promise<{ removed: boolean }> {
+  return withFolderLock(() => removeWorkspaceFromSyncFolderLocked(db));
+}
+
+async function removeWorkspaceFromSyncFolderLocked(db: Database.Database): Promise<{ removed: boolean }> {
+  const folder = getSyncFolder(db);
+  const workspaceId = getSourceWorkspaceId(db);
+  let removed = false;
+  if (folder && workspaceId) {
+    await removeWorkspaceFromFolder(folder, getDesktopEngine(db).deviceId, workspaceId);
+    removed = true;
+  }
+  clearSyncFolder(db);
+  return { removed };
 }
 
 // ── conflict copies (surfaced for manual resolution) ────────────────────────
@@ -494,7 +517,25 @@ export function drainDesktop(db: Database.Database): number {
  * peer ops so the desktop can re-emit the .md file (dual-write parity). Called
  * AFTER reconcile so the DB is already authoritative.
  */
-export async function syncDesktop(db: Database.Database, projectNote?: NoteFileProjector): Promise<DesktopSyncResult> {
+/**
+ * Sync rounds and workspace removal all touch the same shared folder across
+ * awaits, so they run one at a time: a removal can't land in the middle of a
+ * round (which would clear its marker and publish the oplog straight back), and
+ * a round queued behind a removal sees the folder already disconnected.
+ * Covers every caller — the periodic loop, `sync:now` and the removal handler.
+ */
+let _folderLock: Promise<unknown> = Promise.resolve();
+function withFolderLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = _folderLock.then(fn);
+  _folderLock = run.catch(() => {});
+  return run;
+}
+
+export function syncDesktop(db: Database.Database, projectNote?: NoteFileProjector): Promise<DesktopSyncResult> {
+  return withFolderLock(() => syncDesktopLocked(db, projectNote));
+}
+
+async function syncDesktopLocked(db: Database.Database, projectNote?: NoteFileProjector): Promise<DesktopSyncResult> {
   const folder = getSyncFolder(db);
   if (!folder) {
     updateStatus(db, { connected: false, state: "disabled" });
@@ -522,6 +563,10 @@ export async function syncDesktop(db: Database.Database, projectNote?: NoteFileP
     }
     // Stage any pending local writes.
     const drained = engine.drainPending();
+    // We are publishing this workspace, so it is no longer "removed" (a previous
+    // disconnect-and-remove, or a phone deleting it). Clearing the marker lets
+    // phones resume and re-sync it. Best effort — a marker we can't delete is retried next tick.
+    if (workspaceId) await clearRemovalMarker(folder, workspaceId).catch(() => {});
     // Publish our full oplog. Folder I/O is async so a slow/network-backed folder
     // (iCloud/Dropbox) doesn't block the Electron main loop.
     await writeOplogFileAsync(folder, engine.deviceId, engine.exportOplog(), workspaceId);

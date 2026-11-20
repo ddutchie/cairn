@@ -22,7 +22,10 @@ import { AppState, type AppStateStatus } from "react-native";
 import { syncNow, pendingCount, type SyncResult } from "./sync";
 import { conflictCount } from "@/db/queries";
 import { onLocalWrite } from "./write-signal";
-import { setActiveSource, getActiveSource } from "@/db";
+import { setActiveSource, getActiveSource, getDeviceId, forgetSource, isSourceForgotten } from "@/db";
+import { clearWorkspaceDrafts } from "@/notes/note-draft";
+import { getSyncFolderPath, iCloudAvailable } from "./folder";
+import { removeWorkspaceFromFolder } from "./fs-transport";
 import { isDemoSource, openDemoWorkspace } from "@/dev/demo-seed";
 
 const INTERVAL_MS = 25_000; // light periodic sync while foregrounded
@@ -107,6 +110,61 @@ export function switchSource(workspaceId: string): void {
   // Screens re-query their (now source-scoped) data.
   for (const l of dataListeners) l();
   void requestSync("source-switch");
+}
+
+/** Emitted when the active workspace was removed and no other one took its place (show onboarding). */
+type ActiveRemovedListener = () => void;
+const removedListeners = new Set<ActiveRemovedListener>();
+export function onActiveSourceRemoved(fn: ActiveRemovedListener): () => void {
+  removedListeners.add(fn);
+  return () => removedListeners.delete(fn);
+}
+
+export interface RemoveSourceResult {
+  /** Oplog files deleted from the shared folder; null when iCloud wasn't reachable. */
+  deletedFromFolder: number | null;
+}
+
+/**
+ * Remove a workspace: delete every device's oplog for it from the shared
+ * folder (+ leave a removal marker) and delete this phone's local copy. A
+ * desktop that is still connected simply republishes on its next sync, which
+ * brings the workspace back — so this is also how a stuck one is "re-synced".
+ *
+ * `fallback` is the workspace to switch to when the active one is removed;
+ * without one the app returns to onboarding. When iCloud isn't reachable the
+ * local copy is still removed (the shared files are cleaned up by removing it
+ * again later, or by the desktop).
+ */
+export function removeSource(workspaceId: string, fallback?: string): Promise<RemoveSourceResult> {
+  // One removal at a time: overlapping ones could switch to a workspace another
+  // removal has already deleted.
+  const run = removalQueue.then(() => removeSourceNow(workspaceId, fallback));
+  removalQueue = run.catch(() => {});
+  return run;
+}
+let removalQueue: Promise<unknown> = Promise.resolve();
+
+async function removeSourceNow(workspaceId: string, fallback?: string): Promise<RemoveSourceResult> {
+  let deletedFromFolder: number | null = null;
+  if (await iCloudAvailable()) {
+    const folder = await getSyncFolderPath();
+    if (folder) deletedFromFolder = await removeWorkspaceFromFolder(folder, getDeviceId(), workspaceId);
+  }
+  const wasActive = getActiveSource() === workspaceId;
+  forgetSource(workspaceId);
+  clearWorkspaceDrafts(workspaceId);
+  if (wasActive) {
+    // The fallback was picked before the folder work; only use it if it survived.
+    if (fallback && !isSourceForgotten(fallback)) switchSource(fallback);
+    else {
+      refreshCounts();
+      snapshot = { ...snapshot, state: "idle", pending: 0, conflicts: 0, lastResult: null };
+      emit();
+      for (const l of removedListeners) l();
+    }
+  }
+  return { deletedFromFolder };
 }
 
 /**

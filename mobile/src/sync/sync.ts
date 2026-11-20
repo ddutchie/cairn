@@ -7,9 +7,9 @@
  * Async because iCloud I/O is async.
  */
 
-import { getDb, getEngine, getActiveSource, getMeta, setMeta } from "@/db";
+import { getDb, getEngine, getActiveSource, getMeta, setMeta, isSourceForgotten, getSourceDb } from "@/db";
 import { getSyncFolderPath, iCloudAvailable } from "./folder";
-import { writeOwnOplog, readSourceOplog, readOwnOplog } from "./fs-transport";
+import { writeOwnOplog, readSourceOplog, readOwnOplog, hasRemovalMarker } from "./fs-transport";
 import { requestMissingBlobs } from "./blobs";
 import { isDemoSource } from "@/dev/demo-seed";
 
@@ -26,6 +26,8 @@ export interface SyncResult {
   conflictCopies: number;
   connected: boolean;
   reason?: string; // when connected=false
+  /** The workspace was removed from the shared folder (desktop or another phone); we stopped publishing. */
+  removedFromFolder?: boolean;
 }
 
 /** Max time to wait on any single iCloud I/O call before treating it as stalled. */
@@ -69,6 +71,20 @@ export async function syncNow(): Promise<SyncResult> {
   }
 
   try {
+    // 0. A removal marker means the workspace was taken out of the shared folder.
+    // Publishing our oplog now would resurrect it for every other device, so stop
+    // until the user removes it here or the desktop reconnects (which clears the
+    // marker and republishes). If the check itself fails or times out we do NOT
+    // publish: the outer catch reports the sync as disconnected and the next
+    // cycle retries.
+    const removed = await withTimeout(hasRemovalMarker(folder, workspaceId), ICLOUD_IO_TIMEOUT_MS, "hasRemovalMarker");
+    if (removed) {
+      return {
+        drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, removedFromFolder: true,
+        reason: "This workspace was removed from the sync folder. Remove it from this phone, or reconnect the desktop to the same folder to bring it back.",
+      };
+    }
+
     // 1. Stage local writes into the oplog.
     const drained = engine.drainPending();
 
@@ -84,6 +100,8 @@ export async function syncNow(): Promise<SyncResult> {
     }
 
     // 2. Publish our oplog for THIS source (oplog-<deviceId>-<workspaceId>).
+    // Removed from this phone mid-sync? Never write the file back.
+    if (isSourceForgotten(workspaceId)) throw new Error("workspace removed from this phone");
     await withTimeout(writeOwnOplog(folder, engine.deviceId, workspaceId, engine.exportOplog()), ICLOUD_IO_TIMEOUT_MS, "writeOwnOplog");
 
     // 3. Read peers for THIS source only (source-isolation boundary).
@@ -97,6 +115,7 @@ export async function syncNow(): Promise<SyncResult> {
     // unions even when nothing "applied"), so peers converge. Gated on the read
     // count, not the applied count.
     if (peerEntries.length > 0) {
+      if (isSourceForgotten(workspaceId)) throw new Error("workspace removed from this phone");
       await withTimeout(writeOwnOplog(folder, engine.deviceId, workspaceId, engine.exportOplog()), ICLOUD_IO_TIMEOUT_MS, "writeOwnOplog");
     }
 
@@ -127,4 +146,15 @@ export function pendingCount(): number {
   if (!getActiveSource()) return 0;
   const row = getDb().getFirstSync<{ n: number }>("SELECT COUNT(*) AS n FROM sync_pending");
   return row?.n ?? 0;
+}
+
+/** Staged local changes for any workspace on this phone, active or not (0 if it can't be read). */
+export function pendingCountFor(workspaceId: string): number {
+  if (isDemoSource(workspaceId)) return 0; // the sample workspace never syncs
+  try {
+    const row = getSourceDb(workspaceId).getFirstSync<{ n: number }>("SELECT COUNT(*) AS n FROM sync_pending");
+    return row?.n ?? 0;
+  } catch {
+    return 0;
+  }
 }

@@ -14,6 +14,7 @@ import {
   getSyncFolder,
   setSyncFolder,
   clearSyncFolder,
+  removeWorkspaceFromSyncFolder,
   syncDesktop,
   getSyncStatus,
   refreshSyncStatus,
@@ -84,6 +85,13 @@ export function registerSyncHandlers(
     clearSyncFolder(ctx.db);
     refreshSyncStatus(ctx.db);
     return { ok: true as const };
+  }));
+
+  // Disconnect + delete this desktop's published files for the workspace (phones are told via a marker).
+  register("sync:removeFromFolder", () => wrap(async () => {
+    const result = await removeWorkspaceFromSyncFolder(ctx.db);
+    refreshSyncStatus(ctx.db);
+    return result;
   }));
 
   register("sync:now", () => wrap(async () => {

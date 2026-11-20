@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { writeOplogFile, readPeerOplogs } from "./transport";
+import { writeOplogFile, readPeerOplogs, removeWorkspaceFromFolder, clearRemovalMarker } from "./transport";
 import { parseWorkspaceIdFromOplogName } from "./oplog-name";
 import type { OplogEntry } from "./engine";
 
@@ -241,5 +241,34 @@ describe("parseWorkspaceIdFromOplogName", () => {
 
   it("returns null when there is no workspace segment after the deviceId", () => {
     expect(parseWorkspaceIdFromOplogName("oplog-desktop_abc-.ndjson")).toBeNull();
+  });
+});
+
+describe("removeWorkspaceFromFolder / clearRemovalMarker", () => {
+  it("deletes only this device's oplog + blobs for the workspace and leaves a marker", async () => {
+    const dir = tmpDir();
+    dirs.push(dir);
+    writeOplogFile(dir, "desktop_a", [entry], "ws1");
+    writeOplogFile(dir, "mobile_b", [entry], "ws1");
+    writeOplogFile(dir, "desktop_a", [entry], "ws2");
+    fs.mkdirSync(path.join(dir, "blobs-ws1"));
+    fs.writeFileSync(path.join(dir, "blobs-ws1", "x.png"), "x");
+
+    expect(await removeWorkspaceFromFolder(dir, "desktop_a", "ws1")).toBe(1);
+
+    expect(fs.readdirSync(dir).sort()).toEqual([
+      "oplog-desktop_a-ws2.ndjson",
+      "oplog-mobile_b-ws1.ndjson",
+      "removed-ws1.json",
+    ]);
+    expect(JSON.parse(fs.readFileSync(path.join(dir, "removed-ws1.json"), "utf-8")).deviceId).toBe("desktop_a");
+  });
+
+  it("is safe when there is nothing to delete, and the marker can be cleared", async () => {
+    const dir = tmpDir();
+    dirs.push(dir);
+    expect(await removeWorkspaceFromFolder(dir, "desktop_a", "ws1")).toBe(0);
+    expect(await clearRemovalMarker(dir, "ws1")).toBe(true);
+    expect(await clearRemovalMarker(dir, "ws1")).toBe(false);
   });
 });

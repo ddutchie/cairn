@@ -8,6 +8,7 @@ import { useSyncStatus } from "@/sync/useSyncStatus";
 import { restorableCount, stalePeerCount, stalePeerVersions, getUserStyle, type UserStyleRow } from "@/db/queries";
 import { SYNC_PROTOCOL_VERSION } from "@cairn/shared/sync/engine";
 import { EmbeddingsCard } from "@/components/EmbeddingsCard";
+import { WorkspacesCard } from "@/components/WorkspacesCard";
 import { ModalSafeView } from "@/components/ModalSafeView";
 import { SectionLabel } from "@/components/SectionLabel";
 import { ICON_CHECK } from "@/components/toolbar-icons";
@@ -143,6 +144,8 @@ export default function SyncScreen() {
             </Text>
           </View>
         )}
+
+        <WorkspacesCard removedFromFolder={!!last?.removedFromFolder} />
 
         {(conflicts > 0 || (last && last.connected)) && (
           <Pressable style={[styles.conflictRow, conflicts > 0 && styles.conflictRowActive]} onPress={() => router.push("/conflicts")}>

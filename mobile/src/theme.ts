@@ -32,6 +32,8 @@ export interface Theme {
   success: string;
   warning: string;
   danger: string;
+  /** Foreground (icons/text) drawn on a `danger` background. */
+  dangerFg: string;
   info: string;
   /** Knowledge-graph "Project" node colour — fixed (accent-independent) so it
    *  never collides with Card/success green when a green accent is chosen. */
@@ -84,6 +86,7 @@ export const darkTheme: Theme = {
   success: "#3ecf8e",
   warning: "#f59e0b",
   danger: "#ef4444",
+  dangerFg: "#ffffff",
   info: "#60a5fa",
   nodeProject: "#a78bfa",
   nodePerson: "#f472b6",
@@ -127,6 +130,7 @@ export const lightTheme: Theme = {
   success: "#1a9e68",
   warning: "#d97706",
   danger: "#dc2626",
+  dangerFg: "#ffffff",
   info: "#2563eb",
   nodeProject: "#7c5cd6",
   nodePerson: "#db2777",
