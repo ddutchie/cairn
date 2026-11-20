@@ -264,17 +264,20 @@ const LINE_KEYS: Record<string, string> = {
  */
 function labelledLines(text: string, minKeys = 1): Record<string, unknown> | null {
   const out: Record<string, unknown> = {};
+  // Recognised labels, not output keys: "Status: :emoji: text" is one label but two keys.
+  let labels = 0;
   for (const line of text.split(/\r?\n/)) {
     const i = line.indexOf(":");
     if (i < 0) continue;
     const key = LINE_KEYS[line.slice(0, i).trim().toLowerCase()];
     const value = line.slice(i + 1).trim();
     if (!key || !value) continue;
+    labels++;
     // "Status: :palm_tree: On vacation" is an emoji and its text.
     const lead = key === "status_text" ? value.match(/^(:[\w+-]+:(?::skin-tone-\d:)?)\s*(.*)$/) : null;
     if (lead) { out.status_emoji = lead[1]; if (lead[2]) out.status_text = lead[2]; } else out[key] = value;
   }
-  return Object.keys(out).length >= minKeys ? out : null;
+  return labels >= minKeys ? out : null;
 }
 
 /**

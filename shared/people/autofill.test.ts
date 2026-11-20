@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "./place-data";
 import { applicableFields, buildAutofillPrompt, parseAutofill, AUTOFILL_MAX_NOTE_CHARS } from "./autofill";
 
 const NOTE = "# Ana\nRole: Senior Software Engineer on the Sync team.\nBased in Berlin, Germany.";
@@ -10,8 +11,17 @@ describe("parseAutofill", () => {
       { field: "location", value: "Berlin, Germany", quote: "Based in Berlin, Germany." },
       { field: "title", value: "Senior Software Engineer", quote: "Role: Senior Software Engineer" },
     ]), NOTE);
-    expect(out.map((p) => p.field)).toEqual(["title", "location"]);
+    // A place that names a zone also proposes the zone, quoted from the same words.
+    expect(out.map((p) => p.field)).toEqual(["title", "location", "timezone"]);
     expect(out[0].value).toBe("Senior Software Engineer");
+    expect(out[2]).toEqual({ field: "timezone", value: "Europe/Berlin", quote: "Based in Berlin, Germany." });
+  });
+
+  it("does not propose a zone for a place when one is already set or already proposed", () => {
+    const loc = { field: "location", value: "Berlin, Germany", quote: "Based in Berlin, Germany." };
+    expect(parseAutofill(reply([loc]), NOTE, { timezone: "Europe/London" }).map((p) => p.field)).toEqual(["location"]);
+    const tz = { field: "timezone", value: "Europe/Paris", quote: "Based in Berlin, Germany." };
+    expect(parseAutofill(reply([loc, tz]), NOTE).find((p) => p.field === "timezone")?.value).toBe("Europe/Paris");
   });
 
   it("tolerates a fence and prose around the JSON", () => {

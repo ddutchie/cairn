@@ -40,6 +40,7 @@ export function ConnectionsGraph({ personId, compact = false }: { personId: stri
   const { people, network, loading } = usePeopleNetwork();
   const [hops, setHops] = useState<NeighbourhoodHops>(1);
   const [meetings, setMeetings] = useState(false);
+  const [focusId, setFocusId] = useState<string | null>(null);
 
   const allLinks = useMemo(() => deriveLinks(people, network.edges, network.coAttendance), [people, network]);
   const kinds = useMemo<ReadonlySet<LinkKind>>(
@@ -97,6 +98,7 @@ export function ConnectionsGraph({ personId, compact = false }: { personId: stri
               graph={picture.graph}
               styling={picture.styling}
               selectedNodeId={personId}
+              focusNodeId={focusId}
               onNodeClick={onNodeClick}
               onBackgroundClick={onBackgroundClick}
               labelMode="all"
@@ -116,7 +118,14 @@ export function ConnectionsGraph({ personId, compact = false }: { personId: stri
           </ul>
           <ul className="sr-only" aria-label="People linked to this person">
             {picture.graph.nodes.filter((n) => n.id !== personId).map((n) => (
-              <li key={n.id}><button type="button" onClick={() => open(n.id)}>{`${n.title}. Open person`}</button></li>
+              <li key={n.id}>
+                <button
+                  type="button" onClick={() => open(n.id)}
+                  onFocus={() => setFocusId(n.id)} onBlur={() => setFocusId((c) => (c === n.id ? null : c))}
+                >
+                  {`${n.title}. Open person`}
+                </button>
+              </li>
             ))}
           </ul>
         </>

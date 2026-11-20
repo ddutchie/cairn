@@ -12,6 +12,7 @@ import { getCachedConfig } from "../config-cache";
 import { isLocalEndpoint, normaliseBaseUrl } from "../llm";
 import { DEFAULT_LLM } from "../llm-config";
 import { resolveLlmApiKey } from "../secure-store";
+import "../../../shared/people/place-data";
 import { AUTOFILL_SYSTEM_PROMPT, buildAutofillPrompt, parseAutofill, type AutofillProposal } from "../../../shared/people/autofill";
 
 export type AutofillResult =

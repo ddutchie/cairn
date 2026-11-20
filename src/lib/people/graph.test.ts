@@ -49,6 +49,14 @@ describe("buildPeopleGraph", () => {
     expect(styling.edgeText!(graph.edges[0])).toBe("Ann – Bo: Meetings together, 2 meetings");
   });
 
+  it("says who manages, mentors or backs whom for a directed link", () => {
+    const d = (kind: NetworkLink["kind"], extra: Partial<NetworkLink> = {}) => link({ id: "x", kind, source: "a", target: "b", directed: true, ...extra });
+    expect(linkText(d("reporting"), "Ann", "Bo")).toBe("Ann manages Bo (Reporting line)");
+    expect(linkText(d("mentor", { label: "coach", ended: true }), "Ann", "Bo")).toBe("Ann mentors Bo (Mentor, coach), former");
+    expect(linkText(d("stakeholder"), "Ann", "Bo")).toBe("Ann is a stakeholder for Bo (Stakeholder)");
+    expect(linkText(link({ id: "p", kind: "peer", source: "a", target: "b" }), "Ann", "Bo")).toBe("Ann – Bo: Peer");
+  });
+
   it("pins the focus person to the centre", () => {
     const { graph, styling } = buildPeopleGraph(people, [], "me", "ws", "a");
     expect(styling.node!(graph.nodes[1])).toMatchObject({ pin: true, label: true });

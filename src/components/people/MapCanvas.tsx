@@ -19,6 +19,8 @@ import { useFontScale, useNow } from "@/lib/viz/hooks";
 import { findMe } from "@/lib/people/network";
 import land from "@/lib/people/land-110m.json";
 import { cn } from "@/lib/utils";
+import "../../../shared/people/place-data";
+import { placeInfo } from "../../../shared/people/place-zone";
 import { ZONE_COORDS } from "../../../shared/people/zone-coords";
 import { sunAt } from "../../../shared/people/sun";
 import { availabilityAt, localHourAt, systemZone, zoneOffsetMinutes, type Availability } from "../../../shared/people/zones";
@@ -32,7 +34,21 @@ const WORDS: Record<Availability, string> = { work: "At work", edge: "Early or l
 const hhmm = (h: number) => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.floor((h % 1) * 60)).padStart(2, "0")}`;
 const cityOf = (tz: string) => tz.split("/").pop()!.replace(/_/g, " ");
 
-interface Group { tz: string; lat: number; lon: number; people: PersonSummary[] }
+/** People who share a spot on the map: the same city when their location names one in their zone, else the zone's principal city. */
+interface Group { key: string; label: string; tz: string; lat: number; lon: number; people: PersonSummary[] }
+
+/** Where a person goes on the map: their own city when it lies in their time zone, else the zone's principal city. */
+function spotOf(p: PersonSummary): { key: string; label: string; lat: number; lon: number } | null {
+  if (!p.timezone) return null;
+  const zone = ZONE_COORDS[p.timezone];
+  const here = p.location ? placeInfo(p.location) : null;
+  // The location only counts when it agrees with the time zone: a stale city must not move someone to the wrong side of the world.
+  if (here?.coords && zoneOffsetMinutes(p.timezone, new Date()) === zoneOffsetMinutes(here.zone, new Date())) {
+    const [lat, lon] = here.coords;
+    return { key: `${p.timezone}|${lat.toFixed(1)},${lon.toFixed(1)}`, label: p.location!.split(",")[0].trim(), lat, lon };
+  }
+  return zone ? { key: p.timezone, label: cityOf(p.timezone), lat: zone[0], lon: zone[1] } : null;
+}
 
 export function MapCanvas({ people, selectedId }: { people: readonly PersonSummary[]; selectedId?: string | null }) {
   const fs = useFontScale();
@@ -48,11 +64,11 @@ export function MapCanvas({ people, selectedId }: { people: readonly PersonSumma
     const map = new Map<string, Group>();
     const out: PersonSummary[] = [];
     for (const p of people) {
-      const c = p.timezone ? ZONE_COORDS[p.timezone] : undefined;
-      if (!p.timezone || !c || zoneOffsetMinutes(p.timezone, new Date()) === null) { out.push(p); continue; }
-      const g = map.get(p.timezone) ?? { tz: p.timezone, lat: c[0], lon: c[1], people: [] };
+      const spot = spotOf(p);
+      if (!p.timezone || !spot || zoneOffsetMinutes(p.timezone, new Date()) === null) { out.push(p); continue; }
+      const g = map.get(spot.key) ?? { ...spot, tz: p.timezone, people: [] };
       g.people.push(p);
-      map.set(p.timezone, g);
+      map.set(spot.key, g);
     }
     return { groups: [...map.values()], unplaced: out.sort((a, b) => a.name.localeCompare(b.name)) };
   }, [people]);
@@ -66,7 +82,7 @@ export function MapCanvas({ people, selectedId }: { people: readonly PersonSumma
   const myZone = me?.timezone && zoneOffsetMinutes(me.timezone, t) !== null ? me.timezone : systemZone();
   const when = new Intl.DateTimeFormat("en-GB", { timeZone: myZone, weekday: "short", hour: "2-digit", minute: "2-digit" }).format(t);
   const availOf = (g: Group): Availability => availabilityAt(localHourAt(g.tz, t) ?? 12);
-  const sel = zone ? groups.find((g) => g.tz === zone) : undefined;
+  const sel = zone ? groups.find((g) => g.key === zone) : undefined;
   const selHour = sel ? localHourAt(sel.tz, t) ?? 0 : 0;
   const font = 10 * fs;
 
@@ -98,18 +114,18 @@ export function MapCanvas({ people, selectedId }: { people: readonly PersonSumma
               const pt = projection([g.lon, g.lat]);
               if (!pt) return null;
               const a = availOf(g);
-              const on = zone === g.tz || g.people.some((p) => p.id === selectedId);
+              const on = zone === g.key || g.people.some((p) => p.id === selectedId);
               return (
                 <g
-                  key={g.tz} transform={`translate(${pt[0]},${pt[1]})`} role="button" tabIndex={0}
-                  aria-label={`${cityOf(g.tz)}, ${g.people.length} ${g.people.length === 1 ? "person" : "people"}, ${WORDS[a].toLowerCase()}`}
+                  key={g.key} transform={`translate(${pt[0]},${pt[1]})`} role="button" tabIndex={0}
+                  aria-label={`${g.label}, ${g.people.length} ${g.people.length === 1 ? "person" : "people"}, ${WORDS[a].toLowerCase()}`}
                   className="cursor-pointer outline-none [&:focus-visible>circle]:stroke-[var(--accent)]"
-                  onClick={() => setZone(g.tz)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setZone(g.tz); } }}
+                  onClick={() => setZone(g.key)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setZone(g.key); } }}
                 >
                   <circle r={g.people.length > 1 ? 10 : 7} fill={COLOR[a]} stroke={on ? "var(--text-primary)" : "var(--surface)"} strokeWidth={2} />
                   {g.people.length > 1 && <text textAnchor="middle" dy="0.34em" fontSize={font} fill="var(--surface)" pointerEvents="none">{g.people.length}</text>}
-                  <title>{cityOf(g.tz)}</title>
+                  <title>{g.label}</title>
                 </g>
               );
             })}
@@ -127,7 +143,7 @@ export function MapCanvas({ people, selectedId }: { people: readonly PersonSumma
         <PanelHeading title="Who is there" />
         {sel ? (
           <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-3 shadow-elev-1">
-            <p className="text-2xs text-[var(--text-tertiary)]">{cityOf(sel.tz)}, {hhmm(selHour)} local</p>
+            <p className="text-2xs text-[var(--text-tertiary)]">{sel.label}, {hhmm(selHour)} local</p>
             <p className="mt-0.5 mb-1.5 inline-flex items-center gap-1.5 text-sm" style={{ color: COLOR[availOf(sel)] }}>
               <StatusDot color={COLOR[availOf(sel)]} />{WORDS[availOf(sel)]}
             </p>

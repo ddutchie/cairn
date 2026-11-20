@@ -5,7 +5,8 @@
  * confirms each field (nothing here writes).
  */
 
-import { cleanProfileField, PROFILE_FIELDS, type ProfileField } from "./parse";
+import { cleanProfileFieldWithPlaces, zoneForPlace } from "./place-zone";
+import { PROFILE_FIELDS, type ProfileField } from "./parse";
 
 /** Most of the note the model reads; a persona note is short, this is a guard. */
 export const AUTOFILL_MAX_NOTE_CHARS = 12_000;
@@ -61,7 +62,7 @@ export function parseAutofill(reply: string, note: string, current: AutofillCurr
     if (!(PROFILE_FIELDS as readonly unknown[]).includes(field)) continue;
     const f = field as ProfileField;
     if (out.has(f)) continue;
-    const { value: clean, error } = cleanProfileField(f, value);
+    const { value: clean, error } = cleanProfileFieldWithPlaces(f, value);
     if (!clean || error) continue;
     const q = typeof quote === "string" ? quote.replace(/\s+/g, " ").trim() : "";
     if (!q || !flat.includes(q.toLowerCase())) continue;
@@ -70,6 +71,12 @@ export function parseAutofill(reply: string, note: string, current: AutofillCurr
     const cur = current[f]?.trim() || undefined;
     if (cur && cur.toLowerCase() === clean.toLowerCase()) continue;
     out.set(f, { field: f, value: clean, quote: q.slice(0, 200), ...(cur ? { current: cur } : {}) });
+  }
+  // A proposed place that names a zone also proposes the zone, quoted from the same words, unless one is set or proposed.
+  const place = out.get("location");
+  if (place && !out.has("timezone") && !current.timezone?.trim()) {
+    const zone = zoneForPlace(place.value);
+    if (zone) out.set("timezone", { field: "timezone", value: zone, quote: place.quote });
   }
   return PROFILE_FIELDS.flatMap((f) => out.get(f) ?? []);
 }

@@ -30,6 +30,8 @@ export function RelationshipCanvas() {
   const { people, network, loading } = usePeopleNetwork();
   const [kinds, setKinds] = useState<ReadonlySet<LinkKind>>(() => new Set(DEFAULT_LINK_KINDS));
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The person a keyboard user is on in the list below; the canvas highlights them.
+  const [focusId, setFocusId] = useState<string | null>(null);
 
   const allLinks = useMemo(() => deriveLinks(people, network.edges, network.coAttendance), [people, network]);
   const counts = useMemo(() => {
@@ -93,6 +95,7 @@ export function RelationshipCanvas() {
             graph={graph}
             styling={styling}
             selectedNodeId={selectedId}
+            focusNodeId={focusId}
             onNodeClick={onNodeClick}
             onBackgroundClick={onBackgroundClick}
             labelMode={shown.length <= LABEL_ALL_BELOW ? "all" : "smart"}
@@ -105,7 +108,10 @@ export function RelationshipCanvas() {
               const deg = degree.get(p.id) ?? 0;
               return (
                 <li key={p.id}>
-                  <button type="button" onClick={() => open(p.id)}>
+                  <button
+                    type="button" onClick={() => open(p.id)}
+                    onFocus={() => setFocusId(p.id)} onBlur={() => setFocusId((c) => (c === p.id ? null : c))}
+                  >
                     {`${p.name}${me?.id === p.id ? " (you)" : ""}, ${deg} ${deg === 1 ? "link" : "links"}. Open person`}
                   </button>
                 </li>

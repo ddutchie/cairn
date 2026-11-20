@@ -17,7 +17,8 @@ import {
 import { captureNoteMeeting, loadCandidates, meetingLinkPending, resolvePerson } from "./capture";
 import { ownedItemsIn } from "./action-items";
 import { edgeRowId } from "./ids";
-import { cleanProfileField, cleanRelationshipLabel, parseMeetingDate, PROFILE_FIELDS } from "./parse";
+import { cleanProfileFieldWithPlaces, zoneForPlace } from "./place-zone";
+import { cleanRelationshipLabel, parseMeetingDate, PROFILE_FIELDS } from "./parse";
 import {
   PEOPLE_STATUSES, PERSON_EDGE_TYPES, PROVENANCES, RELATIONSHIP_TYPES,
   type Person, type PeopleStatus, type PersonPatch, type Provenance, type Relationship,
@@ -275,9 +276,14 @@ function upsert(db: Db, workspaceId: string, args: Args) {
   const profile: Partial<Record<(typeof PROFILE_FIELDS)[number], string>> = {};
   for (const field of PROFILE_FIELDS) {
     if (args[field] === undefined) continue;
-    const { value, error } = cleanProfileField(field, args[field]);
+    const { value, error } = cleanProfileFieldWithPlaces(field, args[field]);
     if (error) return { error };
     if (value && (!existing?.[field] || provenance === "explicit")) profile[field] = value;
+  }
+  // A place that names a zone fills a missing time zone, so the person lands on the map.
+  if (profile.location && !profile.timezone && !existing?.timezone) {
+    const zone = zoneForPlace(profile.location);
+    if (zone) profile.timezone = zone;
   }
   const slackId = typeof args.slackId === "string" && args.slackId.trim() ? args.slackId.trim() : undefined;
   if (slackId && !/^[A-Za-z0-9]{3,32}$/.test(slackId)) return { error: "slackId looks like U0123ABCD (a Slack member id)" };

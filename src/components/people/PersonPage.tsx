@@ -29,7 +29,9 @@ import { MarkdownEditor } from "@/components/notes/markdown-editor";
 import { revealCard, revealNote } from "@/lib/events";
 import { formatDate, formatRelative } from "../../../shared/format/date";
 import { cn } from "@/lib/utils";
-import { cleanProfileField, cleanRelationshipLabel, type ProfileField } from "../../../shared/people/parse";
+import "../../../shared/people/place-data";
+import { cleanProfileFieldWithPlaces, zoneForPlace } from "../../../shared/people/place-zone";
+import { cleanRelationshipLabel, type ProfileField } from "../../../shared/people/parse";
 import { CADENCES, RELATIONSHIP_TYPES, type Cadence, type RelationshipType } from "../../../shared/types/people";
 import type { PersonPage as PersonPageModel, PersonTimelineItem } from "../../../shared/types/people-view";
 import {
@@ -146,7 +148,7 @@ function DraftInput({ value, onSave, placeholder, ariaLabel }: {
 }
 
 /** A role, team, place or time zone: one short line, saved on blur, with a message when it isn't valid. */
-function ProfileInput({ field, personId, value, placeholder }: { field: ProfileField; personId: string; value: string; placeholder: string }) {
+function ProfileInput({ field, personId, value, placeholder, timezone }: { field: ProfileField; personId: string; value: string; placeholder: string; timezone?: string }) {
   const updatePerson = useCairnStore((s) => s.updatePerson);
   const [error, setError] = useState<string | null>(null);
   const label = { title: "Role", team: "Team", location: "Location", timezone: "Time zone" }[field];
@@ -157,9 +159,12 @@ function ProfileInput({ field, personId, value, placeholder }: { field: ProfileF
         placeholder={placeholder}
         value={value}
         onSave={(v) => {
-          const { value: clean, error: err } = cleanProfileField(field, v);
+          const { value: clean, error: err } = cleanProfileFieldWithPlaces(field, v);
           setError(err ?? null);
-          if (!err) void updatePerson(personId, { [field]: clean ?? null });
+          if (err) return;
+          // A place that names a zone fills an empty time zone (never replaces one that is set).
+          const zone = field === "location" && !timezone ? zoneForPlace(clean) : null;
+          void updatePerson(personId, { [field]: clean ?? null, ...(zone ? { timezone: zone } : {}) });
         }}
       />
       {error && <p role="alert" className="mt-1 text-2xs text-[var(--danger)]">{error}</p>}
@@ -232,10 +237,10 @@ function PersonSettings({ page, profile }: { page: PersonPageModel; profile: Per
         <ProfileInput field="team" personId={person.id} value={person.team ?? ""} placeholder="e.g. Sync" />
       </Field>
       <Field label="Location">
-        <ProfileInput field="location" personId={person.id} value={person.location ?? ""} placeholder="e.g. Berlin, Germany" />
+        <ProfileInput field="location" personId={person.id} value={person.location ?? ""} timezone={person.timezone} placeholder="e.g. Berlin, Germany" />
       </Field>
       <Field label="Time zone">
-        <ProfileInput field="timezone" personId={person.id} value={person.timezone ?? ""} placeholder="e.g. Europe/Berlin" />
+        <ProfileInput field="timezone" personId={person.id} value={person.timezone ?? ""} placeholder="e.g. Europe/Berlin, or a city" />
       </Field>
       <Field label="Slack id">
         <BlurInput

@@ -45,7 +45,7 @@ export function TimeZonesCanvas({ people, selectedId }: { people: readonly Perso
             <div className="w-28 @3xl:w-40 flex-shrink-0" />
             <div className="relative h-4 flex-1">
               {TICKS.map((h) => (
-                <span key={h} className="absolute -translate-x-1/2 text-2xs text-[var(--text-tertiary)] tabular-nums" style={{ left: pct(h) }}>{String(h % 24).padStart(2, "0")}</span>
+                <span key={h} className={cn("absolute -translate-x-1/2 text-2xs text-[var(--text-tertiary)] tabular-nums", h % 6 !== 0 && "hidden @2xl:inline")} style={{ left: pct(h) }}>{String(h % 24).padStart(2, "0")}</span>
               ))}
             </div>
             <div className="w-20 @3xl:w-28 flex-shrink-0" />

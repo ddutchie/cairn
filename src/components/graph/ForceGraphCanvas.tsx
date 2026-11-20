@@ -65,6 +65,8 @@ interface Props {
   /** A small, static picture inside a page: no zoom buttons, no wheel / drag
    *  navigation (so scrolling the page never zooms it), a tighter fit. */
   compact?: boolean;
+  /** Drawn as if hovered (glow and label): the person a keyboard user has focused in a list beside the canvas. */
+  focusNodeId?: string | null;
   selectedNodeId: string | null;
   onNodeClick: (node: GraphNode) => void;
   /** Right-click: the node under the cursor, or null for empty canvas. */
@@ -262,6 +264,7 @@ function ForceGraphCanvasImpl({
   graph,
   styling,
   compact = false,
+  focusNodeId = null,
   selectedNodeId,
   onNodeClick,
   onNodeContextMenu,
@@ -372,9 +375,9 @@ function ForceGraphCanvasImpl({
   }, [compact]);
 
   // Keep latest prop values available to the render loop without re-creating it
-  const propsRef = useRef({ selectedNodeId, labelMode, spacing, semanticThreshold, showHulls });
+  const propsRef = useRef({ selectedNodeId, labelMode, spacing, semanticThreshold, showHulls, compact, focusNodeId });
   // eslint-disable-next-line react-hooks/refs -- keep latest value for ref-only consumers (render loop / fit)
-  propsRef.current = { selectedNodeId, labelMode, spacing, semanticThreshold, showHulls };
+  propsRef.current = { selectedNodeId, labelMode, spacing, semanticThreshold, showHulls, compact, focusNodeId };
 
   // ── visible edges (semantic threshold) + degree map ──
   const visibleEdges = useMemo(
@@ -648,7 +651,6 @@ function ForceGraphCanvasImpl({
     if (!ctx) return;
 
     const connected = connectedRef.current;
-    const hovered = hoveredNodeRef.current;
     const nodes = nodesRef.current;
     const links = linksRef.current;
     const { width, height } = dimsRef.current;
@@ -656,7 +658,8 @@ function ForceGraphCanvasImpl({
     const moving = gesturesRef.current > 0 || tweenRef.current != null;
     const dpr = dprFor(nodes.length, moving);
     const t = transformRef.current;
-    const { selectedNodeId: sel, labelMode: lm, showHulls: hulls } = propsRef.current;
+    const { selectedNodeId: sel, labelMode: lm, showHulls: hulls, compact: small, focusNodeId: focused } = propsRef.current;
+    const hovered = hoveredNodeRef.current ?? focused;
 
     // Keep the backing store on the same DPR the draw uses: the node count can
     // cross the large-graph threshold (search, filter, project toggle) without
@@ -822,7 +825,8 @@ function ForceGraphCanvasImpl({
     for (const n of labelCandidates) {
       const isSel = n.id === sel;
       const isHov = n.id === hovered;
-      const showLabel = n.look?.label || shouldShowLabel({
+      // A compact picture cannot be zoomed, so its labels never wait for a zoom level.
+      const showLabel = n.look?.label || (small && lm === "all") || shouldShowLabel({
         type: n.nodeType,
         isSelected: isSel,
         isHovered: isHov,
@@ -874,7 +878,7 @@ function ForceGraphCanvasImpl({
   }, [dims]);
 
   // redraw whenever selection / threshold / hull-toggle / label-mode / font scale changes
-  useEffect(() => { draw(); }, [selectedNodeId, semanticThreshold, showHulls, labelMode, draw]);
+  useEffect(() => { draw(); }, [selectedNodeId, focusNodeId, semanticThreshold, showHulls, labelMode, draw]);
 
   // Repaint after a theme change so the canvas picks up the new CSS-var colours.
   useThemeRepaint(drawRef);

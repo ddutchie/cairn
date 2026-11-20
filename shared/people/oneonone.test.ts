@@ -98,6 +98,12 @@ describe("Slack profile", () => {
     expect(statusEmojiChar("🎧")).toBe("🎧");
     expect(statusEmojiChar(undefined)).toBe("");
   });
+  it("needs two recognised labels in plain text, however many keys one label expands to", () => {
+    // One status line is one label (an emoji and its text are two keys): not a profile.
+    expect(parseSlackProfile("Status: :headphones: Focus time")).toBeNull();
+    expect(parseSlackProfile("Title: Manager\nStatus: :headphones: Focus time")).not.toBeNull();
+  });
+
   it("reads the Slack MCP server's labelled-text reply", () => {
     const reply = JSON.stringify({ result: "User ID: UV49QTKPS\nUsername: reillyb\nDisplay Name: Ben Reilly\nReal Name: ben.reilly\nPronouns: he/him\nTitle: Manager, Software Development\nStatus:  \nTimezone: America/New_York\nAdmin: No\n" });
     expect(parseSlackProfile(reply)).toEqual({ displayName: "Ben Reilly", title: "Manager, Software Development", timezone: "America/New_York", pronouns: "he/him" });

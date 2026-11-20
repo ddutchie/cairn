@@ -80,9 +80,19 @@ export function buildPeopleGraph(
   return { graph: { nodes, edges }, styling };
 }
 
-/** "Ann – Bo: Mentor (coach), former" / "…: Meetings together, 3 meetings". */
+/** What the source of a directed link is to its target, as on the person page. */
+const DIRECTED_VERB: Partial<Record<LinkKind, string>> = {
+  reporting: "manages",
+  mentor: "mentors",
+  buddy: "is buddy to",
+  stakeholder: "is a stakeholder for",
+};
+
+/** "Ann manages Bo (Reporting line)", "Ann – Bo: Peer", "…: Meetings together, 3 meetings". */
 export function linkText(l: NetworkLink, from: string, to: string): string {
-  const parts = [`${from} – ${to}: ${LINK_KIND_LABELS[l.kind]}${l.label ? ` (${l.label})` : ""}`];
+  const verb = l.directed ? DIRECTED_VERB[l.kind] : undefined;
+  const head = verb ? `${from} ${verb} ${to} (${LINK_KIND_LABELS[l.kind]}${l.label ? `, ${l.label}` : ""})` : `${from} – ${to}: ${LINK_KIND_LABELS[l.kind]}${l.label ? ` (${l.label})` : ""}`;
+  const parts = [head];
   if (l.ended) parts.push("former");
   if (l.kind === "meeting") parts.push(`${l.weight} ${l.weight === 1 ? "meeting" : "meetings"}`);
   return parts.join(", ");

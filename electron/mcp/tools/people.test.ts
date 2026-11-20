@@ -324,6 +324,16 @@ describe("review fixes (W3 self-review)", () => {
       expect(getPerson(db, p.id)!.title).toBe("Director");
     });
 
+    it("a location fills a missing time zone, and a city works as a time zone", async () => {
+      const r = await run("people", { action: "upsert", name: "Eve", location: "Montreal, QC" });
+      expect(getPerson(db, r.person.id)!.timezone).toBe("America/Toronto");
+      const set = person("Fay", { timezone: "Europe/London" });
+      await run("people", { action: "upsert", personId: set.id, location: "San Francisco" });
+      expect(getPerson(db, set.id)!.timezone).toBe("Europe/London");
+      const city = await run("people", { action: "upsert", name: "Gus", timezone: "San Francisco" });
+      expect(getPerson(db, city.person.id)!.timezone).toBe("America/Los_Angeles");
+    });
+
     it("rejects a time zone that isn't one", async () => {
       const r = await run("people", { action: "upsert", name: "Di", timezone: "Berlin time" });
       expect(r.error).toMatch(/IANA/);
