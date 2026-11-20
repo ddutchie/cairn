@@ -93,6 +93,8 @@ describe("Slack profile", () => {
     expect(statusEmojiChar(":thumbsup::skin-tone-4:")).toBe("👍");
     expect(statusEmojiChar(":spiral_calendar_pad:")).toBe("🗓️");
     expect(statusEmojiChar(":partyparrot:")).toBe("");
+    expect(statusEmojiChar(":constructor:")).toBe("");
+    expect(statusEmojiChar(":toString:")).toBe("");
     expect(statusEmojiChar("🎧")).toBe("🎧");
     expect(statusEmojiChar(undefined)).toBe("");
   });
@@ -100,6 +102,14 @@ describe("Slack profile", () => {
     const reply = JSON.stringify({ result: "User ID: UV49QTKPS\nUsername: reillyb\nDisplay Name: Ben Reilly\nReal Name: ben.reilly\nPronouns: he/him\nTitle: Manager, Software Development\nStatus:  \nTimezone: America/New_York\nAdmin: No\n" });
     expect(parseSlackProfile(reply)).toEqual({ displayName: "Ben Reilly", title: "Manager, Software Development", timezone: "America/New_York", pronouns: "he/him" });
     expect(parseSlackProfile("Title: Designer\nTimezone: Europe/Athens")).toEqual({ title: "Designer", timezone: "Europe/Athens" });
+    // One stray label in free text is not a profile; inside the MCP's JSON result it is.
+    expect(parseSlackProfile("Title: Designer")).toBeNull();
+    expect(parseSlackProfile(JSON.stringify({ result: "Title: Designer" }))).toEqual({ title: "Designer" });
+  });
+  it("splits a status emoji out of the MCP status line", () => {
+    const reply = JSON.stringify({ result: "Title: PM\nStatus: :palm_tree: On vacation\n" });
+    expect(parseSlackProfile(reply)).toEqual({ title: "PM", statusEmoji: ":palm_tree:", statusText: "On vacation" });
+    expect(parseSlackProfile(JSON.stringify({ result: "Status: :headphones:" }))).toEqual({ statusEmoji: ":headphones:" });
   });
   it("returns null for text, empty objects and non-JSON", () => {
     expect(parseSlackProfile("Ana is a Staff Engineer")).toBeNull();

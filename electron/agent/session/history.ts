@@ -43,7 +43,8 @@ export function reduce(state: SessionState, { event }: SessionRecord): SessionSt
     case "assistant/message": {
       const u = event.message.usage;
       addUsage(state.usage, u);
-      if (u) state.lastUsage = { input: u.input, output: u.output, cacheRead: u.cacheRead, cacheWrite: u.cacheWrite, reasoning: u.reasoning ?? 0 };
+      // A request that reported nothing (a stub or an empty reply) says nothing about the context size.
+      if (u && u.input + u.output + u.cacheRead + u.cacheWrite > 0) state.lastUsage = { input: u.input, output: u.output, cacheRead: u.cacheRead, cacheWrite: u.cacheWrite, reasoning: u.reasoning ?? 0 };
       break;
     }
     case "compaction": state.compactions++; break;

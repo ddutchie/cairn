@@ -246,27 +246,35 @@ const SLACK_NAMES: Record<string, string> = {
 export function statusEmojiChar(code: string | undefined): string {
   if (!code) return "";
   const name = code.trim().replace(/^:|:$/g, "").replace(/::skin-tone-\d$/, "");
-  const known = SLACK_NAMES[name] ?? nameToEmoji[name];
+  // Own properties only: a status of `:constructor:` must not find Object.prototype's.
+  const own = (o: object) => Object.prototype.hasOwnProperty.call(o, name);
+  const known = own(SLACK_NAMES) ? SLACK_NAMES[name] : own(nameToEmoji) ? nameToEmoji[name] : undefined;
   if (known) return known;
   // Already a character (not a `:name:` code): keep it.
-  return /^:[\w+-]+:$/.test(code.trim()) ? "" : code.trim();
+  return /^:.+:$/.test(code.trim()) ? "" : code.trim();
 }
 
 const LINE_KEYS: Record<string, string> = {
   "display name": "display_name", "real name": "real_name", title: "title", pronouns: "pronouns", timezone: "tz", status: "status_text",
 };
 
-/** "Title: Manager" lines as the flattened keys the reader below knows. Null when no known label is present. */
-function labelledLines(text: string): Record<string, unknown> | null {
+/**
+ * "Title: Manager" lines as the flattened keys the reader below knows. Null when fewer than
+ * `minKeys` known labels are present (free text with one stray "Title:" line isn't a profile).
+ */
+function labelledLines(text: string, minKeys = 1): Record<string, unknown> | null {
   const out: Record<string, unknown> = {};
   for (const line of text.split(/\r?\n/)) {
     const i = line.indexOf(":");
     if (i < 0) continue;
     const key = LINE_KEYS[line.slice(0, i).trim().toLowerCase()];
     const value = line.slice(i + 1).trim();
-    if (key && value) out[key] = value;
+    if (!key || !value) continue;
+    // "Status: :palm_tree: On vacation" is an emoji and its text.
+    const lead = key === "status_text" ? value.match(/^(:[\w+-]+:(?::skin-tone-\d:)?)\s*(.*)$/) : null;
+    if (lead) { out.status_emoji = lead[1]; if (lead[2]) out.status_text = lead[2]; } else out[key] = value;
   }
-  return Object.keys(out).length ? out : null;
+  return Object.keys(out).length >= minKeys ? out : null;
 }
 
 /**
@@ -276,7 +284,7 @@ function labelledLines(text: string): Record<string, unknown> | null {
  */
 export function parseSlackProfile(reply: string): ProfileFields | null {
   let data: unknown;
-  try { data = JSON.parse(reply); } catch { data = labelledLines(reply); }
+  try { data = JSON.parse(reply); } catch { data = labelledLines(reply, 2); }
   if (!data || typeof data !== "object") return null;
   let root = data as Record<string, unknown>;
   // Slack's own MCP server answers `{"result":"Display Name: …\nTitle: …"}`: labelled text lines inside JSON.

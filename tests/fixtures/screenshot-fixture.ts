@@ -1175,7 +1175,7 @@ export function buildScreenshotMock(opts?: {
     note:      { list: () => Promise.resolve(snap.notes),      create: noop, update: noop, delete: noop, moveToFolder: noop, moveToProject: noop, bodies: (ids) => Promise.resolve(snap.notes.filter(n => ids.indexOf(n.id) >= 0).map(n => ({ id: n.id, content: n.content }))), search: () => Promise.resolve([]), searchSnippets: () => Promise.resolve([]), backlinks: () => Promise.resolve([]), clearChangeMark: noop },
     column:    { list: () => Promise.resolve(snap.columns),    create: noop, update: noop, delete: noop },
     card:      { list: () => Promise.resolve(snap.cards),      create: noop, update: noop, delete: noop, addBlocker: noop, removeBlocker: noop, ready: () => Promise.resolve(snap.cards), moveToProject: noop, archiveDone: () => Promise.resolve([]) },
-    // People layer: flag off, as for every user until launch (peopleData seeds it for the People screenshots).
+    // People layer: peopleData seeds it for the People screenshots; without it the mock reports no people.
     people: {
       flag:      { get: () => Promise.resolve(!!peopleData), set: (on) => Promise.resolve(!!on) },
       list:      (f) => Promise.resolve(!peopleData ? [] : (() => { const st = (f && f.statuses) || ["confirmed"]; return peopleData.people.concat(peopleData.suggestions).filter(p => st.indexOf(p.status) >= 0); })()),
