@@ -43,14 +43,14 @@ export function buildPeopleFixture(now: Date = new Date()): PeopleFixture {
     ...p, ...(last !== undefined ? { lastMetAt: at(last, 14) } : {}), ...(next !== undefined ? { nextMeetingAt: at(next, 15) } : {}),
   });
 
-  const me = person("per-me", "Alex Morgan", { isMe: true, aliases: ["Alex"] });
-  const priya = person("per-priya", "Priya Raman", { relationship: [rel("manager")], cadence: "biweekly" });
-  const ana = person("per-ana", "Ana Lopez", { relationship: [rel("direct_report")], cadence: "weekly", aliases: ["Ana"], personaNoteId: "note-persona-ana", slackId: "U0ANA" });
-  const ben = person("per-ben", "Ben Okafor", { relationship: [rel("direct_report")], cadence: "biweekly", personaNoteId: "note-persona-ben" });
-  const chloe = person("per-chloe", "Chloe Martin", { relationship: [rel("direct_report", "onboarding")], cadence: "weekly" });
-  const diego = person("per-diego", "Diego Santos", { relationship: [rel("peer")] });
-  const mei = person("per-mei", "Mei Tanaka", { relationship: [rel("peer")] });
-  const hannah = person("per-hannah", "Hannah Weber", { relationship: [rel("stakeholder", "VP Product")], cadence: "monthly" });
+  const me = person("per-me", "Alex Morgan", { title: "Engineering Manager", team: "Sync", location: "Toronto, Canada", timezone: "America/Toronto", isMe: true, aliases: ["Alex"] });
+  const priya = person("per-priya", "Priya Raman", { title: "Director of Engineering", team: "Platform", location: "London, UK", timezone: "Europe/London", relationship: [rel("manager")], cadence: "biweekly" });
+  const ana = person("per-ana", "Ana Lopez", { title: "Senior Engineer", team: "Sync", location: "Madrid, Spain", timezone: "Europe/Madrid", relationship: [rel("direct_report")], cadence: "weekly", aliases: ["Ana"], personaNoteId: "note-persona-ana", slackId: "U0ANA" });
+  const ben = person("per-ben", "Ben Okafor", { title: "Software Engineer", team: "Sync", location: "Lagos, Nigeria", timezone: "Africa/Lagos", relationship: [rel("direct_report")], cadence: "biweekly", personaNoteId: "note-persona-ben" });
+  const chloe = person("per-chloe", "Chloe Martin", { title: "Software Engineer", team: "Sync", location: "Vancouver, Canada", timezone: "America/Vancouver", relationship: [rel("direct_report", "onboarding")], cadence: "weekly" });
+  const diego = person("per-diego", "Diego Santos", { title: "Staff Engineer", team: "Platform", location: "Mexico City, Mexico", timezone: "America/Mexico_City", relationship: [rel("peer")] });
+  const mei = person("per-mei", "Mei Tanaka", { title: "Design Lead", team: "Design", location: "Tokyo, Japan", timezone: "Asia/Tokyo", relationship: [rel("peer")] });
+  const hannah = person("per-hannah", "Hannah Weber", { title: "VP Product", team: "Product", location: "Berlin, Germany", timezone: "Europe/Berlin", relationship: [rel("stakeholder", "VP Product")], cadence: "monthly" });
   const samir = person("per-samir", "Samir Patel", { relationship: [rel("mentor")], cadence: "monthly" });
   const jonas = person("per-jonas", "Jonas Eriksen", { relationship: [rel("candidate")], stage: "Final interview" });
   const tom = person("per-tom", "Tom Reyes", { status: "suggested", provenance: "inferred" });

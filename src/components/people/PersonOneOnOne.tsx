@@ -20,7 +20,7 @@ import { peopleClient } from "@/lib/ipc/people";
 import { useCairnStore } from "@/store";
 import { useNow } from "@/lib/viz/hooks";
 import { formatDate, formatRelative } from "../../../shared/format/date";
-import type { PersonProfile, PrepBrief } from "../../../shared/people/oneonone";
+import { statusEmojiChar, type PersonProfile, type PrepBrief } from "../../../shared/people/oneonone";
 import type { Person } from "../../../shared/types/people";
 import type { PersonTimelineItem } from "../../../shared/types/people-view";
 
@@ -56,9 +56,14 @@ export function ProfileLine({ profile, person }: { profile: PersonProfile | null
   const time = localTimeIn(person?.timezone ?? fields.timezone);
   const own = [person?.title, person?.team, person?.location].filter(Boolean);
   const parts = [person?.title ?? fields.title, person?.team, person?.location, time ? `${time} local` : null, fields.pronouns].filter(Boolean);
-  const status = [fields.statusEmoji, fields.statusText].filter(Boolean).join(" ");
-  if (parts.length === 0 && !status) return null;
+  const status = [statusEmojiChar(fields.statusEmoji), fields.statusText].filter(Boolean).join(" ");
+  // A failed read with nothing cached used to leave the page silent, so say so.
+  const unavailable = profile?.error && Object.keys(fields).length === 0
+    ? <p role="status" className="mt-1 text-xs text-[var(--text-tertiary)]">Slack profile unavailable: {profile.error}</p>
+    : null;
+  if (parts.length === 0 && !status) return unavailable;
   return (
+    <>
     <p className="mt-1.5 text-sm text-[var(--text-secondary)]" aria-label={own.length > 0 || person?.timezone ? "Profile" : "From Slack"}>
       {parts.join(" · ")}
       {status && <span className="text-[var(--text-tertiary)]">{parts.length ? " · " : ""}{status}</span>}
@@ -68,7 +73,18 @@ export function ProfileLine({ profile, person }: { profile: PersonProfile | null
         </span>
       )}
     </p>
+    {unavailable}
+    </>
   );
+}
+
+/** One line for the Slack id field in Settings: whether their profile is being read, and why not. */
+export function slackStatusText(profile: PersonProfile | null, slackId: string | null | undefined): string {
+  if (!slackId) return "Add their Slack id to show their title, time zone and status from Slack.";
+  if (!profile) return "Reading their Slack profile…";
+  if (profile.error) return `Couldn't read their Slack profile: ${profile.error}`;
+  if (profile.fetchedAt) return `Read from Slack ${formatRelative(profile.fetchedAt, { absoluteAfterDays: 30 })}.`;
+  return "Not read from Slack yet. Needs a connected Slack server.";
 }
 
 const SKIP_TEXT: Record<string, string> = {

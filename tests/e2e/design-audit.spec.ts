@@ -227,6 +227,70 @@ test.describe("design audit", () => {
       expect(failedSetups, "shots whose setup failed").toEqual([]);
     });
 
+    // People needs its own mock (seeded people) and the view un-hidden, like a user who turned it on.
+    test(`capture ${theme} people`, async ({ browser }) => {
+      const PEOPLE_SHOTS: Array<{ file: string; mode?: string; person?: string; edit?: boolean; panel?: boolean }> = [
+        { file: "60-people-list.png", person: "per-ana" },
+        { file: "61-people-edit.png", person: "per-ana", edit: true },
+        { file: "62-people-teams.png", mode: "Teams" },
+        { file: "63-people-zones.png", mode: "Time zones" },
+        { file: "64-people-zones-panel.png", mode: "Time zones", panel: true },
+        { file: "65-people-rhythm.png", mode: "Rhythm" },
+        { file: "66-people-bridges.png", mode: "Bridges" },
+        { file: "67-people-map.png", mode: "Map" },
+        { file: "68-people-teams-panel.png", mode: "Teams", panel: true },
+      ];
+      test.skip(!PEOPLE_SHOTS.some((x) => wanted(x.file)), "filtered out by ONLY");
+      const context = await browser.newContext({ viewport: DEFAULT_VIEWPORT, colorScheme: theme });
+      const page = await context.newPage();
+      await page.addInitScript({ content: buildScreenshotMock({ people: true }) });
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+      await page.waitForSelector("[data-testid='sidebar'], nav, aside", { timeout: 30_000 });
+      await page.waitForTimeout(800);
+      await page.evaluate((t) => {
+        const s = (window as unknown as { __cairnStoreRef: { getState: () => { setTheme?: (v: string) => void } } }).__cairnStoreRef.getState();
+        s.setTheme?.(t);
+        document.documentElement.setAttribute("data-theme", t);
+      }, theme);
+      await page.evaluate((src) => new Function(src)(), SUPPRESS);
+      await page.evaluate(() => {
+        const s = (window as unknown as { __cairnStoreRef: { getState: () => { setHiddenViews: (v: string[]) => void; hiddenViews: Set<string> } } }).__cairnStoreRef.getState();
+        s.setHiddenViews([...s.hiddenViews].filter((v) => v !== "people"));
+      });
+      const dir = path.join(OUT_DIR, theme);
+      fs.mkdirSync(dir, { recursive: true });
+      const failed: string[] = [];
+      for (const shot of PEOPLE_SHOTS.filter((x) => wanted(x.file))) {
+        try {
+          // Leave and re-enter People so every shot starts at the list with no person selected.
+          await reset(page, "board");
+          await reset(page, "people");
+          if (shot.person) {
+            await page.evaluate((id) => (window as unknown as { __cairnStoreRef: { getState: () => { selectPerson: (p: string) => void } } }).__cairnStoreRef.getState().selectPerson(id), shot.person);
+            await page.waitForSelector("text=Ana Lopez", { timeout: 5000 });
+          }
+          if (shot.mode) await page.getByRole("button", { name: shot.mode, exact: true }).click();
+          if (shot.panel) {
+            // Open the first person the picture offers, so the side panel sits beside it.
+            await page.locator(shot.mode === "Time zones" ? "[role='table'] [role='row'] button" : "section[aria-label] ul button").first().click();
+            await page.waitForSelector("aside[aria-label='Person']", { timeout: 5000 });
+          }
+          if (shot.edit) await page.getByRole("button", { name: "Edit details" }).click();
+          await page.waitForTimeout(700);
+        } catch (e) {
+          failed.push(shot.file);
+          console.log(`[audit:${theme}] ${shot.file} setup failed: ${(e as Error).message.split("\n")[0]}`);
+          continue;
+        }
+        await page.mouse.move(DEFAULT_VIEWPORT.width - 1, 1);
+        await page.waitForTimeout(300);
+        await page.screenshot({ path: path.join(dir, shot.file) });
+        console.log(`[audit:${theme}] ${shot.file}`);
+      }
+      await context.close();
+      expect(failed, "people shots whose setup failed").toEqual([]);
+    });
+
     // Onboarding runs on a fresh-install probe, so it gets its own page.
     test(`capture ${theme} onboarding`, async ({ browser }) => {
       const folderShot = "50-onboarding-folder.png";

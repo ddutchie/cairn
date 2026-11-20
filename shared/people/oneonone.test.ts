@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  NUDGE_AFTER_DAYS, daysBetween, gapLabel, isActivityMetric, normalisePrepInput, stripActivity, nudgeDue, nudgeTitle, parsePrepBrief, parseSlackProfile,
+  NUDGE_AFTER_DAYS, daysBetween, gapLabel, isActivityMetric, normalisePrepInput, stripActivity, nudgeDue, nudgeTitle, parsePrepBrief, parseSlackProfile, statusEmojiChar,
   profileIsFresh, PROFILE_TTL_MS,
 } from "./oneonone";
 
@@ -82,6 +82,24 @@ describe("Slack profile", () => {
   it("reads a flattened connector reply and a profile wrapper", () => {
     expect(parseSlackProfile(JSON.stringify({ title: "Designer", tz: "America/New_York" }))).toEqual({ title: "Designer", timezone: "America/New_York" });
     expect(parseSlackProfile(JSON.stringify({ profile: { title: "PM", real_name: "Pat" } }))).toEqual({ displayName: "Pat", title: "PM" });
+  });
+  it("turns a status shortcode into a character, or nothing", () => {
+    expect(statusEmojiChar(":headphones:")).toBe("🎧");
+    expect(statusEmojiChar(":palm_tree::skin-tone-3:")).toBe("🌴");
+    expect(statusEmojiChar(":some_custom_one:")).toBe("");
+    // The full standard list, plus names Slack spells its own way.
+    expect(statusEmojiChar(":taco:")).toBe("🌮");
+    expect(statusEmojiChar(":+1:")).toBe("👍");
+    expect(statusEmojiChar(":thumbsup::skin-tone-4:")).toBe("👍");
+    expect(statusEmojiChar(":spiral_calendar_pad:")).toBe("🗓️");
+    expect(statusEmojiChar(":partyparrot:")).toBe("");
+    expect(statusEmojiChar("🎧")).toBe("🎧");
+    expect(statusEmojiChar(undefined)).toBe("");
+  });
+  it("reads the Slack MCP server's labelled-text reply", () => {
+    const reply = JSON.stringify({ result: "User ID: UV49QTKPS\nUsername: reillyb\nDisplay Name: Ben Reilly\nReal Name: ben.reilly\nPronouns: he/him\nTitle: Manager, Software Development\nStatus:  \nTimezone: America/New_York\nAdmin: No\n" });
+    expect(parseSlackProfile(reply)).toEqual({ displayName: "Ben Reilly", title: "Manager, Software Development", timezone: "America/New_York", pronouns: "he/him" });
+    expect(parseSlackProfile("Title: Designer\nTimezone: Europe/Athens")).toEqual({ title: "Designer", timezone: "Europe/Athens" });
   });
   it("returns null for text, empty objects and non-JSON", () => {
     expect(parseSlackProfile("Ana is a Staff Engineer")).toBeNull();

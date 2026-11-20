@@ -16,7 +16,7 @@ const client = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/ipc/people", () => ({ peopleClient: client }));
 
-import { NextMeeting, ProfileLine, localTimeIn, usePersonProfile } from "./PersonOneOnOne";
+import { NextMeeting, ProfileLine, localTimeIn, slackStatusText, usePersonProfile } from "./PersonOneOnOne";
 
 const person = (extra: Partial<Person> = {}): Person => ({
   id: "p1", workspaceId: "ws1", name: "Ana Ruiz", aliases: [], emails: [], relationship: [], status: "confirmed", provenance: "explicit",
@@ -57,6 +57,23 @@ describe("ProfileLine", () => {
     expect(container.textContent).toBe("");
     rerender(<ProfileLine profile={null} />);
     expect(container.textContent).toBe("");
+  });
+  it("says so when a Slack read failed and nothing is cached", () => {
+    render(<ProfileLine profile={{ fields: {}, stale: false, error: "Slack's reply had no profile fields." }} />);
+    expect(screen.getByRole("status").textContent).toBe("Slack profile unavailable: Slack's reply had no profile fields.");
+  });
+  it("shows a status emoji as a character, never the raw code", () => {
+    const { container, rerender } = render(<ProfileLine profile={{ fields: { statusEmoji: ":headphones:", statusText: "Focus time" }, fetchedAt: new Date().toISOString(), stale: false }} />);
+    expect(container.textContent).toContain("🎧 Focus time");
+    rerender(<ProfileLine profile={{ fields: { statusEmoji: ":a_custom_one:", statusText: "Away" }, fetchedAt: new Date().toISOString(), stale: false }} />);
+    expect(container.textContent).not.toContain(":a_custom_one:");
+  });
+  it("describes the Slack read for the Settings field", () => {
+    expect(slackStatusText(null, null)).toMatch(/Add their Slack id/);
+    expect(slackStatusText(null, "U1")).toMatch(/Reading/);
+    expect(slackStatusText({ fields: {}, stale: false, error: "boom" }, "U1")).toBe("Couldn't read their Slack profile: boom");
+    expect(slackStatusText({ fields: { title: "PM" }, fetchedAt: new Date().toISOString(), stale: false }, "U1")).toMatch(/^Read from Slack/);
+    expect(slackStatusText({ fields: {}, stale: false }, "U1")).toMatch(/Not read from Slack yet/);
   });
   it("reads a zone it doesn't know as no local time", () => {
     expect(localTimeIn("Mars/Olympus")).toBeNull();

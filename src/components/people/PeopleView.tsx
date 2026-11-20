@@ -201,7 +201,7 @@ export function PeopleView() {
         description="The people you work with, their meetings and notes"
         actions={
           <>
-            <Button size="sm" variant="ghost" onClick={() => setFinding(true)}>Find in notes</Button>
+            <Button size="sm" variant="ghost" onClick={() => setFinding(true)}>Find people in notes</Button>
             <Button size="sm" variant="outline" onClick={() => { changeMode("list"); setCreating(true); }} disabled={creating && inList}>
               <Plus size={12} /> Add person
             </Button>
@@ -209,22 +209,6 @@ export function PeopleView() {
         }
       >
         <SegmentedControl<PeopleMode> ariaLabel="People view" size="sm" options={MODES} value={mode} onChange={changeMode} />
-        {inList && <div className="relative w-56 max-w-full">
-          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] pointer-events-none" aria-hidden />
-          <Input
-            aria-label="Search people"
-            placeholder="Search people"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-7 py-1 text-xs"
-          />
-        </div>}
-        {inList && <Select<PeopleGroupKey | "all">
-          ariaLabel="Filter by relationship"
-          value={only}
-          options={[{ value: "all", label: "Everyone" }, ...PEOPLE_GROUPS.map((g) => ({ value: g.key, label: g.label }))]}
-          onChange={setOnly}
-        />}
       </ViewToolbar>
 
       {!inList && (
@@ -259,6 +243,25 @@ export function PeopleView() {
 
       {inList && <div className="flex flex-1 min-h-0">
         <aside aria-label="People" className="w-72 flex-shrink-0 overflow-y-auto border-r border-[var(--border)] p-3">
+          <div className="mb-3 space-y-1.5">
+            <div className="relative">
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] pointer-events-none" aria-hidden />
+              <Input
+                aria-label="Search people"
+                placeholder="Search people"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="pl-7 py-1 text-xs"
+              />
+            </div>
+            <Select<PeopleGroupKey | "all">
+              ariaLabel="Filter by relationship"
+              value={only}
+              className="w-full"
+              options={[{ value: "all", label: "Everyone" }, ...PEOPLE_GROUPS.map((g) => ({ value: g.key, label: g.label }))]}
+              onChange={setOnly}
+            />
+          </div>
           {creating && (
             <CreatePersonForm onDone={(id) => { setCreating(false); if (id) selectPerson(id); }} />
           )}

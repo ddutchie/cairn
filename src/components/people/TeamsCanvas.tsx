@@ -10,6 +10,8 @@ import { Users } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useOpenPerson } from "@/components/graph/peopleCanvasShared";
 import { cn } from "@/lib/utils";
+import { PanelHeading } from "@/components/ui/panel";
+import { PeopleCanvasPage } from "./PeopleCanvasPage";
 import { FOCUS_RING } from "@/components/ui/button";
 import { NO_TEAM, groupByTeam } from "../../../shared/people/teams";
 import { RELATIONSHIP_LABELS } from "./people-model";
@@ -25,7 +27,8 @@ export function TeamsCanvas({ people, selectedId }: { people: readonly PersonSum
 
   if (people.length === 0) return <EmptyState icon={Users} title="No people yet" description="Add the people you work with and their teams show up here." className="h-full" />;
   return (
-    <div className="h-full overflow-y-auto p-4">
+    <PeopleCanvasPage lede="Everyone grouped by the team recorded on them, largest team first.">
+      <PanelHeading title="Teams" note={named ? String(named) : undefined} />
       {named === 0 && (
         <p role="status" className="mb-3 text-xs text-[var(--text-tertiary)]">
           Nobody has a team yet. Set one on a person&apos;s page, or ask the assistant to fill it in.
@@ -35,7 +38,7 @@ export function TeamsCanvas({ people, selectedId }: { people: readonly PersonSum
         {teams.map((t) => {
           const rels = ORDER.filter((r) => t.byRelationship[r]).map((r) => `${t.byRelationship[r]} ${RELATIONSHIP_LABELS[r].toLowerCase()}`);
           return (
-            <section key={t.team} aria-label={t.team} className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] p-3 shadow-elev-1">
+            <section key={t.team} aria-label={t.team} className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-3 shadow-elev-1">
               <div className="flex items-baseline justify-between gap-2">
                 <h3 className="truncate text-sm font-medium text-[var(--text-primary)]">{t.team}</h3>
                 <span className="text-2xs text-[var(--text-tertiary)] tabular-nums">{t.people.length}</span>
@@ -64,6 +67,6 @@ export function TeamsCanvas({ people, selectedId }: { people: readonly PersonSum
           );
         })}
       </div>
-    </div>
+    </PeopleCanvasPage>
   );
 }

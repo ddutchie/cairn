@@ -37,7 +37,8 @@ import {
 } from "./people-model";
 import { peopleClient } from "@/lib/ipc/people";
 import { applicableFields, PROFILE_FIELD_LABEL, type AutofillProposal } from "../../../shared/people/autofill";
-import { NextMeeting, ProfileLine, usePersonProfile } from "./PersonOneOnOne";
+import { NextMeeting, ProfileLine, slackStatusText, usePersonProfile } from "./PersonOneOnOne";
+import type { PersonProfile } from "../../../shared/people/oneonone";
 
 /** Open a note or card in its project. */
 function useReveal() {
@@ -66,9 +67,8 @@ function Chip({ children, className }: { children: React.ReactNode; className?: 
 
 // ── Header ──────────────────────────────────────────────────────────────────
 
-function PersonHeader({ page, editing, onToggleEdit }: { page: PersonPageModel; editing: boolean; onToggleEdit: () => void }) {
+function PersonHeader({ page, profile, compact, editing, onToggleEdit }: { page: PersonPageModel; profile: PersonProfile | null; compact: boolean; editing: boolean; onToggleEdit: () => void }) {
   const { person, relations } = page;
-  const profile = usePersonProfile(person);
   const facts = [
     person.cadence ? `${CADENCE_LABELS[person.cadence]} 1:1s` : null,
     page.lastMetAt ? `Last met ${formatRelative(page.lastMetAt, { absoluteAfterDays: 30 })}` : "No meetings yet",
@@ -77,7 +77,7 @@ function PersonHeader({ page, editing, onToggleEdit }: { page: PersonPageModel; 
     <header className="mb-8">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <h1 className="font-display text-3xl font-normal leading-[1.08] tracking-tight text-balance text-[var(--text-primary)] flex items-center gap-2">
+          <h1 className={cn("font-display font-normal tracking-tight text-balance text-[var(--text-primary)] flex items-center gap-2", compact ? "text-xl leading-tight" : "text-3xl leading-[1.08]")}>
             <span className="truncate">{person.name}</span>
             {person.agentPrivate && (
               <Lock size={16} className="text-[var(--text-tertiary)] flex-shrink-0" aria-label="Private from agents" />
@@ -88,7 +88,7 @@ function PersonHeader({ page, editing, onToggleEdit }: { page: PersonPageModel; 
           )}
         </div>
         <Button variant={editing ? "accent" : "outline"} size="sm" onClick={onToggleEdit} aria-pressed={editing}>
-          <Pencil size={12} /> {editing ? "Done" : "Edit"}
+          <Pencil size={12} /> {editing ? "Done editing" : "Edit details"}
         </Button>
       </div>
       <ProfileLine profile={profile} person={person} />
@@ -99,7 +99,7 @@ function PersonHeader({ page, editing, onToggleEdit }: { page: PersonPageModel; 
           </Chip>
         ))}
         {person.stage && <Chip>Stage: {person.stage}</Chip>}
-        <span className="text-xs text-[var(--text-tertiary)] ml-1">{facts.join(". ")}</span>
+        <span className={cn("text-xs text-[var(--text-tertiary)]", (person.relationship.length > 0 || person.stage) && "ml-1")}>{facts.join(". ")}</span>
       </div>
       {relations.length > 0 && (
         <ul className="mt-3 space-y-0.5 text-sm text-[var(--text-secondary)]" aria-label="Relationships">
@@ -116,8 +116,8 @@ function PersonHeader({ page, editing, onToggleEdit }: { page: PersonPageModel; 
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[9rem_1fr] items-start gap-3 py-2 border-b border-[var(--border-subtle)] last:border-0">
-      <MicroLabel className="pt-1.5 text-xs">{label}</MicroLabel>
+    <div className="grid grid-cols-1 @md:grid-cols-[9rem_1fr] items-start gap-x-3 gap-y-1 py-2 border-b border-[var(--border-subtle)] last:border-0">
+      <MicroLabel className="@md:pt-1.5 text-xs">{label}</MicroLabel>
       <div className="min-w-0">{children}</div>
     </div>
   );
@@ -170,7 +170,7 @@ function BlurInput(props: React.ComponentProps<typeof DraftInput>) {
   return <DraftInput key={props.value} {...props} />;
 }
 
-function PersonSettings({ page }: { page: PersonPageModel }) {
+function PersonSettings({ page, profile }: { page: PersonPageModel; profile: PersonProfile | null }) {
   const { person, relations } = page;
   const { people, updatePerson, deletePerson, addPersonEdge, updatePersonEdge, removePersonEdge } = useCairnStore(useShallow((s) => ({
     people: s.people,
@@ -219,7 +219,7 @@ function PersonSettings({ page }: { page: PersonPageModel }) {
   const others = people.filter((p) => p.id !== person.id);
 
   return (
-    <section className="mb-9" aria-label="Person settings">
+    <section className="@container mb-9" aria-label="Person settings">
       <PanelHeading title="Settings" note="Saved as you change them" />
       <Field label="Name">
         <BlurInput ariaLabel="Name" value={person.name} onSave={(v) => { if (v.trim()) void updatePerson(person.id, { name: v }); }} />
@@ -243,8 +243,9 @@ function PersonSettings({ page }: { page: PersonPageModel }) {
           value={person.slackId ?? ""}
           onSave={(v) => void updatePerson(person.id, { slackId: v.trim() || null })}
         />
+        <p role="status" className="mt-1 text-2xs text-[var(--text-tertiary)]">{slackStatusText(profile, person.slackId)}</p>
       </Field>
-      <Field label="Relationship">
+      <Field label="Relationship to you">
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Relationship to you">
           {RELATIONSHIP_TYPES.map((t) => (
             <button
@@ -319,7 +320,7 @@ function PersonSettings({ page }: { page: PersonPageModel }) {
           <span className="text-xs text-[var(--text-tertiary)]">Agents won&apos;t read their persona note</span>
         </div>
       </Field>
-      <Field label="Relationships">
+      <Field label="Links to others">
         <div className="space-y-1.5">
           {relations.map((r) => (
             <div key={r.edge.id} className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
@@ -578,7 +579,7 @@ function Persona({ page }: { page: PersonPageModel }) {
         action={persona ? (
           draft === null ? (
             <Button variant="ghost" size="xs" onClick={() => setDraft(content)}>
-              <Pencil size={11} /> Edit
+              <Pencil size={11} /> Edit persona
             </Button>
           ) : (
             <Button variant="accent" size="xs" onClick={done}>Done</Button>
@@ -611,15 +612,20 @@ function Persona({ page }: { page: PersonPageModel }) {
 
 /** Keyed by person id in PeopleView, so each person opens in read mode. */
 export function PersonPage({ page, compact = false }: { page: PersonPageModel | null; compact?: boolean }) {
-  const [editing, setEditing] = useState(false);
-
   if (!page) {
     return <EmptyState title="Loading" className="py-16" />;
   }
+  return <PersonPageBody page={page} compact={compact} />;
+}
+
+function PersonPageBody({ page, compact }: { page: PersonPageModel; compact: boolean }) {
+  const [editing, setEditing] = useState(false);
+  // One read for the header and for the Slack status in Settings.
+  const profile = usePersonProfile(page.person);
   return (
     <div className={compact ? "px-4 py-4" : "max-w-[820px] px-8 py-8"}>
-      <PersonHeader page={page} editing={editing} onToggleEdit={() => setEditing((e) => !e)} />
-      {editing && <PersonSettings page={page} />}
+      <PersonHeader page={page} profile={profile} compact={compact} editing={editing} onToggleEdit={() => setEditing((e) => !e)} />
+      {editing && <PersonSettings page={page} profile={profile} />}
       <NextMeeting person={page.person} timeline={page.timeline} />
       {/* Slot: Open items, they owe / I owe. */}
       <Timeline items={page.timeline} />

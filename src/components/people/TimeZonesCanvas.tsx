@@ -13,6 +13,8 @@ import { FOCUS_RING } from "@/components/ui/button";
 import { useNow } from "@/lib/viz/hooks";
 import { useOpenPerson } from "@/components/graph/peopleCanvasShared";
 import { cn } from "@/lib/utils";
+import { PanelHeading } from "@/components/ui/panel";
+import { PeopleCanvasPage } from "./PeopleCanvasPage";
 import { WORK_END, WORK_START, buildZoneModel, formatDiff } from "../../../shared/people/zones";
 import { findMe } from "@/lib/people/network";
 import type { PersonSummary } from "../../../shared/types/people-view";
@@ -33,26 +35,24 @@ export function TimeZonesCanvas({ people, selectedId }: { people: readonly Perso
   if (people.length === 0) return <EmptyState icon={Globe} title="No people yet" description="Add the people you work with and where they are shows up here." className="h-full" />;
   const mine = `${model.me.timezone}${model.me.fromProfile ? "" : " (from this computer; set yours on your own person to change it)"}`;
   return (
-    <div className="h-full overflow-y-auto p-4">
-      <p className="mb-3 text-xs text-[var(--text-tertiary)]">
-        Hours as you live them in {mine}. Bars are 9:00 to 17:00 where they are; the shaded band is your {WORK_START}:00 to {WORK_END}:00.
-      </p>
+    <PeopleCanvasPage lede={`Hours as you live them in ${mine}. Bars are 9:00 to 17:00 where they are; the shaded band is your ${WORK_START}:00 to ${WORK_END}:00.`}>
+      <PanelHeading title="Working hours" note={model.rows.length ? String(model.rows.length) : undefined} />
       {model.rows.length === 0 ? (
         <p role="status" className="text-xs text-[var(--text-tertiary)]">Nobody has a time zone yet. Set one on a person&apos;s page.</p>
       ) : (
-        <div role="table" aria-label="Working hours by person" className="min-w-[36rem]">
+        <div role="table" aria-label="Working hours by person">
           <div role="row" className="flex items-end gap-3 pb-1">
-            <div className="w-40 flex-shrink-0" />
+            <div className="w-28 @3xl:w-40 flex-shrink-0" />
             <div className="relative h-4 flex-1">
               {TICKS.map((h) => (
                 <span key={h} className="absolute -translate-x-1/2 text-2xs text-[var(--text-tertiary)] tabular-nums" style={{ left: pct(h) }}>{String(h % 24).padStart(2, "0")}</span>
               ))}
             </div>
-            <div className="w-28 flex-shrink-0" />
+            <div className="w-20 @3xl:w-28 flex-shrink-0" />
           </div>
           {model.rows.map((r) => (
             <div key={r.person.id} role="row" className="flex items-center gap-3 py-1">
-              <div role="cell" className="w-40 flex-shrink-0">
+              <div role="cell" className="w-28 @3xl:w-40 flex-shrink-0">
                 <button
                   type="button" onClick={() => open(r.person.id)} aria-pressed={r.person.id === selectedId}
                   className={cn("w-full truncate rounded px-1.5 py-0.5 text-left text-sm", FOCUS_RING, r.person.id === selectedId ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}
@@ -70,17 +70,18 @@ export function TimeZonesCanvas({ people, selectedId }: { people: readonly Perso
                 ))}
                 <div className="absolute inset-y-0 w-px bg-[var(--text-primary)]" style={{ left: pct(model.nowHour) }} aria-hidden />
               </div>
-              <div role="cell" className="w-28 flex-shrink-0 text-xs tabular-nums text-[var(--text-secondary)]">
+              <div role="cell" className="w-20 @3xl:w-28 flex-shrink-0 text-xs tabular-nums text-[var(--text-secondary)]">
                 {r.localTime} <span className="text-[var(--text-tertiary)]">{formatDiff(r.diffMinutes)}</span>
                 {r.asleep ? <span className="ml-1 text-2xs text-[var(--text-tertiary)]">asleep</span> : r.atWork ? <span className="ml-1 text-2xs text-[var(--success)]">at work</span> : null}
+                <span className="block text-2xs text-[var(--text-tertiary)]">{r.overlap > 0 ? `${r.overlap}h shared` : "no shared hours"}</span>
               </div>
             </div>
           ))}
         </div>
       )}
       {model.unset.length > 0 && (
-        <div className="mt-4 border-t border-[var(--border-subtle)] pt-3">
-          <p className="mb-1.5 text-xs text-[var(--text-tertiary)]">No time zone set ({model.unset.length})</p>
+        <section aria-label="No time zone set" className="mt-9">
+          <PanelHeading title="No time zone set" note={String(model.unset.length)} />
           <ul className="flex flex-wrap gap-1.5">
             {model.unset.map((p) => (
               <li key={p.id}>
@@ -88,8 +89,8 @@ export function TimeZonesCanvas({ people, selectedId }: { people: readonly Perso
               </li>
             ))}
           </ul>
-        </div>
+        </section>
       )}
-    </div>
+    </PeopleCanvasPage>
   );
 }

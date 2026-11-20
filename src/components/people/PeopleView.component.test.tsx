@@ -128,7 +128,7 @@ describe("PeopleView", () => {
     expect(screen.queryByRole("textbox", { name: "Search people" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Time zones" }));
     expect(within(screen.getByRole("table", { name: "Working hours by person" })).getByText("Ada Report")).toBeInTheDocument();
-    expect(screen.getByText("No time zone set (1)")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "No time zone set" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "List" }));
     expect(screen.getByRole("textbox", { name: "Search people" })).toBeInTheDocument();
   });
