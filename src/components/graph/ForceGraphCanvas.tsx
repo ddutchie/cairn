@@ -528,7 +528,8 @@ function ForceGraphCanvasImpl({
         // A keyboard-focused node with no position yet gets its first one in this frame: check it next frame
         // (nodes have their positions by then, eased or not) instead of waiting for the layout to settle.
         const focusId = propsRef.current.focusNodeId;
-        if (focusId && nodes.some((n) => n.id === focusId && n.x == null)) requestAnimationFrame(() => revealFocusedRef.current(false));
+        // Two frames: a tween started below assigns positions on its own first frame, which this must come after.
+        if (focusId && nodes.some((n) => n.id === focusId && n.x == null)) requestAnimationFrame(() => requestAnimationFrame(() => revealFocusedRef.current(false)));
         const firstOfGen = lastTickGenRef.current !== gen;
         lastTickGenRef.current = gen;
         const tw = tweenRef.current;
