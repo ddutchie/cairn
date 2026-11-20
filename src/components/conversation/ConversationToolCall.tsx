@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useOpenedCard } from "@/lib/conversation/opened-cards";
 import { CheckCircle, ChevronDown, ChevronRight, Globe2, ShieldAlert, XCircle } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { cn, prettifyToolLabel } from "@/lib/utils";
@@ -147,7 +148,7 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
 }
 
 function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useOpenedCard(toolCall.callId);
   const setActiveContextPanel = useCairnStore((state) => state.setActiveContextPanel);
   const setSessionPresentation = useCairnStore((state) => state.setSessionPresentation);
   const rv = toolCall.resultView;
@@ -183,7 +184,7 @@ function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
   const contextType = FILE_CONTEXT_TOOLS.has(toolCall.name) ? "file" : DIFF_CONTEXT_TOOLS.has(toolCall.name) ? "diff" : undefined;
   return (
     <div>
-      <button type="button" onClick={() => hasOutput && setExpanded((value) => !value)} className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit text-left", hasOutput && "hover:border-[var(--accent)] cursor-pointer", !hasOutput && "cursor-default")}>
+      <button type="button" onClick={() => hasOutput && setExpanded(!expanded)} className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit text-left", hasOutput && "hover:border-[var(--accent)] cursor-pointer", !hasOutput && "cursor-default")}>
         {toolCall.ok ? <CheckCircle size={9} className="shrink-0 text-[var(--accent)]" /> : <XCircle size={9} className="shrink-0 text-[var(--danger)]" />}
         <span className="text-xs text-[var(--text-secondary)]">{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-primary)]">{summary.obj}</strong></> : null}{!toolCall.ok && " failed"}</span>
         {exitPill && <span className="text-2xs font-mono text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1">{exitPill}</span>}
@@ -218,7 +219,7 @@ export function ConversationToolCall({ toolCall, sessionId, connectors }: Conver
   if (isCairnTool(toolCall.name)) return <CairnToolCard toolCall={toolCall} cairnRef={ref} />;
   if (ref) return <CairnRefChip toolName={toolCall.name} cairnRef={ref} ok={toolCall.ok} />;
   const connector = connectorForTool(toolCall.name, connectors);
-  if (connector) return <ConnectorToolCard toolCall={{ tool: toolCall.name, args: toolCall.args, output: toolCall.output, ok: toolCall.ok, externalRef: toolCall.externalRef }} connector={connector} />;
+  if (connector) return <ConnectorToolCard toolCall={{ callId: toolCall.callId, tool: toolCall.name, args: toolCall.args, output: toolCall.output, ok: toolCall.ok, externalRef: toolCall.externalRef }} connector={connector} />;
   if (toolCall.externalRef) return <ExternalRefChip toolName={toolCall.name} externalRef={toolCall.externalRef} />;
   return <ToolCallBody toolCall={toolCall} />;
 }
