@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
-import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
+import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { Trash2 } from "lucide-react-native";
 import { getActiveSource } from "@/db";
 import { pendingCount } from "@/sync/sync";
@@ -29,10 +29,13 @@ export function WorkspacesCard({ removedFromFolder }: { removedFromFolder: boole
   const { sources, refresh } = useSyncSources({ mergeActive: true });
   const [busy, setBusy] = useState<string | null>(null);
   const active = getActiveSource();
+  // Each row's swipeable, so a cancelled delete can slide the row shut again.
+  const swipeables = useRef(new Map<string, SwipeableMethods>());
 
   useFocusEffect(useCallback(() => void refresh(), [refresh]));
 
-  const confirmRemove = (row: Row, close: () => void) => {
+  const confirmRemove = (row: Row) => {
+    const close = () => swipeables.current.get(row.workspaceId)?.close();
     const label = row.name ?? "this workspace";
     const unsynced = row.workspaceId === active ? pendingCount() : 0;
     const fallback = sources.find((s) => s.workspaceId !== row.workspaceId)?.workspaceId;
@@ -51,7 +54,10 @@ export function WorkspacesCard({ removedFromFolder }: { removedFromFolder: boole
             setBusy(row.workspaceId);
             removeSource(row.workspaceId, fallback)
               .then(() => refresh())
-              .catch((e) => Alert.alert("Couldn't delete workspace", e instanceof Error ? e.message : String(e)))
+              .catch((e) => {
+                close();
+                Alert.alert("Couldn't delete workspace", e instanceof Error ? e.message : String(e));
+              })
               .finally(() => setBusy(null));
           },
         },
@@ -73,6 +79,10 @@ export function WorkspacesCard({ removedFromFolder }: { removedFromFolder: boole
       {sources.map((s) => (
         <ReanimatedSwipeable
           key={s.workspaceId}
+          ref={(m) => {
+            if (m) swipeables.current.set(s.workspaceId, m);
+            else swipeables.current.delete(s.workspaceId);
+          }}
           friction={2}
           rightThreshold={40}
           overshootRight={false}
@@ -81,12 +91,12 @@ export function WorkspacesCard({ removedFromFolder }: { removedFromFolder: boole
               <Trash2 size={18} color="#fff" />
             </View>
           )}
-          onSwipeableOpen={(_dir, swipeable) => confirmRemove(s, () => swipeable.close())}
+          onSwipeableOpen={() => confirmRemove(s)}
         >
           <View
             style={[styles.row, { backgroundColor: t.surface2 }, busy === s.workspaceId && { opacity: 0.5 }]}
             accessibilityActions={[{ name: "delete", label: "Delete workspace" }]}
-            onAccessibilityAction={() => confirmRemove(s, () => {})}
+            onAccessibilityAction={() => confirmRemove(s)}
           >
             <Text style={styles.name} numberOfLines={1}>
               {s.name ?? "Workspace"}
