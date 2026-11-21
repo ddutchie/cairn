@@ -78,3 +78,16 @@ on Projects, a Workspace tab, a leading-edge drawer, a tab accessory) in a
 throwaway SwiftUI project, `~/Documents/GitHub/cairn-nav-prototype/PLAN.md`,
 and decide from that before changing this app. Option 1 above is superseded
 until the prototype reports.
+
+## Built: variant F (Workspace tab plus pinned accessory)
+
+Prototype findings in `cairn-nav-prototype/FINDINGS.md` chose F. Implemented on
+the People branch: tabs are Projects, Calendar, Chat, Workspace, Search.
+People and the graph moved under `app/(tabs)/workspace/`; the pinned tool is a
+`NativeTabs.BottomAccessory` hidden while on the Workspace tab, stored per
+device in meta (`workspace.pinnedTool`). Tried on the iPhone Duo (closed).
+
+Open: the workspace switcher avatar did not render on the Workspace home (it
+does on Projects), the accessory floats over the bottom of lists (add bottom
+padding), no Today or Automations rows exist on mobile so the default pin is
+none, and the open Duo pose, iPad and Dynamic Type are untried.

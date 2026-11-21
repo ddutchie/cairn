@@ -78,8 +78,8 @@ export function TeamScreen() {
         .sort((a, b) => b.endedAt!.localeCompare(a.endedAt!))
     : [];
 
-  const openTeam = (key: string) => router.push({ pathname: "/people/team/[id]", params: { id: key } } as Href);
-  const openPerson = (personId: string) => router.push({ pathname: "/people/[id]", params: { id: personId } } as Href);
+  const openTeam = (key: string) => router.push({ pathname: "/workspace/people/team/[id]", params: { id: key } } as Href);
+  const openPerson = (personId: string) => router.push({ pathname: "/workspace/people/[id]", params: { id: personId } } as Href);
 
   // A team that is only a name on people gets its row now, so the details have somewhere to live;
   // the page then reopens on the new id with the sheet showing.
@@ -87,7 +87,7 @@ export function TeamScreen() {
     if (info) return setSheet(which);
     try {
       const made = createTeam({ name: group.team });
-      router.replace({ pathname: "/people/team/[id]", params: { id: made.id, open: which } } as Href);
+      router.replace({ pathname: "/workspace/people/team/[id]", params: { id: made.id, open: which } } as Href);
     } catch (e) {
       Alert.alert("Couldn't add details", e instanceof Error ? e.message : String(e));
     }
@@ -245,7 +245,7 @@ export function TeamScreen() {
                 return;
               }
               setSheet(null);
-              router.replace({ pathname: "/people/team/[id]", params: { id: keepId } } as Href);
+              router.replace({ pathname: "/workspace/people/team/[id]", params: { id: keepId } } as Href);
             }}
             onDelete={() => {
               try {

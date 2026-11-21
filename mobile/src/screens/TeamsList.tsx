@@ -96,7 +96,7 @@ export function TeamsList({ header }: { header: ReactElement }) {
         ) : (
           <PressableScale
             style={[s.row, { marginLeft: Math.min(item.depth, 4) * 16 }]}
-            onPress={() => router.push({ pathname: "/people/team/[id]", params: { id: item.key } } as Href)}
+            onPress={() => router.push({ pathname: "/workspace/people/team/[id]", params: { id: item.key } } as Href)}
             accessibilityLabel={`${item.name}, ${peopleCount(item.count)}`}
           >
             <View style={s.body}>

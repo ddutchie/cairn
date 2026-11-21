@@ -94,7 +94,7 @@ export function PersonScreen() {
           }
           setDetails(false);
           setTeamSheet(null);
-          if (keepId !== person.id) router.replace({ pathname: "/people/[id]", params: { id: keepId } } as Href);
+          if (keepId !== person.id) router.replace({ pathname: "/workspace/people/[id]", params: { id: keepId } } as Href);
           else load();
         },
       },
@@ -164,7 +164,7 @@ export function PersonScreen() {
             {page.relations.map((r) => (
               <PressableScale
                 key={r.edge.id}
-                onPress={() => router.push({ pathname: "/people/[id]", params: { id: r.otherId } } as Href)}
+                onPress={() => router.push({ pathname: "/workspace/people/[id]", params: { id: r.otherId } } as Href)}
                 accessibilityLabel={describeRelation(r)}
               >
                 <Text style={[s.line, r.edge.endedAt ? { color: t.textTertiary } : null]}>{describeRelation(r)}</Text>
@@ -179,7 +179,7 @@ export function PersonScreen() {
               {person.teams.map((tm) => (
                 <View key={tm.teamId} style={[s.chip, s.teamChip]}>
                   <PressableScale
-                    onPress={() => router.push({ pathname: "/people/team/[id]", params: { id: tm.teamId } } as Href)}
+                    onPress={() => router.push({ pathname: "/workspace/people/team/[id]", params: { id: tm.teamId } } as Href)}
                     accessibilityLabel={`Open ${tm.name}`}
                   >
                     <Text style={s.chipText}>

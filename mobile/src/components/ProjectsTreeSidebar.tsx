@@ -239,7 +239,7 @@ export function ProjectsTreeSidebar({
                 systemImage="person.2"
                 onPress={() => {
                   haptics.selection();
-                  router.push("/people" as Href);
+                  router.push("/workspace/people" as Href);
                 }}
               />
             </Section>

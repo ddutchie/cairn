@@ -133,7 +133,7 @@ export function PeopleScreen() {
         renderItem={({ item, section }) => (
           <PressableScale
             style={s.row}
-            onPress={() => router.push({ pathname: "/people/[id]", params: { id: item.id } } as Href)}
+            onPress={() => router.push({ pathname: "/workspace/people/[id]", params: { id: item.id } } as Href)}
             accessibilityLabel={item.name}
           >
             <View style={s.body}>
@@ -168,7 +168,7 @@ export function PeopleScreen() {
         onClose={() => setNewTeam(false)}
         onCreated={(id) => {
           setNewTeam(false);
-          router.push({ pathname: "/people/team/[id]", params: { id } } as Href);
+          router.push({ pathname: "/workspace/people/team/[id]", params: { id } } as Href);
         }}
       />
     </View>
