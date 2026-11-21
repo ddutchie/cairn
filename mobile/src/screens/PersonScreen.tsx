@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { View, Text, ScrollView, StyleSheet, TextInput } from "react-native";
+import { Alert, View, Text, ScrollView, StyleSheet, TextInput } from "react-native";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { Check, Circle, Lock } from "lucide-react-native";
 import { ICON_EDIT, ICON_PEOPLE } from "@/components/toolbar-icons";
@@ -129,7 +129,13 @@ export function PersonScreen() {
         person={person}
         onClose={() => setDetails(false)}
         onSave={(edit) => {
-          saveProfile(person.id, edit);
+          // A team name that is a guild or project is refused (a home team is a team): say so and keep the sheet open.
+          try {
+            saveProfile(person.id, edit);
+          } catch (e) {
+            Alert.alert("Couldn't save", e instanceof Error ? e.message : String(e));
+            return;
+          }
           setDetails(false);
           load();
         }}
