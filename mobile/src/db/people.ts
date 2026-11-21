@@ -23,9 +23,13 @@ import * as pq from "@cairn/shared/people/queries";
 import { captureNoteMeeting, loadCandidates, meetingLinkPending } from "@cairn/shared/people/capture";
 import { getPersonPage, listPersonSummaries } from "@cairn/shared/people/view-queries";
 import { ownedItemsIn, setItemDone } from "@cairn/shared/people/action-items";
-import type { Cadence, MeetingAttendee, PeopleStatus, Person, Relationship } from "@cairn/shared/types/people";
+import type {
+  AddMemberInput, Cadence, MeetingAttendee, PeopleStatus, Person, Relationship, Team, TeamCreateInput, TeamMembership, TeamPatch,
+} from "@cairn/shared/types/people";
 import type { PersonPage, PersonSummary } from "@cairn/shared/types/people-view";
 import { updateNote } from "./queries";
+import * as tq from "@cairn/shared/people/team-queries";
+import { mergePeople as mergePeopleShared, type MergeResult } from "@cairn/shared/people/merge";
 import { LIST_GROUPINGS, type ListGrouping } from "@cairn/shared/people/list-groups";
 
 /** The portable handle over the active source's database. */
@@ -59,6 +63,69 @@ export function loadPeople(statuses: PeopleStatus[] = ["confirmed"]): PersonSumm
 /** Confirm or dismiss a suggested person (dismissed ones are remembered, so they don't come back). */
 export function setPersonStatus(personId: string, status: PeopleStatus): void {
   write((db) => pq.updatePerson(db, personId, { status }));
+}
+
+// ── Teams ────────────────────────────────────
+
+/** Every live team in the workspace, by name. */
+export function loadTeams(): Team[] {
+  const ws = peopleWorkspaceId();
+  return ws ? tq.listTeams(peopleDb(), ws) : [];
+}
+
+/** Every membership in the workspace, past ones included. */
+export function loadMemberships(): TeamMembership[] {
+  const ws = peopleWorkspaceId();
+  return ws ? tq.listMemberships(peopleDb(), ws) : [];
+}
+
+/** Make a team in the active workspace. Throws (with a sentence to show) when the name is taken or empty. */
+export function createTeam(input: Omit<TeamCreateInput, "workspaceId">): Team {
+  const ws = peopleWorkspaceId();
+  if (!ws) throw new Error("There is no workspace to add the team to.");
+  return write((db) => tq.createTeam(db, { ...input, workspaceId: ws }));
+}
+
+/** Change a team's details; `null` clears an optional one. Throws on a clash of names or a loop in the tree. */
+export function updateTeam(id: string, patch: TeamPatch): Team {
+  return write((db) => tq.updateTeam(db, id, patch));
+}
+
+/** Remove a team and its memberships; teams under it move up. */
+export function deleteTeam(id: string): void {
+  write((db) => tq.deleteTeam(db, id));
+}
+
+/** Fold `dropId` into `keepId`: members, sub-teams and missing details move over. */
+export function mergeTeams(keepId: string, dropId: string): Team {
+  return write((db) => tq.mergeTeams(db, keepId, dropId));
+}
+
+/** Put someone on a team, or change their role there (`role: null` clears it). Never takes them off another team. */
+export function addTeamMember(input: AddMemberInput): TeamMembership {
+  return write((db) => tq.addMember(db, input));
+}
+
+/** Take someone off a team, keeping the stint as history. */
+export function endTeamMember(teamId: string, personId: string): void {
+  write((db) => tq.endMember(db, teamId, personId));
+}
+
+/** Move someone to a team by name (made when new), leaving their other teams of kind "team"; `null` takes them off all of those. */
+export function moveToTeam(personId: string, name: string | null): void {
+  write((db) => tq.setHomeTeam(db, personId, name));
+}
+
+// ── Merging people ───────────────────────────
+
+/**
+ * Fold a duplicate into the person who stays: their meetings, mentions, relationships, cards,
+ * teams led and teams move over, and their name becomes an alias. The desktop's extra tables
+ * (its checklist index and Slack cache) have no phone equivalent: the phone keeps no action-item
+ * index and no profile cache, and the desktop re-indexes when the rows arrive.
+ */
+export function mergePeople(keepId: string, dropId: string): MergeResult {
+  return write((db) => mergePeopleShared(db, keepId, dropId));
 }
 
 const GROUPING_KEY = "people.listGrouping";
