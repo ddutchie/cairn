@@ -9,7 +9,7 @@
  * merged into this one. The assistant reads and writes the same fields
  * through the `people` tool.
  */
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { ChevronRight, ExternalLink, Hash, Link2, Pencil, Plus, Sparkles, X } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
@@ -62,11 +62,19 @@ export function TeamPage({ name, onOpenPerson, onOpenTeam, onGone }: {
   const [editing, setEditing] = useState(false);
 
   if (!node) return <EmptyState title="Team not found" description="Nobody is on this team any more." className="py-16" />;
-  const { group, path, children } = node;
+  const { group, children } = node;
   const info = group.info;
   const lead = info?.leadPersonId ? people.find((p) => p.id === info.leadPersonId) : undefined;
   const zones = group.timezones.length;
   const twins = info ? all.filter((n) => n.group.info && n.group.key !== group.key && key(n.group.team) === key(group.team)) : [];
+  // The teams above this one, by their ids, so two teams with one name each open the right parent.
+  const ancestors: TeamNode[] = [];
+  for (let pid = info?.parentTeamId; pid;) {
+    const up = all.find((n) => n.group.key === pid);
+    if (!up || ancestors.includes(up)) break;
+    ancestors.unshift(up);
+    pid = up.group.info?.parentTeamId;
+  }
   const meta = [
     info && info.kind !== "team" ? KIND_LABEL[info.kind] : null,
     `${group.people.length} ${group.people.length === 1 ? "person" : "people"}`,
@@ -76,19 +84,24 @@ export function TeamPage({ name, onOpenPerson, onOpenTeam, onGone }: {
 
   const startEditing = async () => {
     // A team that is only a name on people gets its row now, so the details have somewhere to live.
-    if (!info) await createTeam({ name: group.team });
+    if (!info) {
+      const made = await createTeam({ name: group.team });
+      if (!made) return;
+      // The group is now keyed by the new team's id, so the panel follows it.
+      onOpenTeam(made.id);
+    }
     setEditing(true);
   };
 
   return (
     <div className="@container px-5 py-5">
       <header className="mb-7">
-        {path.length > 0 && (
+        {ancestors.length > 0 && (
           <nav aria-label="Teams above" className="mb-1.5 flex flex-wrap items-center gap-0.5 text-xs text-[var(--text-tertiary)]">
-            {path.map((p, i) => (
-              <React.Fragment key={p}>
+            {ancestors.map((a, i) => (
+              <React.Fragment key={a.group.key}>
                 {i > 0 && <ChevronRight size={11} aria-hidden />}
-                <button type="button" onClick={() => onOpenTeam(all.find((n) => n.group.team === p)?.group.key ?? p)} className={cn("rounded hover:text-[var(--text-primary)] hover:underline", FOCUS_RING)}>{p}</button>
+                <button type="button" onClick={() => onOpenTeam(a.group.key)} className={cn("rounded hover:text-[var(--text-primary)] hover:underline", FOCUS_RING)}>{a.group.team}</button>
               </React.Fragment>
             ))}
             <ChevronRight size={11} aria-hidden />
@@ -329,11 +342,23 @@ function TeamSettings({ node, all, onGone }: { node: TeamNode; all: TeamNode[]; 
     return out;
   };
 
-  const addLink = () => {
+  // Link edits run one at a time, each on the list as it stands after the one before:
+  // a link added while another is still saving would otherwise write the old list over it.
+  const linkQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const editLinks = (change: (links: TeamLink[]) => TeamLink[]) => {
+    const run = linkQueue.current.then(() => {
+      const current = useCairnStore.getState().teams.find((t) => t.id === info.id)?.links ?? [];
+      return save({ links: change(current) });
+    });
+    linkQueue.current = run.catch(() => null);
+    return run;
+  };
+  const addLink = async () => {
     const url = linkUrl.trim();
     if (!isUrl(url)) { setError("Links need a full address, starting with https://"); return; }
-    void save({ links: [...info.links, { label: linkLabel.trim(), url }] });
-    setLinkUrl(""); setLinkLabel("");
+    const label = linkLabel.trim();
+    // Keep what was typed until the save goes through, so a failure can be retried.
+    if (await editLinks((links) => [...links, { label, url }])) { setLinkUrl(""); setLinkLabel(""); }
   };
 
   return (
@@ -397,12 +422,12 @@ function TeamSettings({ node, all, onGone }: { node: TeamNode; all: TeamNode[]; 
               <li key={l.url} className="flex items-center gap-1.5 text-xs">
                 <ExternalLink size={11} className="text-[var(--text-tertiary)]" aria-hidden />
                 <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]" title={l.url}>{l.label}</span>
-                <IconButton label={`Remove ${l.label}`} size="sm" onClick={() => void save({ links: info.links.filter((x) => x.url !== l.url) })}><X size={12} /></IconButton>
+                <IconButton label={`Remove ${l.label}`} size="sm" onClick={() => void editLinks((links) => links.filter((x) => x.url !== l.url))}><X size={12} /></IconButton>
               </li>
             ))}
           </ul>
         )}
-        <form className="flex flex-wrap gap-1.5" onSubmit={(e) => { e.preventDefault(); addLink(); }}>
+        <form className="flex flex-wrap gap-1.5" onSubmit={(e) => { e.preventDefault(); void addLink(); }}>
           <Input aria-label="Link address" placeholder="https://…" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} className="min-w-0 flex-[2] text-xs" />
           <Input aria-label="Link name" placeholder="Name (optional)" value={linkLabel} onChange={(e) => setLinkLabel(e.target.value)} className="min-w-0 flex-1 text-xs" />
           <Button type="submit" size="xs" variant="outline" disabled={!linkUrl.trim()}>Add</Button>
@@ -421,7 +446,7 @@ function TeamSettings({ node, all, onGone }: { node: TeamNode; all: TeamNode[]; 
       <div className="mt-4 flex justify-end">
         <ConfirmButton
           variant="ghost" size="xs" confirmLabel={`Delete ${info.name}? Its members and history go with it`}
-          onConfirm={async () => { await deleteTeam(info.id); onGone(); }}
+          onConfirm={async () => { if (await deleteTeam(info.id)) onGone(); }}
         >
           Delete team
         </ConfirmButton>

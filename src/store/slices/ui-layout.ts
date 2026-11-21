@@ -385,7 +385,7 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
       activeContextPanel: null,
   lastContentView: "overview",
       // People data is per workspace: clear it so the old one can't show.
-      people: [], peopleSuggestions: [], peopleLoaded: false, selectedPersonId: null, personPage: null, personaNoteIds: [],
+      people: [], peopleSuggestions: [], teams: [], teamMemberships: [], peopleLoaded: false, selectedPersonId: null, personPage: null, personaNoteIds: [],
     });
     void get().loadPersonaNoteIds();
     // Pull this workspace's chat threads/messages from SQLite (the durable

@@ -61,7 +61,8 @@ export function groupByTeam(people: readonly PersonSummary[], teams: readonly Te
     const groups = mine.length === 0
       ? [{ g: group(NO_TEAM_KEY, NO_TEAM), role: undefined }]
       : mine.map((t) => {
-          const key = t.id && map.has(t.id) ? t.id : byName.get(fold(t.name)) ?? t.id ?? `name:${fold(t.name)}`;
+          // A membership names its team: use that, and match by name only for a person with no team id.
+          const key = t.id ?? byName.get(fold(t.name)) ?? `name:${fold(t.name)}`;
           return { g: group(key, t.name), role: t.role };
         });
     for (const { g, role } of groups) {

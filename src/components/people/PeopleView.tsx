@@ -44,6 +44,7 @@ import { TimeZonesCanvas } from "./TimeZonesCanvas";
 import { RhythmCanvas } from "./RhythmCanvas";
 import { BridgesCanvas } from "./BridgesCanvas";
 import { MapCanvas } from "./MapCanvas";
+import { useNow } from "@/lib/viz/hooks";
 
 export type PeopleMode = "list" | "org" | "relationships" | "teams" | "zones" | "rhythm" | "bridges" | "map";
 
@@ -208,9 +209,11 @@ export function PeopleView() {
   // change (sync, an agent over MCP). Both reads are cheap.
   useEffect(() => onChangeFeed(() => { void refreshPeople(); }), [refreshPeople]);
 
+  // Location and Last met read the clock, so the grouping is redone each minute.
+  const now = useNow(60_000);
   const groups = useMemo(
-    () => groupPeopleBy(people, grouping, { query, only: only === "all" ? null : only }),
-    [people, grouping, query, only],
+    () => groupPeopleBy(people, grouping, { query, only: only === "all" ? null : only, now: new Date(now) }),
+    [people, grouping, query, only, now],
   );
 
   const filtered = query.trim() !== "" || only !== "all";

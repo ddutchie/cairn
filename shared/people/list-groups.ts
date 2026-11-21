@@ -93,7 +93,12 @@ function groupOthers(
 
   switch (by) {
     case "team":
-      return ordered(bucket(list, (p) => (norm(p.team) ? { key: norm(p.team).toLowerCase(), label: norm(p.team) } : null), "No team"));
+      // Keyed by the home team's id, so two teams with one name stay two groups.
+      return ordered(bucket(list, (p) => {
+        const home = p.teams?.[0];
+        const name = norm(home?.name ?? p.team);
+        return name ? { key: home?.teamId ?? name.toLowerCase(), label: name } : null;
+      }, "No team"));
     case "place": {
       const groups = ordered(bucket(list, (p) => {
         if (p.timezone) return { key: p.timezone, label: cityOf(p.timezone) };

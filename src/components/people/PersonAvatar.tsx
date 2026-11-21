@@ -10,8 +10,10 @@ import { cn } from "@/lib/utils";
 export function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
-  const first = parts[0][0] ?? "";
-  const last = parts.length > 1 ? parts[parts.length - 1][0] ?? "" : "";
+  // By character, not UTF-16 unit, so a name starting with a supplementary character isn't cut in half.
+  const letter = (part: string) => Array.from(part)[0] ?? "";
+  const first = letter(parts[0]);
+  const last = parts.length > 1 ? letter(parts[parts.length - 1]) : "";
   return (first + last).toUpperCase();
 }
 

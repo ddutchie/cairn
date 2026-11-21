@@ -15,7 +15,7 @@ import * as z from "zod";
 
 import { isCairnReadTool } from "../../shared/agent/tool-names";
 import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_PARAM_DESCRIPTIONS as PD, PEOPLE_TOOL_DESCRIPTION_DESKTOP } from "../../shared/agent/people-tools";
-import { LINK_KINDS } from "../../shared/types/people";
+import { LINK_KINDS, PERSON_EDGE_TYPES, PROVENANCES } from "../../shared/types/people";
 
 // ── Shared field shapes ────────────────────────────────────────────────────────
 
@@ -397,6 +397,20 @@ export const CHAT_EXCLUDED_TOOLS: ToolName[] = [
 ];
 
 // Chat-only tools (not exposed via MCP)
+/**
+ * Arguments older clients still send. They are accepted when a tool is called
+ * (the MCP server validates against these as well) but not offered in the tool
+ * list, so they cost nothing. A client that cached an earlier tool list keeps
+ * working: `people` once took `provenance`, and `link: "edge"` with `edgeType`.
+ */
+export const LEGACY_TOOL_ARGS: Record<string, z.ZodRawShape> = {
+  people: {
+    provenance: z.enum(PROVENANCES).optional(),
+    edgeType: z.enum(PERSON_EDGE_TYPES).optional(),
+    link: z.enum([...LINK_KINDS, "edge"]).optional(),
+  },
+};
+
 export const CHAT_ONLY_TOOLS: ToolName[] = ["spawn_tasks_from_note", "ask_questions", "suggest_connections"];
 
 export type ToolSchemaEntry = { description: string; schema: z.ZodObject<z.ZodRawShape> };

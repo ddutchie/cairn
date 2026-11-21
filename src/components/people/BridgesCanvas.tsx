@@ -98,13 +98,14 @@ export function BridgesCanvas({ selectedId }: { selectedId?: string | null }) {
               <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full border-2 border-[var(--accent)]" aria-hidden />Only route to someone</span>
               <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[var(--warning)]" aria-hidden />Cut off without the selected person</span>
             </div>
-            <ul className="sr-only" aria-label="People in your network">
+            {/* Hidden until a keyboard user tabs in, then shown in flow with a visible focus ring. */}
+            <ul className="sr-only focus-within:not-sr-only focus-within:flex focus-within:flex-wrap focus-within:gap-1.5 focus-within:border-t focus-within:border-[var(--border-subtle)] focus-within:px-4 focus-within:py-2.5" aria-label="People in your network">
               {model.nodeIds.map((id) => {
                 const p = people.find((x) => x.id === id);
                 if (!p) return null;
                 return (
                   <li key={id}>
-                    <button type="button" onClick={() => pick(id)}>
+                    <button type="button" onClick={() => pick(id)} className={cn("rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-secondary)]", FOCUS_RING)}>
                       {`${p.name}${id === model.me!.id ? " (you)" : ""}${bridgeIds.has(id) ? ", only route to others" : ""}`}
                     </button>
                   </li>

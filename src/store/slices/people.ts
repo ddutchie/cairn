@@ -59,7 +59,8 @@ export interface PeopleSlice {
   removePersonEdge: (id: ID) => Promise<void>;
   createTeam: (input: Omit<TeamCreateInput, "workspaceId">) => Promise<Team | null>;
   updateTeam: (id: ID, patch: TeamPatch) => Promise<Team | null>;
-  deleteTeam: (id: ID) => Promise<void>;
+  /** True once the team is gone. */
+  deleteTeam: (id: ID) => Promise<boolean>;
   mergeTeams: (keepId: ID, dropId: ID) => Promise<Team | null>;
   addTeamMember: (input: AddMemberInput) => Promise<void>;
   /** Leave a team, kept as history. */
@@ -216,7 +217,7 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
     },
 
     async deleteTeam(id) {
-      await write(() => peopleClient.deleteTeam(id), "Couldn't delete the team");
+      return (await write(() => peopleClient.deleteTeam(id), "Couldn't delete the team")) !== null;
     },
 
     async mergeTeams(keepId, dropId) {
@@ -232,8 +233,10 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
     },
 
     async mergePeople(keepId, dropId) {
-      if (get().selectedPersonId === dropId) set({ selectedPersonId: keepId, personPage: null });
-      return write(() => peopleClient.merge(keepId, dropId), "Couldn't merge them");
+      const out = await write(() => peopleClient.merge(keepId, dropId), "Couldn't merge them");
+      // Move to the kept person only once the merge went through; a failed one leaves the page as it was.
+      if (out && get().selectedPersonId === dropId) set({ selectedPersonId: keepId, personPage: null });
+      return out;
     },
   };
 };

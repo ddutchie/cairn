@@ -392,8 +392,9 @@ export function addEdge(db: Db, input: AddEdgeInput): PersonEdge {
   if (existing && !existing.deleted_at) {
     const label = input.label !== undefined ? input.label.trim() || null : existing.label;
     const endedAt = input.endedAt ?? null;
-    // Only ever upgrade: an inferred call doesn't turn the user's confirmed edge back into a suggestion.
-    const status = existing.status === "confirmed" || input.status === undefined ? existing.status : oneOf(PEOPLE_STATUSES, input.status, "status");
+    // Only ever upgrade: an inferred call doesn't turn the user's confirmed edge back into a suggestion,
+    // and an unstated status means confirmed here as it does for a new edge.
+    const status = existing.status === "confirmed" ? "confirmed" : oneOf(PEOPLE_STATUSES, input.status ?? "confirmed", "status");
     if (label !== existing.label || endedAt !== existing.ended_at || status !== existing.status) {
       db.prepare("UPDATE person_edges SET label = ?, ended_at = ?, status = ?, updated_at = ? WHERE id = ?").run(label, endedAt, status, now, id);
       syncChipFromEdge(db, id);
@@ -453,10 +454,14 @@ export function updateEdge(
 
 export function removeEdge(db: Db, id: string): void {
   const now = ts();
-  const live = db.prepare("SELECT 1 FROM person_edges WHERE id = ? AND deleted_at IS NULL").get(id);
-  if (!live) return;
-  db.prepare("UPDATE person_edges SET deleted_at = ?, updated_at = ? WHERE id = ?").run(now, now, id);
-  syncChipFromEdge(db, id);
+  const row = db.prepare("SELECT deleted_at FROM person_edges WHERE id = ?").get(id) as Row | undefined;
+  if (!row) return;
+  // Safe to repeat: an edge that is already removed still has its chip cleared, so a retry
+  // finishes what an earlier call left half done.
+  db.transaction(() => {
+    if (!row.deleted_at) db.prepare("UPDATE person_edges SET deleted_at = ?, updated_at = ? WHERE id = ?").run(now, now, id);
+    syncChipFromEdge(db, id);
+  })();
 }
 
 // ── Chips and edges to you (shared/people/chip-edges.ts) ──

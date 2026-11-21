@@ -611,6 +611,7 @@ function PersonTeams({ personId, teams }: { personId: string; teams: PersonPageM
   const { allTeams, memberships, updatePerson, addTeamMember, endTeamMember } = useCairnStore(useShallow((s) => ({
     allTeams: s.teams, memberships: s.teamMemberships, updatePerson: s.updatePerson, addTeamMember: s.addTeamMember, endTeamMember: s.endTeamMember,
   })));
+  const [moves, setMoves] = useState(0);
   const current = new Set(teams.map((t) => t.teamId));
   const byId = new Map(allTeams.map((t) => [t.id, t]));
   const past = memberships.filter((m) => m.personId === personId && m.endedAt && !current.has(m.teamId) && byId.has(m.teamId));
@@ -636,7 +637,9 @@ function PersonTeams({ personId, teams }: { personId: string; teams: PersonPageM
           />
         )}
         <div className="min-w-0 flex-1">
-          <BlurInput ariaLabel="Move to a new team" placeholder={teams.length ? "Or move to a new team" : "e.g. Sync"} value="" onSave={(v) => { if (v.trim()) void updatePerson(personId, { team: v }); }} />
+          {/* Remounted after each move so the typed name doesn't stay as a draft and re-apply on the next blur. */}
+          <BlurInput key={moves} ariaLabel="Move to a new team" placeholder={teams.length ? "Or move to a new team" : "e.g. Sync"} value=""
+            onSave={(v) => { if (v.trim()) { void updatePerson(personId, { team: v }); setMoves((n) => n + 1); } }} />
         </div>
       </div>
       {past.length > 0 && (

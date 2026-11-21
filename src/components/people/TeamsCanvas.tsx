@@ -109,7 +109,7 @@ export function TeamsCanvas({ people, selectedTeam, onOpenTeam }: {
   const loose = groups.find((g) => g.key === NO_TEAM_KEY)?.people ?? [];
 
   if (people.length === 0 && teams.length === 0) {
-    return <EmptyState icon={Users} title="No people yet" description="Add the people you work with and their teams show up here." className="h-full" />;
+    return <EmptyState icon={Users} title="No people yet" description="Add the people you work with and their teams show up here, or start a team first." action={<NewTeam onCreated={onOpenTeam} />} className="h-full" />;
   }
 
   // A tree with teams under it is a section of its own; teams that stand alone share one grid.

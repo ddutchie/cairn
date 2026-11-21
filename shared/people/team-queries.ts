@@ -118,8 +118,20 @@ export function findTeamByName(db: Db, workspaceId: string, name: string): Team 
   return row ? toTeam(row) : null;
 }
 
+/** Whether `teamId` sits somewhere below `ancestorId`. */
+function isBelow(db: Db, teamId: string, ancestorId: string): boolean {
+  const seen = new Set<string>();
+  let cur = getTeam(db, teamId)?.parentTeamId;
+  while (cur && !seen.has(cur)) {
+    if (cur === ancestorId) return true;
+    seen.add(cur);
+    cur = getTeam(db, cur)?.parentTeamId;
+  }
+  return false;
+}
+
 /** Throws when `parentId` is `teamId` or sits under it. */
-function assertNoCycle(db: Db, teamId: string | null, parentId: string | null | undefined): void {
+function assertNoCycle(db: Db, teamId: string | null, parentId: string | null | undefined, workspaceId?: string): void {
   if (!parentId) return;
   const seen = new Set<string>();
   let cur: string | undefined = parentId;
@@ -132,6 +144,7 @@ function assertNoCycle(db: Db, teamId: string | null, parentId: string | null | 
       if (cur === parentId) throw new Error(`Team not found: ${parentId}`);
       break;
     }
+    if (cur === parentId && workspaceId && parent.workspaceId !== workspaceId) throw new Error("A team can only sit under a team in its own workspace");
     cur = parent.parentTeamId;
   }
 }
@@ -161,7 +174,7 @@ export function createTeam(db: Db, input: TeamCreateInput): Team {
       const row = db.prepare("SELECT deleted_at FROM teams WHERE id = ?").get(candidate) as Row | undefined;
       if (!row) { id = candidate; break; }
       if (row.deleted_at) {
-        assertNoCycle(db, candidate, input.parentTeamId);
+        assertNoCycle(db, candidate, input.parentTeamId, input.workspaceId);
         // Revive with the new facts (an UPDATE, so sync sends a put that has seen the delete).
         db.prepare(`
           UPDATE teams SET deleted_at = NULL, workspace_id = ?, name = ?, kind = ?, description = ?, lead_person_id = ?,
@@ -172,7 +185,7 @@ export function createTeam(db: Db, input: TeamCreateInput): Team {
       }
     }
   }
-  assertNoCycle(db, id, input.parentTeamId);
+  assertNoCycle(db, id, input.parentTeamId, input.workspaceId);
   db.prepare(`
     INSERT INTO teams (id, workspace_id, name, kind, description, lead_person_id, parent_team_id, channel, links, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -204,7 +217,7 @@ export function updateTeam(db: Db, id: string, patch: TeamPatch): Team {
   if (patch.description !== undefined) set("description", patch.description?.trim() || null);
   if (patch.leadPersonId !== undefined) set("lead_person_id", patch.leadPersonId || null);
   if (patch.parentTeamId !== undefined) {
-    assertNoCycle(db, id, patch.parentTeamId);
+    assertNoCycle(db, id, patch.parentTeamId, current.workspaceId);
     set("parent_team_id", patch.parentTeamId || null);
   }
   if (patch.channel !== undefined) set("channel", patch.channel?.trim() || null);
@@ -243,6 +256,12 @@ export function mergeTeams(db: Db, keepId: string, dropId: string): Team {
   if (keep.workspaceId !== drop.workspaceId) throw new Error("Those teams are in different workspaces");
   const now = ts();
   db.transaction(() => {
+    // Merging into a team that sits below the dropped one (A -> B -> C, A into C): the kept team
+    // takes the dropped team's place first, so its children can move under it without a loop.
+    if (isBelow(db, keepId, dropId)) {
+      db.prepare("UPDATE teams SET parent_team_id = ?, updated_at = ? WHERE id = ?").run(drop.parentTeamId ?? null, now, keepId);
+      keep.parentTeamId = drop.parentTeamId;
+    }
     for (const m of listTeamMemberships(db, dropId)) {
       const there = getMembership(db, keepId, m.personId);
       if (!there) {
@@ -263,7 +282,7 @@ export function mergeTeams(db: Db, keepId: string, dropId: string): Team {
     if (!keep.channel && drop.channel) fill.channel = drop.channel;
     if (drop.links.length) fill.links = [...keep.links, ...drop.links];
     if (!keep.parentTeamId && drop.parentTeamId && drop.parentTeamId !== keepId) {
-      try { assertNoCycle(db, keepId, drop.parentTeamId); fill.parentTeamId = drop.parentTeamId; } catch { /* would loop: leave it a root */ }
+      try { assertNoCycle(db, keepId, drop.parentTeamId, keep.workspaceId); fill.parentTeamId = drop.parentTeamId; } catch { /* would loop: leave it a root */ }
     }
     db.prepare("UPDATE teams SET deleted_at = ?, updated_at = ? WHERE id = ?").run(now, now, dropId);
     if (Object.keys(fill).length) updateTeam(db, keepId, fill);
@@ -406,6 +425,10 @@ export function setHomeTeam(db: Db, personId: string, name: string | null): void
   if (!person) throw new Error(`Person not found: ${personId}`);
   const workspaceId = person.workspace_id as string;
   const target = name && normTeamName(name) ? ensureTeam(db, workspaceId, name) : null;
+  // A guild, project or committee can't be a home team: refuse before anyone is taken off theirs.
+  if (target && target.kind !== "team") {
+    throw new Error(`"${target.name}" is a ${target.kind}, not a team. Add them to it as a member instead; a home team is a team.`);
+  }
   for (const t of currentTeamsByPerson(db, workspaceId, personId).get(personId) ?? []) {
     if (t.kind === "team" && t.teamId !== target?.id) endMember(db, t.teamId, personId);
   }

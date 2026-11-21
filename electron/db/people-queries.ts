@@ -49,10 +49,14 @@ export function deletePerson(db: Db, id: string): void {
  * the one going away is dropped.
  */
 export function mergePeople(db: Db, keepId: string, dropId: string): MergeResult {
-  const out = mergeShared(db, keepId, dropId);
-  db.prepare("UPDATE note_action_items SET owner_person_id = ? WHERE owner_person_id = ?").run(keepId, dropId);
-  db.prepare("DELETE FROM person_profile_cache WHERE person_id = ?").run(dropId);
-  return out;
+  // One transaction (the shared merge nests as a savepoint): a failure in the desktop's own
+  // tables leaves the dropped person in place, so the merge can be retried.
+  return db.transaction(() => {
+    const out = mergeShared(db, keepId, dropId);
+    db.prepare("UPDATE note_action_items SET owner_person_id = ? WHERE owner_person_id = ?").run(keepId, dropId);
+    db.prepare("DELETE FROM person_profile_cache WHERE person_id = ?").run(dropId);
+    return out;
+  })();
 }
 
 // ── Note lifecycle ────────────────────────────

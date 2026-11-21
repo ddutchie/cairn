@@ -109,10 +109,12 @@ export function OrgChartCanvas({ onOpenTeam }: { onOpenTeam?: (key: string) => v
   }, [meX, loading, mode]);
 
   if (loading) return null;
-  if (people.length === 0) return <CanvasEmptyState message="No people yet. Add people in the People view and the reporting line shows up here." />;
+  // With teams but no people the Teams chart still has something to show, so the toolbar stays.
+  if (people.length === 0 && teams.length === 0) return <CanvasEmptyState message="No people yet. Add people in the People view and the reporting line shows up here." />;
 
   const onlyMe = chart.roots.length === 1 && chart.roots[0].children.length === 0 && chart.roots[0].alsoReportsTo.length === 0;
-  const hl = highlight;
+  // A highlighted team that no longer has anyone on it stops dimming everyone.
+  const hl = teamOptions.some((o) => o.value === highlight) ? highlight : "";
   const onHl = new Set(groups.find((g) => g.key === hl)?.people.map((p) => p.id) ?? []);
   const dims = (personId: string | undefined) => !!hl && !onHl.has(personId ?? "");
 
@@ -136,6 +138,15 @@ export function OrgChartCanvas({ onOpenTeam }: { onOpenTeam?: (key: string) => v
       </div>
     </div>
   );
+
+  if (mode === "people" && people.length === 0) {
+    return (
+      <div className="flex flex-col flex-1 min-w-0 min-h-0">
+        {toolbar}
+        <CanvasEmptyState message="No people yet. Add people in the People view and the reporting line shows up here." />
+      </div>
+    );
+  }
 
   if (mode === "teams") {
     return (

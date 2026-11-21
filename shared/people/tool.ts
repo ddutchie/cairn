@@ -437,6 +437,9 @@ function teamUpsert(db: Db, workspaceId: string, args: Args) {
     return { merged: true, removed: { teamId: drop.id, name: drop.name }, team: teams(db, workspaceId, { team: kept.id }) };
   }
 
+  // Resolve every reference before anything is written, so a typo can't leave half a change behind
+  // (a rename that stuck, with a retry by the old name then making a second team).
+  const clearLead = info.lead === "";
   const lead = typeof info.lead === "string" && info.lead.trim() ? personRef(db, workspaceId, info.lead) : undefined;
   if (isErr(lead)) return { error: `lead: ${lead.error}` };
   let parentTeamId: string | null | undefined;
@@ -447,59 +450,74 @@ function teamUpsert(db: Db, workspaceId: string, args: Args) {
     if (isErr(parent)) return { error: `parentTeam: ${parent.error}. Create it first with team_upsert.` };
     parentTeamId = parent.id;
   }
+  const joining: { ref: string; person: Person }[] = [];
+  for (const ref of strList(info.members)) {
+    const p = personRef(db, workspaceId, ref);
+    if (isErr(p)) return { error: `members: ${p.error}` };
+    joining.push({ ref, person: p });
+  }
+  const leaving: Person[] = [];
+  for (const ref of strList(info.removeMembers)) {
+    const p = personRef(db, workspaceId, ref);
+    if (isErr(p)) return { error: `removeMembers: ${p.error}` };
+    leaving.push(p);
+  }
   const links = Array.isArray(info.links) ? info.links : undefined;
   const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+  // `role: ""` clears a role; leaving it out keeps what a member has.
+  const role = typeof info.role === "string" ? (info.role.trim() || null) : undefined;
 
   const found = getTeam(db, name) ?? findTeamByName(db, workspaceId, name);
-  let team = found && found.workspaceId === workspaceId ? found : null;
-  const created = !team;
-  if (!team) {
-    team = createTeam(db, {
-      workspaceId, name, kind: info.kind !== undefined ? teamKind(info.kind) : undefined,
-      description: text(info.description), channel: text(info.channel), links,
-      leadPersonId: lead?.id, parentTeamId: parentTeamId ?? undefined,
-    });
-  } else {
-    const t = team;
-    const patch: TeamPatch = {};
-    const take = (has: boolean) => fill || !has;
-    if (text(info.rename)?.trim()) patch.name = text(info.rename)!;
-    if (info.kind !== undefined && take(t.kind !== "team")) patch.kind = teamKind(info.kind);
-    if (text(info.description) !== undefined && take(!!t.description)) patch.description = text(info.description)!;
-    if (text(info.channel) !== undefined && take(!!t.channel)) patch.channel = text(info.channel)!;
-    if (links && take(t.links.length > 0)) patch.links = links;
-    if (lead && take(!!t.leadPersonId)) patch.leadPersonId = lead.id;
-    if (parentTeamId !== undefined && take(!!t.parentTeamId)) patch.parentTeamId = parentTeamId;
-    if (Object.keys(patch).length) team = updateTeam(db, t.id, patch);
-  }
+  const existing = found && found.workspaceId === workspaceId ? found : null;
+  const created = !existing;
 
-  // Members join (a guild or project beside their own team; nobody moves). The lead is one of them.
-  const added: string[] = [];
-  const role = text(info.role)?.trim() || undefined;
-  const memberArgs = [...strList(info.members), ...(lead ? [lead.id] : [])];
-  const current = new Set(listMemberships(db, workspaceId).filter((m) => m.teamId === team!.id && !m.endedAt).map((m) => m.personId));
-  for (const m of memberArgs) {
-    const p = personRef(db, workspaceId, m);
-    if (isErr(p)) return { error: `members: ${p.error}` };
-    if (current.has(p.id) && !role) continue;
-    addMember(db, { teamId: team.id, personId: p.id, ...(role && strList(info.members).includes(m) ? { role } : {}) });
-    if (!current.has(p.id)) added.push(p.name);
-    current.add(p.id);
-  }
-  const removed: string[] = [];
-  for (const m of strList(info.removeMembers)) {
-    const p = personRef(db, workspaceId, m);
-    if (isErr(p)) return { error: `removeMembers: ${p.error}` };
-    if (!current.has(p.id)) continue;
-    endMember(db, team.id, p.id);
-    removed.push(p.name);
-  }
-  return {
-    [created ? "created" : "updated"]: true,
-    team: teams(db, workspaceId, { team: team.id }),
-    ...(added.length ? { addedMembers: added } : {}),
-    ...(removed.length ? { removedMembers: removed } : {}),
-  };
+  return db.transaction(() => {
+    let team = existing;
+    if (!team) {
+      team = createTeam(db, {
+        workspaceId, name, kind: info.kind !== undefined ? teamKind(info.kind) : undefined,
+        description: text(info.description), channel: text(info.channel), links,
+        leadPersonId: lead?.id, parentTeamId: parentTeamId ?? undefined,
+      });
+    } else {
+      const t = team;
+      const patch: TeamPatch = {};
+      const take = (has: boolean) => fill || !has;
+      // A rename replaces what the user set, so only an explicit write makes one.
+      if (fill && text(info.rename)?.trim()) patch.name = text(info.rename)!;
+      if (info.kind !== undefined && take(t.kind !== "team")) patch.kind = teamKind(info.kind);
+      if (text(info.description) !== undefined && take(!!t.description)) patch.description = text(info.description)!;
+      if (text(info.channel) !== undefined && take(!!t.channel)) patch.channel = text(info.channel)!;
+      if (links && take(t.links.length > 0)) patch.links = links;
+      if (lead && take(!!t.leadPersonId)) patch.leadPersonId = lead.id;
+      else if (clearLead && fill) patch.leadPersonId = null;
+      if (parentTeamId !== undefined && take(!!t.parentTeamId)) patch.parentTeamId = parentTeamId;
+      if (Object.keys(patch).length) team = updateTeam(db, t.id, patch);
+    }
+
+    // Members join (a guild or project beside their own team; nobody moves). The lead is one of them.
+    const added: string[] = [];
+    const current = new Set(listMemberships(db, workspaceId).filter((m) => m.teamId === team!.id && !m.endedAt).map((m) => m.personId));
+    const members = [...joining, ...(lead ? [{ ref: "", person: lead }] : [])];
+    for (const { ref, person } of members) {
+      if (current.has(person.id) && role === undefined) continue;
+      addMember(db, { teamId: team.id, personId: person.id, ...(role !== undefined && ref ? { role } : {}) });
+      if (!current.has(person.id)) added.push(person.name);
+      current.add(person.id);
+    }
+    const removed: string[] = [];
+    for (const p of leaving) {
+      if (!current.has(p.id)) continue;
+      endMember(db, team.id, p.id);
+      removed.push(p.name);
+    }
+    return {
+      [created ? "created" : "updated"]: true,
+      team: teams(db, workspaceId, { team: team.id }),
+      ...(added.length ? { addedMembers: added } : {}),
+      ...(removed.length ? { removedMembers: removed } : {}),
+    };
+  })();
 }
 
 /** Delete a team: its memberships go with it, and teams under it move up. */

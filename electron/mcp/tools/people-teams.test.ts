@@ -10,7 +10,7 @@ import os from "os";
 import type Database from "better-sqlite3";
 import { makeDb } from "../../test-support/db";
 import { createWorkspace } from "../../db/queries";
-import { addAttendee, addEdge, createMeeting, createPerson, getPerson, getRelations, listAttendees, mergePeople, updateEdge, updatePerson } from "../../db/people-queries";
+import { addAttendee, addEdge, createMeeting, createPerson, getPerson, getRelations, listAttendees, mergePeople, removeEdge, updateEdge, updatePerson } from "../../db/people-queries";
 import {
   addMember, createTeam, deleteTeam, endMember, getTeam, listMemberships, listTeams, mergeTeams, setHomeTeam, updateTeam,
 } from "../../../shared/people/team-queries";
@@ -250,5 +250,74 @@ describe("people tool: teams", () => {
     await run({ action: "upsert", personId: a.id, title: "Designer" });
     await run({ action: "upsert", personId: a.id, title: "Intern", status: "suggested" });
     expect(getPerson(db, a.id)!.title).toBe("Designer");
+  });
+});
+
+describe("review fixes", () => {
+  it("merging a team into one below it keeps the tree acyclic", () => {
+    const a = createTeam(db, { workspaceId: "ws", name: "A" });
+    const b = createTeam(db, { workspaceId: "ws", name: "B", parentTeamId: a.id });
+    const c = createTeam(db, { workspaceId: "ws", name: "C", parentTeamId: b.id });
+    mergeTeams(db, c.id, a.id);
+    expect(getTeam(db, a.id)).toBeNull();
+    expect(getTeam(db, c.id)!.parentTeamId ?? null).toBeNull();
+    expect(getTeam(db, b.id)!.parentTeamId).toBe(c.id);
+  });
+
+  it("a parent from another workspace is refused", () => {
+    createWorkspace(db, { id: "ws2", name: "Other" });
+    const foreign = createTeam(db, { workspaceId: "ws2", name: "Elsewhere" });
+    expect(() => createTeam(db, { workspaceId: "ws", name: "Local", parentTeamId: foreign.id })).toThrow(/own workspace/);
+    const local = createTeam(db, { workspaceId: "ws", name: "Local" });
+    expect(() => updateTeam(db, local.id, { parentTeamId: foreign.id })).toThrow(/own workspace/);
+  });
+
+  it("a guild can't be someone's home team, and they stay where they were", () => {
+    const ann = person("Ann", "Sync");
+    createTeam(db, { workspaceId: "ws", name: "Architecture", kind: "guild" });
+    expect(() => setHomeTeam(db, ann.id, "Architecture")).toThrow(/is a guild/);
+    expect(getPerson(db, ann.id)!.team).toBe("Sync");
+  });
+
+  it("a team_upsert with an unknown member changes nothing", async () => {
+    person("Ann", "Platform");
+    const before = await run({ action: "team_upsert", team: "Platform", teamInfo: { description: "Original" } });
+    expect(before.updated).toBe(true);
+    const r = await run({ action: "team_upsert", team: "Platform", teamInfo: { rename: "Core", description: "Changed", members: ["Nobody Here"] } });
+    expect(r.error).toMatch(/members/);
+    const t = listTeams(db, "ws").find((x) => x.name === "Platform")!;
+    expect(t.description).toBe("Original");
+    expect(listTeams(db, "ws").some((x) => x.name === "Core")).toBe(false);
+  });
+
+  it("an inferred team_upsert doesn't rename, and role and lead can be cleared", async () => {
+    const ann = person("Ann");
+    await run({ action: "team_upsert", team: "Sync", teamInfo: { lead: "Ann", members: ["Ann"], role: "Tech lead" } });
+    const inferred = await run({ action: "team_upsert", team: "Sync", status: "suggested", teamInfo: { rename: "Renamed" } });
+    expect(inferred.team.name).toBe("Sync");
+    const cleared = await run({ action: "team_upsert", team: "Sync", teamInfo: { members: ["Ann"], role: "", lead: "" } });
+    expect(cleared.team.lead).toBeUndefined();
+    const m = listMemberships(db, "ws").find((x) => x.personId === ann.id)!;
+    expect(m.role ?? null).toBeNull();
+  });
+
+  it("a failed desktop cleanup leaves the dropped person in place for a retry", () => {
+    const keep = person("Sam Whitfield");
+    const drop = person("Sam");
+    db.exec("ALTER TABLE note_action_items RENAME TO note_action_items_gone");
+    expect(() => mergePeople(db, keep.id, drop.id)).toThrow();
+    expect(getPerson(db, drop.id)).not.toBeNull();
+  });
+
+  it("removing an edge again still clears its chip, and re-adding a suggested edge confirms it", () => {
+    const me = createPerson(db, { workspaceId: "ws", name: "Me", isMe: true });
+    const boss = person("Boss");
+    const edge = addEdge(db, { workspaceId: "ws", sourceId: boss.id, targetId: me.id, type: "manager_of", status: "suggested", provenance: "inferred" });
+    expect(addEdge(db, { workspaceId: "ws", sourceId: boss.id, targetId: me.id, type: "manager_of" }).status).toBe("confirmed");
+    // A chip left behind by a removal that stopped halfway.
+    removeEdge(db, edge.id);
+    db.prepare("UPDATE people SET relationship = ? WHERE id = ?").run(JSON.stringify([{ type: "manager", provenance: "explicit" }]), boss.id);
+    removeEdge(db, edge.id);
+    expect(getPerson(db, boss.id)!.relationship.some((r) => r.type === "manager")).toBe(false);
   });
 });

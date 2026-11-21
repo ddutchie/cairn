@@ -18,6 +18,11 @@ describe("groupPeopleBy", () => {
   it("team: one group per team ignoring case, no team last", () => {
     expect(groupPeopleBy(people, "team", { now }).map((g) => [g.label, g.people.length])).toEqual([["Sync", 2], ["No team", 2]]);
   });
+  it("team: two teams with one name stay two groups when people name their team by id", () => {
+    const t = (id: string) => [{ teamId: id, name: "Sync", kind: "team" as const }];
+    const groups = groupPeopleBy([p("a", "Ann", { team: "Sync", teams: t("team-1") }), p("b", "Bo", { team: "Sync", teams: t("team-2") })], "team", { now });
+    expect(groups.map((g) => [g.label, g.people.length])).toEqual([["Sync", 1], ["Sync", 1]]);
+  });
   it("place: by zone with local time, then by location, unknown last", () => {
     const g = groupPeopleBy(people, "place", { now });
     expect(g.map((x) => x.label)).toEqual(["Berlin", "Lisbon", "Unknown"]);
