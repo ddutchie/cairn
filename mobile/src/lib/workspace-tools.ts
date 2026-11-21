@@ -81,9 +81,16 @@ export function usePinnedTool(): ToolId | null {
 }
 
 /** Space a screen should leave at the bottom for the pinned accessory, or 0 when none is showing. */
-export function useAccessoryInset(): number {
-  const pinned = usePinnedTool();
+export function useAccessoryVisible(): boolean {
   const pathname = usePathname();
   const inWorkspace = pathname === "/workspace" || pathname.startsWith("/workspace/");
-  return pinned && !inWorkspace ? ACCESSORY_HEIGHT : 0;
+  // Chat has its own composer at the bottom, so the accessory stays out of it.
+  const inChat = pathname === "/chat" || pathname.startsWith("/chat/");
+  return !inWorkspace && !inChat;
+}
+
+export function useAccessoryInset(): number {
+  const pinned = usePinnedTool();
+  const visible = useAccessoryVisible();
+  return pinned && visible ? ACCESSORY_HEIGHT : 0;
 }

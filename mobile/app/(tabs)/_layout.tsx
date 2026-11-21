@@ -5,7 +5,7 @@ import { resetProjectsSelection } from "@/components/ProjectsSplitView";
 import { useAppQuickActions } from "@/quick-actions";
 import { useTheme } from "@/theme";
 import { PinnedAccessory } from "@/components/PinnedAccessory";
-import { usePinnedTool } from "@/lib/workspace-tools";
+import { useAccessoryVisible, usePinnedTool } from "@/lib/workspace-tools";
 import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
 
 // A crash inside a tab shows a recoverable screen instead of a white screen.
@@ -26,8 +26,8 @@ export default function TabsLayout() {
   // pop — reset the selection ourselves. (A tap from another tab just switches.)
   const pathname = usePathname();
   const onProjects = pathname === "/projects" || pathname.startsWith("/projects/");
-  const inWorkspace = pathname === "/workspace" || pathname.startsWith("/workspace/");
   const pinned = usePinnedTool();
+  const showAccessory = useAccessoryVisible();
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       {/* tintColor accents the selected tab (icon + label) with our brand
@@ -74,7 +74,7 @@ export default function TabsLayout() {
         </NativeTabs.Trigger>
         {/* The tool pinned from the Workspace tab. Hidden while you are already in
             the Workspace tab, where the same row is on screen. */}
-        {pinned && !inWorkspace ? (
+        {pinned && showAccessory ? (
           <NativeTabs.BottomAccessory>
             <PinnedAccessory tool={pinned} />
           </NativeTabs.BottomAccessory>

@@ -5,6 +5,7 @@ import { getKnowledgeGraph, listWorkspaceIds, type KnowledgeGraph, type GraphEdg
 import type { GraphMode } from "@/graph/useGraphControls";
 import { GRAPH_RENDERER } from "@/graph/renderer";
 import type { LabelMode } from "@cairn/shared/ui/graph";
+import { KnowledgeGraphSkia } from "@/components/KnowledgeGraphSkia";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { ICON_GRAPH_FORCE, ICON_GRAPH_RADIAL, ICON_LABELS, ICON_LABELS_SMART, ICON_LABELS_ALL, ICON_LABELS_MINIMAL } from "@/components/toolbar-icons";
@@ -16,14 +17,14 @@ import { useTheme } from "@/theme";
 import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
 import { railToolbar, useTightSideRail } from "@/components/screen-chrome";
 
-// Skia is the default renderer. The legacy D3 WebView inlines the full D3
-// bundle (~274 KB) as a string, so both are loaded lazily: opening the app or
-// other tabs never evaluates either module, only the Graph tab on first view.
-const KnowledgeGraphView = lazy(() =>
-  GRAPH_RENDERER === "webview"
-    ? import("@/components/KnowledgeGraphWebView").then((m) => ({ default: m.KnowledgeGraphWebView }))
-    : import("@/components/KnowledgeGraphSkia").then((m) => ({ default: m.KnowledgeGraphSkia })),
+// Skia is the default renderer and is imported eagerly: Worklets Bundle Mode only
+// knows the worklets of modules in the initial bundle, so a lazy chunk containing
+// Reanimated hooks fails with "Unable to resolve worklet" when the graph opens.
+// The legacy D3 WebView inlines a ~274 KB bundle, so only it stays lazy.
+const KnowledgeGraphWebView = lazy(() =>
+  import("@/components/KnowledgeGraphWebView").then((m) => ({ default: m.KnowledgeGraphWebView })),
 );
+const KnowledgeGraphView = GRAPH_RENDERER === "webview" ? KnowledgeGraphWebView : KnowledgeGraphSkia;
 
 /**
  * Workspace-wide Knowledge Graph — every project, note, card and tag wired by
