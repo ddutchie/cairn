@@ -355,9 +355,9 @@ function TeamSettings({ node, all, onGone }: { node: TeamNode; all: TeamNode[]; 
     const label = linkLabel.trim();
     // Keep what was typed until the save goes through, so a failure can be retried. Clear it only if it is
     // still what was saved: something typed meanwhile is the next link.
-    if (await editLinks((links) => [...links, { label, url }]) && draft.current.url.trim() === url) {
+    if (await editLinks((links) => [...links, { label, url }]) && draft.current.url.trim() === url && draft.current.label.trim() === label) {
       setLinkUrl("");
-      if (draft.current.label.trim() === label) setLinkLabel("");
+      setLinkLabel("");
     }
   };
 
