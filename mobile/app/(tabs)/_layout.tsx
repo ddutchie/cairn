@@ -58,7 +58,7 @@ export default function TabsLayout() {
           <NativeTabs.Trigger.Label>Chat</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
-        {/* Workspace is a home, not a "More" list: People, the graph, usage and
+        {/* Workspace is a home, not a "More" list: People, the graph and
             settings, each with a live line. Five tabs including Search fit
             without iOS folding any into More. */}
         <NativeTabs.Trigger name="workspace">

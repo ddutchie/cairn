@@ -87,7 +87,11 @@ People and the graph moved under `app/(tabs)/workspace/`; the pinned tool is a
 `NativeTabs.BottomAccessory` hidden while on the Workspace tab, stored per
 device in meta (`workspace.pinnedTool`). Tried on the iPhone Duo (closed).
 
+Also done: the accessory inset (stack screens and Calendar leave room for it),
+and sheets keep their header clear of the Duo's status pill (checked on the
+closed Duo, where Done is now visible). Usage is not a Workspace row: it already
+lives in AI settings, so that row says "Provider, model, keys and usage".
+
 Open: the workspace switcher avatar did not render on the Workspace home (it
-does on Projects), the accessory floats over the bottom of lists (add bottom
-padding), no Today or Automations rows exist on mobile so the default pin is
-none, and the open Duo pose, iPad and Dynamic Type are untried.
+does on Projects), no Today or Automations rows exist on mobile so the default
+pin is none, and the open Duo pose, iPad and Dynamic Type are untried.

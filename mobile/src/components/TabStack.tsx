@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { Stack , ThemeProvider, DarkTheme, DefaultTheme } from "expo-router";
+import { Stack, ThemeProvider, DarkTheme, DefaultTheme } from "expo-router";
+import { useAccessoryInset } from "@/lib/workspace-tools";
 import { useColorScheme } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/theme";
@@ -30,7 +31,10 @@ import { useTheme } from "@/theme";
 export function useTabContentStyle() {
   const t = useTheme();
   const { left, right } = useSafeAreaInsets();
-  return { backgroundColor: t.background, paddingLeft: left, paddingRight: right };
+  // The pinned tool's accessory floats over the bottom of the screen (everywhere
+  // but the Workspace tab), so the content ends above it.
+  const accessory = useAccessoryInset();
+  return { backgroundColor: t.background, paddingLeft: left, paddingRight: right, paddingBottom: accessory };
 }
 
 export function TabStack({

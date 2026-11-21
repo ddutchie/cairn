@@ -5,6 +5,7 @@
    worklets / useAnimatedStyle — never during JS render. The plain fields
    (ctrl.dragging, ctrl.scrollLocked, ctrl.setContainer) are safe to read here. */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useAccessoryInset } from "@/lib/workspace-tools";
 import { View, Text, ScrollView, Pressable, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from "react-native";
 import { ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react-native";
 import { useDragController, DragOverlay } from "@/dnd";
@@ -90,6 +91,7 @@ export function CalendarView({
 }) {
   const t = useTheme();
   const styles = useCalendarStyles();
+  const accessoryInset = useAccessoryInset();
 
   // Layout is controlled when `layoutProp` is supplied, else internal.
   const [layoutInternal, setLayoutInternal] = useState<CalendarLayout>("month");
@@ -376,7 +378,7 @@ export function CalendarView({
         ]}
       >
         <ScrollView
-          contentContainerStyle={{ paddingBottom: bottomInset + 16 }}
+          contentContainerStyle={{ paddingBottom: bottomInset + accessoryInset + 16 }}
           showsVerticalScrollIndicator
           scrollEnabled={!ctrl.scrollLocked}
           nestedScrollEnabled
