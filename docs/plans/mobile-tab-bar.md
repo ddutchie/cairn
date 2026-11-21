@@ -67,3 +67,14 @@ follows the same order with no `role="search"` special case.
 
 - The sheet Done button hidden under the Duo status pill, and the full-width
   open pose, are tracked in `mobile-people.md` under "Findings from PR 1".
+
+## Direction update
+
+The product owner wants Chat, Projects, Calendar and Search front and centre,
+with People and Graph demoted and nothing hidden in a "More" level. Desktop
+already works this way: the project tree is the spine and the rest sits in a
+collapsible Workspace group. We will prototype four structures (workspace row
+on Projects, a Workspace tab, a leading-edge drawer, a tab accessory) in a
+throwaway SwiftUI project, `~/Documents/GitHub/cairn-nav-prototype/PLAN.md`,
+and decide from that before changing this app. Option 1 above is superseded
+until the prototype reports.
