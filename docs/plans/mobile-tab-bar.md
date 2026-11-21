@@ -89,8 +89,8 @@ device in meta (`workspace.pinnedTool`). Tried on the iPhone Duo (closed).
 
 Also done: the accessory inset (stack screens and Calendar leave room for it),
 and sheets keep their header clear of the Duo's status pill (checked on the
-closed Duo, where Done is now visible). Usage is not a Workspace row: it already
-lives in AI settings, so that row says "Provider, model, keys and usage".
+closed Duo, where Done is now visible). Usage moved out of AI settings (its third tab is
+gone) into a Workspace row, reusing the same `UsageBody`.
 
 Open: the workspace switcher avatar did not render on the Workspace home (it
 does on Projects), no Today or Automations rows exist on mobile so the default

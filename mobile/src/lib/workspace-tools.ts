@@ -4,7 +4,7 @@ import { getMeta, setMeta } from "@/db";
 import { loadPeople, loadTeams } from "@/db/people";
 
 /** Where the Workspace tab sends you, and what the pinned accessory can show. */
-export type ToolId = "people" | "graph" | "sync";
+export type ToolId = "people" | "graph" | "usage" | "sync";
 
 export interface WorkspaceTool {
   id: ToolId;
@@ -17,13 +17,14 @@ export interface WorkspaceTool {
 export const WORKSPACE_TOOLS: Record<ToolId, WorkspaceTool> = {
   people: { id: "people", title: "People", href: "/workspace/people" as Href, blurb: "Who you work with, and their teams" },
   graph: { id: "graph", title: "Knowledge graph", href: "/workspace/graph" as Href, blurb: "Projects, notes and tasks as a map" },
+  usage: { id: "usage", title: "Usage", href: "/settings/usage" as Href, blurb: "AI tokens and cost" },
   sync: { id: "sync", title: "Sync", href: "/sync" as Href, blurb: "Devices and the shared folder" },
 };
 
 /** Space the pinned accessory takes above the tab bar, so screens end above it. */
 export const ACCESSORY_HEIGHT = 56;
 
-export const PINNABLE: ToolId[] = ["people", "graph", "sync"];
+export const PINNABLE: ToolId[] = ["people", "graph", "usage", "sync"];
 
 /** One live line for a tool, or its blurb when there is nothing to count. Cheap, synchronous SQLite. */
 export function liveLine(id: ToolId): string {

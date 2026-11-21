@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack, useRouter, type Href } from "expo-router";
-import { Network, Palette, Pin, RefreshCw, Sparkles, Users, Wrench } from "lucide-react-native";
+import { BarChart3, Network, Palette, Pin, RefreshCw, Sparkles, Users, Wrench } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
@@ -10,7 +10,7 @@ import { PINNABLE, WORKSPACE_TOOLS, liveLine, usePinnedTool, type ToolId } from 
 import { showPinMenu } from "@/lib/pin-menu";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
-const ICONS: Record<ToolId, typeof Users> = { people: Users, graph: Network, sync: RefreshCw };
+const ICONS: Record<ToolId, typeof Users> = { people: Users, graph: Network, usage: BarChart3, sync: RefreshCw };
 
 type Row = { key: string; title: string; line: string; href: Href; icon: typeof Users; tool?: ToolId };
 
@@ -36,8 +36,9 @@ export function WorkspaceScreen() {
     href: WORKSPACE_TOOLS[id].href, icon: ICONS[id], tool: id,
   }));
   const settings: Row[] = [
+    { key: "usage", title: "Usage", line: lines.usage ?? WORKSPACE_TOOLS.usage.blurb, href: WORKSPACE_TOOLS.usage.href, icon: ICONS.usage, tool: "usage" },
     { key: "sync", title: "Sync", line: lines.sync ?? WORKSPACE_TOOLS.sync.blurb, href: WORKSPACE_TOOLS.sync.href, icon: ICONS.sync, tool: "sync" },
-    { key: "ai", title: "AI settings", line: "Provider, model, keys and usage", href: "/settings/ai" as Href, icon: Sparkles },
+    { key: "ai", title: "AI settings", line: "Provider, model and keys", href: "/settings/ai" as Href, icon: Sparkles },
     { key: "tools", title: "Tools and services", line: "Connectors the assistant can use", href: "/settings/tools" as Href, icon: Wrench },
     { key: "appearance", title: "Appearance", line: "Theme and text size", href: "/settings/appearance" as Href, icon: Palette },
   ];

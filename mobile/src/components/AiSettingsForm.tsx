@@ -83,7 +83,6 @@ import { SegmentButton } from "./ai-settings/SegmentButton";
 import { Field } from "./ai-settings/Field";
 import { QuotaBar } from "./ai-settings/QuotaBar";
 import { PresetStepperRow } from "./ai-settings/PresetStepperRow";
-import { UsageBody } from "./ai-settings/UsageBody";
 import { ProviderList, type ResolvedProviderLogo } from "./ai-settings/ProviderList";
 import {
   getCachedProvidersManifest,
@@ -242,8 +241,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [personalityId, setPersonalityId] = useState(() => getChatPersonalityId());
   const [personalityManifest, setPersonalityManifest] = useState(() => getCachedPersonalitiesManifest());
   const [personalityRefreshing, setPersonalityRefreshing] = useState(false);
-  // 3-tab layout: setup (provider + model) / tuning (settings + theme) / usage.
-  // "setup" persists on Save (Done); "tuning" and "usage" are live/read-only.
+  // 2-tab layout: setup (provider + model) / tuning (settings + theme).
+  // "setup" persists on Save (Done); "tuning" is live. Usage lives in the Workspace tab.
   const [tab, setTab] = useState(0);
   // Model-behavior knobs (live-apply, desktop parity) — temperature "Auto" =
   // undefined (omit the field); max steps default 30.
@@ -724,16 +723,15 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
           </View>
         ) : (
           <>
-          {/* 3-tab layout (native segmented control, iOS/Android). "Setup" holds
-              provider + model and saves on Done; "Tuning" (settings + theme) and
-              "Usage" are live/read-only. */}
+          {/* 2-tab layout (native segmented control, iOS/Android). "Setup" holds
+              provider + model and saves on Done; "Tuning" (settings + theme) is live. */}
           <View style={[styles.tabBar, edgePad]}>
             <SegmentedControl
               style={{ height: 36 }}
               tintColor={t.accent}
               fontStyle={{ color: t.textSecondary, fontSize: 14, fontWeight: "600" }}
               activeFontStyle={{ color: t.accentFg, fontSize: 14, fontWeight: "600" }}
-              values={["Setup", "Tuning", "Usage"]}
+              values={["Setup", "Tuning"]}
               selectedIndex={tab}
               onChange={(e) => setTab(e.nativeEvent.selectedSegmentIndex)}
             />
@@ -1241,11 +1239,6 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                   );
                 })}
               </View>
-            </>
-          )}
-          {tab === 2 && (
-            <>
-              <UsageBody />
             </>
           )}
           </KeyboardAwareScrollView>
