@@ -9,13 +9,17 @@ import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { requestSync } from "@/sync/controller";
 import { haptics } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
-import { loadPeople, setPersonStatus } from "@/db/people";
-import { groupPeople, RELATIONSHIP_LABELS } from "@cairn/shared/people/model";
+import { loadGrouping, loadPeople, saveGrouping, setPersonStatus } from "@/db/people";
+import { toolbarPress } from "@/haptics";
+import { ICON_GROUP_BY } from "@/components/toolbar-icons";
+import { RELATIONSHIP_LABELS } from "@cairn/shared/people/model";
+import { LIST_GROUPINGS, groupPeopleBy, type ListGrouping } from "@cairn/shared/people/list-groups";
 import { formatRelative } from "@cairn/shared/format/date";
 import type { PersonSummary } from "@cairn/shared/types/people-view";
 
 /**
- * People (flag on): everyone you work with, grouped by relationship, plus the
+ * People: everyone you work with, grouped by relationship (or team, location, last met,
+ * name: a per-device choice) with you pinned first, plus the
  * suggestions Cairn found (an unknown attendee, an ambiguous name) waiting for
  * a confirm or a dismiss. Dismissed people are remembered so they don't come
  * back. A row opens the person page.
@@ -27,10 +31,18 @@ export function PeopleScreen() {
   const [people, setPeople] = useState<PersonSummary[]>([]);
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [grouping, setGroupingState] = useState<ListGrouping>(loadGrouping);
+  // Location and Last met read the clock, so the grouping is redone when the screen reloads.
+  const [now, setNow] = useState(() => new Date());
+  const setGrouping = (g: ListGrouping) => {
+    setGroupingState(g);
+    saveGrouping(g);
+  };
 
   const load = useCallback(() => {
     try {
       setPeople(loadPeople(["confirmed", "suggested"]));
+      setNow(new Date());
     } catch {
       setPeople([]);
     }
@@ -49,10 +61,10 @@ export function PeopleScreen() {
   const sections = useMemo(() => {
     const confirmed = people.filter((p) => p.status === "confirmed");
     const suggested = people.filter((p) => p.status === "suggested");
-    const groups = groupPeople(confirmed, { query }).map((g) => ({ key: g.key, title: g.label, data: g.people }));
+    const groups = groupPeopleBy(confirmed, grouping, { query, now }).map((g) => ({ key: g.key, title: g.label, note: g.note, data: g.people }));
     const sug = suggested.filter((p) => !query || p.name.toLowerCase().includes(query.toLowerCase()));
-    return sug.length ? [{ key: "suggested", title: "Suggested", data: sug }, ...groups] : groups;
-  }, [people, query]);
+    return sug.length ? [{ key: "suggested", title: "Suggested", note: undefined, data: sug }, ...groups] : groups;
+  }, [people, query, grouping, now]);
 
   const decide = (p: PersonSummary, status: "confirmed" | "dismissed") => {
     haptics.selection();
@@ -63,7 +75,16 @@ export function PeopleScreen() {
 
   return (
     <View style={s.root}>
-      <ScreenChrome title="People" />
+      <ScreenChrome
+        title="People"
+        right={[{
+          kind: "menu",
+          key: "group",
+          label: "Group people",
+          icon: ICON_GROUP_BY,
+          actions: LIST_GROUPINGS.map((g) => ({ label: g.label, isOn: g.value === grouping, onPress: toolbarPress(() => setGrouping(g.value)) })),
+        }]}
+      />
       <SectionList
         sections={sections}
         keyExtractor={(p, i) => `${p.id}-${i}`}
@@ -77,7 +98,12 @@ export function PeopleScreen() {
             subtitle="People appear here when a meeting note lists attendees or you add someone on the desktop."
           />
         }
-        renderSectionHeader={({ section }) => <Text style={s.header}>{section.title}</Text>}
+        renderSectionHeader={({ section }) => (
+          <Text style={s.header}>
+            {section.title}
+            {section.note ? <Text style={s.headerNote}>{`  ${section.note}`}</Text> : null}
+          </Text>
+        )}
         renderItem={({ item, section }) => (
           <PressableScale
             style={s.row}
@@ -89,6 +115,7 @@ export function PeopleScreen() {
               <Text style={s.meta} numberOfLines={1}>
                 {[
                   item.title ?? "",
+                  grouping === "team" ? "" : item.teams?.[0]?.name ?? item.team ?? "",
                   item.relationship.map((r) => r.label ?? RELATIONSHIP_LABELS[r.type]).join(", "),
                   item.lastMetAt ? `met ${formatRelative(item.lastMetAt)}` : "",
                 ].filter(Boolean).join(" · ") || (section.key === "suggested" ? "Suggested" : " ")}
@@ -119,6 +146,7 @@ function makeStyles(t: Theme) {
     list: { padding: 12, paddingBottom: 48 },
     search: { marginBottom: 8 },
     header: { ...typeScale.overline, color: t.textTertiary, marginTop: 16, marginBottom: 6, marginLeft: 4 },
+    headerNote: { ...typeScale.caption, color: t.textTertiary },
     row: {
       flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 14,
       borderRadius: 12, backgroundColor: t.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border, marginBottom: 6,

@@ -15,7 +15,7 @@
  */
 
 import type { SyncDb } from "@cairn/shared/sync/db-adapter";
-import { getActiveSource, getDb } from "./index";
+import { getActiveSource, getDb, getMeta, setMeta } from "./index";
 import { createExpoSyncDb } from "./expo-sync-db";
 import { notifyLocalWrite } from "@/sync/write-signal";
 import { LIVE, NOT_CONFLICT } from "./sql";
@@ -26,6 +26,7 @@ import { ownedItemsIn, setItemDone } from "@cairn/shared/people/action-items";
 import type { Cadence, MeetingAttendee, PeopleStatus, Person, Relationship } from "@cairn/shared/types/people";
 import type { PersonPage, PersonSummary } from "@cairn/shared/types/people-view";
 import { updateNote } from "./queries";
+import { LIST_GROUPINGS, type ListGrouping } from "@cairn/shared/people/list-groups";
 
 /** The portable handle over the active source's database. */
 export function peopleDb(): SyncDb {
@@ -58,6 +59,26 @@ export function loadPeople(statuses: PeopleStatus[] = ["confirmed"]): PersonSumm
 /** Confirm or dismiss a suggested person (dismissed ones are remembered, so they don't come back). */
 export function setPersonStatus(personId: string, status: PeopleStatus): void {
   write((db) => pq.updatePerson(db, personId, { status }));
+}
+
+const GROUPING_KEY = "people.listGrouping";
+
+/** How this device groups the People list (a per-device choice, kept in the meta store). */
+export function loadGrouping(): ListGrouping {
+  try {
+    const v = getMeta(GROUPING_KEY);
+    return LIST_GROUPINGS.find((g) => g.value === v)?.value ?? "relationship";
+  } catch {
+    return "relationship";
+  }
+}
+
+export function saveGrouping(by: ListGrouping): void {
+  try {
+    setMeta(GROUPING_KEY, by);
+  } catch {
+    // A per-device convenience: not remembered is fine.
+  }
 }
 
 // ── Person page ──────────────────────────────
