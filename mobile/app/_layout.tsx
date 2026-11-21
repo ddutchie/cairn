@@ -251,8 +251,6 @@ function RootNavigator({
       />
       <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
       <Stack.Screen name="project/calendar" options={{ title: "Calendar" }} />
-      <Stack.Screen name="people/index" options={{ title: "People" }} />
-      <Stack.Screen name="people/[id]" options={{ title: "Person" }} />
       <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
       <Stack.Screen name="capture" options={{ title: "Capture", presentation: "modal", contentStyle: cardStyle }} />

@@ -49,6 +49,11 @@ export default function TabsLayout() {
           <NativeTabs.Trigger.Label>Calendar</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
+        <NativeTabs.Trigger name="people">
+          <NativeTabs.Trigger.Icon sf="person.2.fill" md="group" />
+          <NativeTabs.Trigger.Label>People</NativeTabs.Trigger.Label>
+        </NativeTabs.Trigger>
+
         <NativeTabs.Trigger name="graph">
           <NativeTabs.Trigger.Icon sf="point.3.connected.trianglepath.dotted" md="hub" />
           <NativeTabs.Trigger.Label>Graph</NativeTabs.Trigger.Label>
