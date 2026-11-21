@@ -49,14 +49,21 @@ export default function TabsLayout() {
           <NativeTabs.Trigger.Label>Calendar</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
-        <NativeTabs.Trigger name="graph">
-          <NativeTabs.Trigger.Icon sf="point.3.connected.trianglepath.dotted" md="hub" />
-          <NativeTabs.Trigger.Label>Graph</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger name="people">
+          <NativeTabs.Trigger.Icon sf="person.2.fill" md="group" />
+          <NativeTabs.Trigger.Label>People</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
         <NativeTabs.Trigger name="chat">
           <NativeTabs.Trigger.Icon sf="bubble.left.and.bubble.right.fill" md="chat" />
           <NativeTabs.Trigger.Label>Chat</NativeTabs.Trigger.Label>
+        </NativeTabs.Trigger>
+
+        {/* Six tabs overflow into iOS's More (the search tab counts toward the limit), which keeps the first
+            four: Graph, the least used, sits after Chat so it is the one that folds in. */}
+        <NativeTabs.Trigger name="graph">
+          <NativeTabs.Trigger.Icon sf="point.3.connected.trianglepath.dotted" md="hub" />
+          <NativeTabs.Trigger.Label>Graph</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
         {/* Search last so it sits on the far right — matches the iOS search-tab

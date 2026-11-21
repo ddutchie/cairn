@@ -28,6 +28,7 @@ import PinXml from "@expo/material-symbols/keep.xml";
 import UnpinXml from "@expo/material-symbols/keep_off.xml";
 import TagXml from "@expo/material-symbols/sell.xml";
 import GroupXml from "@expo/material-symbols/group.xml";
+import FilterListXml from "@expo/material-symbols/filter_list.xml";
 import ShareXml from "@expo/material-symbols/ios_share.xml";
 import PdfXml from "@expo/material-symbols/picture_as_pdf.xml";
 import CalendarXml from "@expo/material-symbols/calendar_month.xml";
@@ -51,6 +52,8 @@ export type ToolbarIcon = SFSymbol | ImageSourcePropType;
 
 const ios = process.env.EXPO_OS === "ios";
 
+/** Group or sort a list (a grouping menu). */
+export const ICON_GROUP_BY: ToolbarIcon = ios ? "line.3.horizontal.decrease" : FilterListXml;
 /** Add / new item (Plus). */
 export const ICON_ADD: ToolbarIcon = ios ? "plus" : AddXml;
 /** Confirm / save (checkmark). */
