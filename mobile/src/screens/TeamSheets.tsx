@@ -1,57 +1,15 @@
 import { useMemo, useState } from "react";
-import { Alert, FlatList, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { Check, X } from "lucide-react-native";
+import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { X } from "lucide-react-native";
 import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
 import { PressableScale } from "@/components/PressableScale";
-import { SearchField } from "@/components/SearchField";
+import { PickerPage, type PickerOption as Option } from "@/components/PickerPage";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { addTeamMember, endTeamMember, updateTeam } from "@/db/people";
 import { KIND_LABEL } from "@/lib/team-labels";
 import { TEAM_KINDS, type Team, type TeamKind, type TeamLink, type TeamPatch } from "@cairn/shared/types/people";
 import type { PersonSummary } from "@cairn/shared/types/people-view";
 import type { TeamNode } from "@cairn/shared/people/teams";
-
-/** A choice in a picker page. */
-interface Option {
-  value: string;
-  label: string;
-  note?: string;
-}
-
-/** A searchable list that stands in for a nested sheet: the sheet shows it instead of its form, with a way back. */
-function PickerPage({ title, options, selected, onPick, onBack, empty }: {
-  title: string; options: Option[]; selected?: string; onPick: (value: string) => void; onBack: () => void; empty?: string;
-}) {
-  const t = useTheme();
-  const s = useMemo(() => makeStyles(t), [t]);
-  const [query, setQuery] = useState("");
-  const q = query.trim().toLowerCase();
-  const shown = q ? options.filter((o) => o.label.toLowerCase().includes(q) || o.note?.toLowerCase().includes(q)) : options;
-  return (
-    <>
-      <BottomSheetHeader title={title} onCancel={onBack} />
-      <View style={s.pickerSearch}>
-        <SearchField value={query} onChangeText={setQuery} placeholder="Search" />
-      </View>
-      <FlatList
-        data={shown}
-        style={s.pickerList}
-        keyboardShouldPersistTaps="handled"
-        keyExtractor={(o) => o.value || "_none"}
-        ListEmptyComponent={<Text style={[s.empty, { padding: 18 }]}>{empty ?? "Nothing to pick."}</Text>}
-        renderItem={({ item }) => (
-          <PressableScale style={s.pickRow} onPress={() => onPick(item.value)} accessibilityLabel={item.label}>
-            <View style={s.flex}>
-              <Text style={s.line} numberOfLines={1}>{item.label}</Text>
-              {item.note ? <Text style={s.note} numberOfLines={1}>{item.note}</Text> : null}
-            </View>
-            {selected === item.value ? <Check size={16} color={t.accent} /> : null}
-          </PressableScale>
-        )}
-      />
-    </>
-  );
-}
 
 const isUrl = (s: string): boolean => {
   try { return /^https?:$/.test(new URL(s).protocol); } catch { return false; }
@@ -377,8 +335,5 @@ function makeStyles(t: Theme) {
     linkRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 },
     linkAdd: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8 },
     memberRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8 },
-    pickerSearch: { paddingHorizontal: 14, paddingTop: 10 },
-    pickerList: { flexGrow: 0, maxHeight: 460 },
-    pickRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 11, paddingHorizontal: 18 },
   });
 }

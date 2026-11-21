@@ -15,7 +15,7 @@ vi.mock("./queries", () => ({ updateNote: () => {} }));
 
 const {
   addNoteAttendee, setActionItemDone, loadOpenItems, saveProfile,
-  createTeam, updateTeam, deleteTeam, mergeTeams, loadTeams, loadMemberships, addTeamMember, endTeamMember, moveToTeam, mergePeople,
+  createTeam, updateTeam, deleteTeam, mergeTeams, loadTeams, loadMemberships, addTeamMember, endTeamMember, moveToTeam, mergePeople, loadPastTeams, loadTeamsView,
 } = await import("./people");
 const NOW = "2026-11-18T10:00:00.000Z";
 const addNote = (id: string, content: string, extra = "") =>
@@ -138,5 +138,26 @@ describe("teams", () => {
     expect(kept.aliases).toContain("Sam");
     expect(loadMemberships().map((m) => m.personId)).toEqual(["ana"]);
     expect(h.db.prepare("SELECT deleted_at AS d FROM people WHERE id = 'sam'").get()).toEqual({ d: expect.any(String) });
+  });
+
+  it("lists teams someone has left, but not ones they are back on", () => {
+    const a = createTeam({ name: "A" });
+    const b = createTeam({ name: "B" });
+    addTeamMember({ teamId: a.id, personId: "ana" });
+    addTeamMember({ teamId: b.id, personId: "ana" });
+    endTeamMember(a.id, "ana");
+    expect(loadPastTeams("ana", [{ teamId: b.id }]).map((p) => p.team.name)).toEqual(["A"]);
+    addTeamMember({ teamId: a.id, personId: "ana" });
+    expect(loadPastTeams("ana", [{ teamId: a.id }, { teamId: b.id }])).toEqual([]);
+  });
+
+  it("reads the team tree with people under their teams and the rest without one", () => {
+    person("bo", "Bo");
+    const top = createTeam({ name: "Top" });
+    createTeam({ name: "Sub", parentTeamId: top.id });
+    addTeamMember({ teamId: top.id, personId: "ana" });
+    const view = loadTeamsView();
+    expect(view.forest.map((n) => [n.group.team, n.children.map((c) => c.group.team)])).toEqual([["Top", ["Sub"]]]);
+    expect(view.groups.find((g) => g.key === "_none")?.people.map((p) => p.id)).toEqual(["bo"]);
   });
 });

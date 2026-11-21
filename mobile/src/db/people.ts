@@ -101,6 +101,22 @@ export function loadTeamsView(): TeamsView {
   return { people, teams, memberships: loadMemberships(), groups, forest, nodes: flattenTeams(forest) };
 }
 
+/** A past stint on a team, for "Before: …" on a person's page. */
+export interface PastTeam {
+  team: Team;
+  endedAt: string;
+}
+
+/** Teams a person has left (not on them now), most recently left first. */
+export function loadPastTeams(personId: string, current: readonly { teamId: string }[]): PastTeam[] {
+  const now = new Set(current.map((t) => t.teamId));
+  const byId = new Map(loadTeams().map((t) => [t.id, t]));
+  return loadMemberships()
+    .filter((m) => m.personId === personId && m.endedAt && !now.has(m.teamId) && byId.has(m.teamId))
+    .map((m) => ({ team: byId.get(m.teamId)!, endedAt: m.endedAt! }))
+    .sort((a, b) => b.endedAt.localeCompare(a.endedAt));
+}
+
 /** Make a team in the active workspace. Throws (with a sentence to show) when the name is taken or empty. */
 export function createTeam(input: Omit<TeamCreateInput, "workspaceId">): Team {
   const ws = peopleWorkspaceId();
