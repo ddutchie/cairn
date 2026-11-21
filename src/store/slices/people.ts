@@ -11,7 +11,7 @@
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { ID } from "@/types";
-import type { AddMemberInput, Person, PersonCreateInput, PersonPatch, Team, TeamCreateInput, TeamMembership, TeamPatch } from "../../../shared/types/people";
+import type { AddMemberInput, Person, PersonCreateInput, PersonPatch, Team, TeamCreateInput, TeamLink, TeamMembership, TeamPatch } from "../../../shared/types/people";
 import type { PersonEdgeInput, PersonEdgePatch, PersonPage, PersonSummary } from "../../../shared/types/people-view";
 import { peopleClient } from "@/lib/ipc/people";
 import { hasElectron, reportIpcError } from "@/lib/ipc/client";
@@ -59,6 +59,8 @@ export interface PeopleSlice {
   removePersonEdge: (id: ID) => Promise<void>;
   createTeam: (input: Omit<TeamCreateInput, "workspaceId">) => Promise<Team | null>;
   updateTeam: (id: ID, patch: TeamPatch) => Promise<Team | null>;
+  /** Change a team's links one edit at a time, each on the list the one before saved (even across edit mode closing). */
+  editTeamLinks: (id: ID, change: (links: TeamLink[]) => TeamLink[]) => Promise<Team | null>;
   /** True once the team is gone. */
   deleteTeam: (id: ID) => Promise<boolean>;
   mergeTeams: (keepId: ID, dropId: ID) => Promise<Team | null>;
@@ -70,6 +72,11 @@ export interface PeopleSlice {
 }
 
 export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = (set, get) => {
+  // Per team: the tail of its link edits, and the links its last save returned. The saved list is what the
+  // next edit builds on, so a refetch that failed (or hasn't landed) can't hand it an older one.
+  const linkQueues = new Map<ID, Promise<unknown>>();
+  const savedLinks = new Map<ID, TeamLink[]>();
+
   /** Run a write, then refetch the list and the open page. */
   async function write<T>(fn: () => Promise<T>, context: string, afterWrite?: (out: T) => void): Promise<T | null> {
     if (!hasElectron("people")) return null;
@@ -216,6 +223,22 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
 
     async updateTeam(id, patch) {
       return write(() => peopleClient.updateTeam(id, patch), "Couldn't save the team");
+    },
+
+    editTeamLinks(id, change) {
+      const run = (linkQueues.get(id) ?? Promise.resolve()).then(async () => {
+        const current = savedLinks.get(id) ?? get().teams.find((t) => t.id === id)?.links ?? [];
+        const out = await get().updateTeam(id, { links: change(current) });
+        if (out) savedLinks.set(id, out.links ?? []);
+        else savedLinks.delete(id);
+        return out;
+      });
+      const tail = run.catch(() => null).then(() => {
+        // Once the queue is idle the store is the source again, so later changes from elsewhere aren't hidden.
+        if (linkQueues.get(id) === tail) { linkQueues.delete(id); savedLinks.delete(id); }
+      });
+      linkQueues.set(id, tail);
+      return run;
     },
 
     async deleteTeam(id) {

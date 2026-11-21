@@ -319,8 +319,8 @@ function PastMembers({ node, onOpenPerson }: { node: TeamNode; onOpenPerson: (id
 }
 
 function TeamSettings({ node, all, onGone }: { node: TeamNode; all: TeamNode[]; onGone: (into?: string) => void }) {
-  const { people, updateTeam, deleteTeam, mergeTeams } = useCairnStore(useShallow((s) => ({
-    people: s.people, updateTeam: s.updateTeam, deleteTeam: s.deleteTeam, mergeTeams: s.mergeTeams,
+  const { people, updateTeam, editTeamLinks, deleteTeam, mergeTeams } = useCairnStore(useShallow((s) => ({
+    people: s.people, updateTeam: s.updateTeam, editTeamLinks: s.editTeamLinks, deleteTeam: s.deleteTeam, mergeTeams: s.mergeTeams,
   })));
   const info = node.group.info!;
   const [error, setError] = useState<string | null>(null);
@@ -340,18 +340,14 @@ function TeamSettings({ node, all, onGone }: { node: TeamNode; all: TeamNode[]; 
     return out;
   };
 
-  // Link edits run one at a time, each on the list as it stands after the one before:
-  // a link added while another is still saving would otherwise write the old list over it.
-  const linkQueue = useRef<Promise<unknown>>(Promise.resolve());
   const draft = useRef({ url: "", label: "" });
   useEffect(() => { draft.current = { url: linkUrl, label: linkLabel }; }, [linkUrl, linkLabel]);
-  const editLinks = (change: (links: TeamLink[]) => TeamLink[]) => {
-    const run = linkQueue.current.then(() => {
-      const current = useCairnStore.getState().teams.find((t) => t.id === info.id)?.links ?? [];
-      return save({ links: change(current) });
-    });
-    linkQueue.current = run.catch(() => null);
-    return run;
+  // Edits are queued in the store, so they stay in order even if this panel closes and reopens meanwhile.
+  const editLinks = async (change: (links: TeamLink[]) => TeamLink[]) => {
+    setError(null);
+    const out = await editTeamLinks(info.id, change);
+    if (!out) setError("Couldn't save that. A team with that name may already exist.");
+    return out;
   };
   const addLink = async () => {
     const url = linkUrl.trim();
