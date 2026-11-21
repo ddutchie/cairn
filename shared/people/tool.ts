@@ -39,6 +39,8 @@ type Db = SyncDb;
  */
 export interface PeopleToolContext {
   meetingsChanged?: (noteIds: string[]) => void;
+  /** Merge two people. The desktop supplies its own, which also moves checklist owners and drops the Slack cache. */
+  mergePeople?: (db: Db, keepId: string, dropId: string) => ReturnType<typeof mergePeople>;
 }
 
 const errMsg = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -345,7 +347,7 @@ function merge(db: Db, ctx: PeopleToolContext, workspaceId: string, args: Args) 
   if (isErr(p)) return p;
   const other = findPerson(db, workspaceId, { personId: args.otherPersonId });
   if (isErr(other)) return { error: `otherPersonId: ${other.error}` };
-  const { person, meetingNoteIds } = mergePeople(db, p.id, other.id);
+  const { person, meetingNoteIds } = (ctx.mergePeople ?? mergePeople)(db, p.id, other.id);
   if (meetingNoteIds.length) ctx.meetingsChanged?.(meetingNoteIds);
   return { merged: true, person: personSummary(person), removed: { id: other.id, name: other.name } };
 }
@@ -497,11 +499,16 @@ function teamUpsert(db: Db, workspaceId: string, args: Args) {
 
     // Members join (a guild or project beside their own team; nobody moves). The lead is one of them.
     const added: string[] = [];
-    const current = new Set(listMemberships(db, workspaceId).filter((m) => m.teamId === team!.id && !m.endedAt).map((m) => m.personId));
+    const roles = new Map(listMemberships(db, workspaceId).filter((m) => m.teamId === team!.id && !m.endedAt).map((m) => [m.personId, m.role]));
+    const current = new Set(roles.keys());
     const members = [...joining, ...(lead ? [{ ref: "", person: lead }] : [])];
     for (const { ref, person } of members) {
-      if (current.has(person.id) && role === undefined) continue;
-      addMember(db, { teamId: team.id, personId: person.id, ...(role !== undefined && ref ? { role } : {}) });
+      // A role goes to the members the call named. A guess doesn't replace or clear a role someone set.
+      let setRole = ref ? role : undefined;
+      if (!fill && roles.get(person.id)) setRole = undefined;
+      if (!fill && setRole === null) setRole = undefined;
+      if (current.has(person.id) && setRole === undefined) continue;
+      addMember(db, { teamId: team.id, personId: person.id, ...(setRole !== undefined ? { role: setRole } : {}) });
       if (!current.has(person.id)) added.push(person.name);
       current.add(person.id);
     }

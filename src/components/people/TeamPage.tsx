@@ -9,7 +9,7 @@
  * merged into this one. The assistant reads and writes the same fields
  * through the `people` tool.
  */
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, ExternalLink, Hash, Link2, Pencil, Plus, Sparkles, X } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
@@ -40,7 +40,9 @@ export function useTeamNode(ref: string | null): { node: TeamNode | null; all: T
   const { people, teams } = useCairnStore(useShallow((s) => ({ people: s.people, teams: s.teams })));
   return useMemo(() => {
     const all = flattenTeams(teamForest(groupByTeam(people, teams)));
-    const node = ref ? all.find((n) => n.group.key === ref) ?? all.find((n) => key(n.group.team) === key(ref)) ?? null : null;
+    // A group that was only a name on people is keyed `name:<name>` until it gets a team row; find it by name then too.
+    const byName = ref?.startsWith("name:") ? ref.slice(5) : ref;
+    const node = ref ? all.find((n) => n.group.key === ref) ?? all.find((n) => byName && key(n.group.team) === key(byName)) ?? null : null;
     return { node, all };
   }, [people, teams, ref]);
 }
@@ -84,12 +86,8 @@ export function TeamPage({ name, onOpenPerson, onOpenTeam, onGone }: {
 
   const startEditing = async () => {
     // A team that is only a name on people gets its row now, so the details have somewhere to live.
-    if (!info) {
-      const made = await createTeam({ name: group.team });
-      if (!made) return;
-      // The group is now keyed by the new team's id, so the panel follows it.
-      onOpenTeam(made.id);
-    }
+    // The panel keeps its place when the group gets a team row (it finds the team by name), so editing stays open.
+    if (!info && !(await createTeam({ name: group.team }))) return;
     setEditing(true);
   };
 
@@ -345,6 +343,8 @@ function TeamSettings({ node, all, onGone }: { node: TeamNode; all: TeamNode[]; 
   // Link edits run one at a time, each on the list as it stands after the one before:
   // a link added while another is still saving would otherwise write the old list over it.
   const linkQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const draft = useRef({ url: "", label: "" });
+  useEffect(() => { draft.current = { url: linkUrl, label: linkLabel }; }, [linkUrl, linkLabel]);
   const editLinks = (change: (links: TeamLink[]) => TeamLink[]) => {
     const run = linkQueue.current.then(() => {
       const current = useCairnStore.getState().teams.find((t) => t.id === info.id)?.links ?? [];
@@ -357,8 +357,12 @@ function TeamSettings({ node, all, onGone }: { node: TeamNode; all: TeamNode[]; 
     const url = linkUrl.trim();
     if (!isUrl(url)) { setError("Links need a full address, starting with https://"); return; }
     const label = linkLabel.trim();
-    // Keep what was typed until the save goes through, so a failure can be retried.
-    if (await editLinks((links) => [...links, { label, url }])) { setLinkUrl(""); setLinkLabel(""); }
+    // Keep what was typed until the save goes through, so a failure can be retried. Clear it only if it is
+    // still what was saved: something typed meanwhile is the next link.
+    if (await editLinks((links) => [...links, { label, url }]) && draft.current.url.trim() === url) {
+      setLinkUrl("");
+      if (draft.current.label.trim() === label) setLinkLabel("");
+    }
   };
 
   return (

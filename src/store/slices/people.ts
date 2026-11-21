@@ -71,10 +71,12 @@ export interface PeopleSlice {
 
 export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = (set, get) => {
   /** Run a write, then refetch the list and the open page. */
-  async function write<T>(fn: () => Promise<T>, context: string): Promise<T | null> {
+  async function write<T>(fn: () => Promise<T>, context: string, afterWrite?: (out: T) => void): Promise<T | null> {
     if (!hasElectron("people")) return null;
     try {
       const out = await fn();
+      // Before the refetch, so the page it reloads is the one the write left us on.
+      afterWrite?.(out);
       await get().refreshPeople();
       return out;
     } catch (err) {
@@ -233,10 +235,11 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
     },
 
     async mergePeople(keepId, dropId) {
-      const out = await write(() => peopleClient.merge(keepId, dropId), "Couldn't merge them");
-      // Move to the kept person only once the merge went through; a failed one leaves the page as it was.
-      if (out && get().selectedPersonId === dropId) set({ selectedPersonId: keepId, personPage: null });
-      return out;
+      // Move to the kept person once the merge has gone through, before the refetch (which would find the
+      // dropped person gone and close the page). A failed merge leaves the page as it was.
+      return write(() => peopleClient.merge(keepId, dropId), "Couldn't merge them", () => {
+        if (get().selectedPersonId === dropId) set({ selectedPersonId: keepId, personPage: null });
+      });
     },
   };
 };

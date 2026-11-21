@@ -320,4 +320,21 @@ describe("review fixes", () => {
     removeEdge(db, edge.id);
     expect(getPerson(db, boss.id)!.relationship.some((r) => r.type === "manager")).toBe(false);
   });
+  it("an agent's merge moves checklist owners like the app's", async () => {
+    const keep = person("Ann", "Platform");
+    const drop = person("Annie", "Platform");
+    db.prepare("INSERT INTO note_action_items (note_id, line_key, text, owner_person_id) VALUES ('n1', 'k1', 'x', ?)").run(drop.id);
+    const r = await run({ action: "merge", personId: keep.id, otherPersonId: drop.id });
+    expect(r.error).toBeUndefined();
+    const row = db.prepare("SELECT owner_person_id o FROM note_action_items WHERE note_id = 'n1'").get() as { o: string };
+    expect(row.o).toBe(keep.id);
+  });
+
+  it("a suggested write doesn't replace or clear a member's role", async () => {
+    const ann = person("Ann", "Platform");
+    await run({ action: "team_upsert", team: "Platform", teamInfo: { members: ["Ann"], role: "Lead" } });
+    await run({ action: "team_upsert", team: "Platform", status: "suggested", teamInfo: { members: ["Ann"], role: "Intern" } });
+    await run({ action: "team_upsert", team: "Platform", status: "suggested", teamInfo: { members: ["Ann"], role: "" } });
+    expect(listMemberships(db, "ws").find((m) => m.personId === ann.id)!.role).toBe("Lead");
+  });
 });
