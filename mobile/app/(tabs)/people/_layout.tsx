@@ -10,6 +10,7 @@ export default function PeopleLayout() {
     <TabStack>
       <Stack.Screen name="index" options={{ title: "People" }} />
       <Stack.Screen name="[id]" options={{ headerLargeTitle: false, title: "Person" }} />
+      <Stack.Screen name="team/[id]" options={{ headerLargeTitle: false, title: "Team" }} />
     </TabStack>
   );
 }
