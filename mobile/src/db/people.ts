@@ -30,6 +30,7 @@ import type { PersonPage, PersonSummary } from "@cairn/shared/types/people-view"
 import { updateNote } from "./queries";
 import * as tq from "@cairn/shared/people/team-queries";
 import { mergePeople as mergePeopleShared, type MergeResult } from "@cairn/shared/people/merge";
+import { flattenTeams, groupByTeam, teamForest, type TeamGroup, type TeamNode } from "@cairn/shared/people/teams";
 import { LIST_GROUPINGS, type ListGrouping } from "@cairn/shared/people/list-groups";
 
 /** The portable handle over the active source's database. */
@@ -77,6 +78,27 @@ export function loadTeams(): Team[] {
 export function loadMemberships(): TeamMembership[] {
   const ws = peopleWorkspaceId();
   return ws ? tq.listMemberships(peopleDb(), ws) : [];
+}
+
+export interface TeamsView {
+  people: PersonSummary[];
+  teams: Team[];
+  memberships: TeamMembership[];
+  /** `groupByTeam`: one group per team plus the people without one. */
+  groups: TeamGroup[];
+  /** The team tree (`teamForest`), roots first. */
+  forest: TeamNode[];
+  /** Every node of the tree, depth first. */
+  nodes: TeamNode[];
+}
+
+/** Everything the Teams list and a team's page read, in one go. */
+export function loadTeamsView(): TeamsView {
+  const people = loadPeople(["confirmed"]);
+  const teams = loadTeams();
+  const groups = groupByTeam(people, teams);
+  const forest = teamForest(groups);
+  return { people, teams, memberships: loadMemberships(), groups, forest, nodes: flattenTeams(forest) };
 }
 
 /** Make a team in the active workspace. Throws (with a sentence to show) when the name is taken or empty. */

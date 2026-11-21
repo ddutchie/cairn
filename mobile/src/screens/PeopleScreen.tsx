@@ -2,6 +2,9 @@ import { useCallback, useMemo, useState } from "react";
 import { View, Text, SectionList, RefreshControl, StyleSheet } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { ScreenChrome } from "@/components/screen-chrome";
+import { SegmentedControl } from "@/components/SegmentedControl";
+import { NewTeamSheet } from "@/screens/NewTeamSheet";
+import { TeamsList } from "@/screens/TeamsList";
 import { PressableScale } from "@/components/PressableScale";
 import { SearchField } from "@/components/SearchField";
 import { EmptyState } from "@/components/EmptyState";
@@ -11,7 +14,7 @@ import { haptics } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { loadGrouping, loadPeople, saveGrouping, setPersonStatus } from "@/db/people";
 import { toolbarPress } from "@/haptics";
-import { ICON_GROUP_BY } from "@/components/toolbar-icons";
+import { ICON_ADD, ICON_GROUP_BY } from "@/components/toolbar-icons";
 import { RELATIONSHIP_LABELS } from "@cairn/shared/people/model";
 import { LIST_GROUPINGS, groupPeopleBy, type ListGrouping } from "@cairn/shared/people/list-groups";
 import { formatRelative } from "@cairn/shared/format/date";
@@ -34,6 +37,8 @@ export function PeopleScreen() {
   const [grouping, setGroupingState] = useState<ListGrouping>(loadGrouping);
   // Location and Last met read the clock, so the grouping is redone when the screen reloads.
   const [now, setNow] = useState(() => new Date());
+  const [mode, setMode] = useState<"people" | "teams">("people");
+  const [newTeam, setNewTeam] = useState(false);
   const setGrouping = (g: ListGrouping) => {
     setGroupingState(g);
     saveGrouping(g);
@@ -73,25 +78,46 @@ export function PeopleScreen() {
   };
 
 
+  const switcher = (
+    <SegmentedControl
+      // Fixed height only (a flex:1 basis collapses the native view); see ProjectViewSwitcher.
+      style={s.switcher}
+      tintColor={t.accent}
+      fontStyle={{ color: t.textSecondary, fontSize: 14, fontWeight: "600" }}
+      activeFontStyle={{ color: t.accentFg, fontSize: 14, fontWeight: "600" }}
+      values={["People", "Teams"]}
+      selectedIndex={mode === "people" ? 0 : 1}
+      onChange={(e) => setMode(e.nativeEvent.selectedSegmentIndex === 1 ? "teams" : "people")}
+    />
+  );
+
   return (
     <View style={s.root}>
       <ScreenChrome
         title="People"
-        right={[{
-          kind: "menu",
-          key: "group",
-          label: "Group people",
-          icon: ICON_GROUP_BY,
-          actions: LIST_GROUPINGS.map((g) => ({ label: g.label, isOn: g.value === grouping, onPress: toolbarPress(() => setGrouping(g.value)) })),
-        }]}
+        right={mode === "teams"
+          ? [{ kind: "button", key: "new-team", label: "New team", icon: ICON_ADD, onPress: toolbarPress(() => setNewTeam(true)) }]
+          : [{
+            kind: "menu",
+            key: "group",
+            label: "Group people",
+            icon: ICON_GROUP_BY,
+            actions: LIST_GROUPINGS.map((g) => ({ label: g.label, isOn: g.value === grouping, onPress: toolbarPress(() => setGrouping(g.value)) })),
+          }]}
       />
+      {mode === "teams" ? <TeamsList header={switcher} /> : (
       <SectionList
         sections={sections}
         keyExtractor={(p, i) => `${p.id}-${i}`}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={s.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.textTertiary} />}
-        ListHeaderComponent={people.length > 0 ? <SearchField value={query} onChangeText={setQuery} placeholder="Search people" containerStyle={s.search} /> : undefined}
+        ListHeaderComponent={
+          <View>
+            {switcher}
+            {people.length > 0 ? <SearchField value={query} onChangeText={setQuery} placeholder="Search people" containerStyle={s.search} /> : null}
+          </View>
+        }
         ListEmptyComponent={
           <EmptyState
             title="No people yet"
@@ -136,6 +162,15 @@ export function PeopleScreen() {
           </PressableScale>
         )}
       />
+      )}
+      <NewTeamSheet
+        visible={newTeam}
+        onClose={() => setNewTeam(false)}
+        onCreated={(id) => {
+          setNewTeam(false);
+          router.push({ pathname: "/people/team/[id]", params: { id } } as Href);
+        }}
+      />
     </View>
   );
 }
@@ -144,6 +179,7 @@ function makeStyles(t: Theme) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: t.background },
     list: { padding: 12, paddingBottom: 48 },
+    switcher: { height: 36, marginBottom: 8 },
     search: { marginBottom: 8 },
     header: { ...typeScale.overline, color: t.textTertiary, marginTop: 16, marginBottom: 6, marginLeft: 4 },
     headerNote: { ...typeScale.caption, color: t.textTertiary },
