@@ -110,3 +110,21 @@ desktop-sized). Each joins the top switcher. Pure helpers (`rhythm`, `zones`,
 - One PR or two? Steps 1–3 and 6 are small; steps 4–5 (Teams and the team
   editor) are the bulk. If review load matters, split there: 1a = tab, list,
   person page; 1b = Teams and editing.
+
+## Findings from PR 1 (to solve)
+
+Tried on the iPhone Duo (closed and open poses) and the iPhone simulator.
+
+- **Tab bar:** six tabs overflow into More on iPhone. Order is now Projects,
+  Calendar, People, Chat, Graph, Search, so Graph folds into More and Chat
+  stays. On the Duo the vertical rail shows all six with no More.
+- **Sheet "Done" hidden on the Duo closed screen (open, shared bug):** the
+  clock/status pill covers the top-right of the screen, so `BottomSheetHeader`'s
+  Done button sits under it. Affects every sheet, not only People. Fix in
+  `BottomSheetHeader`/`BottomSheet` with the fold/rail insets (`useFold()`).
+- **Open pose is full width:** the list and team page stretch across the inner
+  screen. Belongs to `mobile-wide-layouts.md` (list | page split).
+- **Not hand-tested:** person page on the Duo, members sheet, new-team sheet,
+  Same as... / Duplicate merge flow, keyboard over sheets, Dynamic Type, iPad.
+- **Merge extras:** the device-local extras of the desktop `mergePeople` have no
+  mobile equivalent, so nothing was ported.
