@@ -76,8 +76,11 @@ refused team save (a guild or project name) instead of crashing.
 ## PR 2: pictures that suit a phone
 
 In order: **Rhythm** (a list with bars, a natural fit), **Time zones** (a
-vertical day strip), **Org chart** as a collapsible indented tree, **Map**
-(flat, Skia/SVG, no globe). Skip Relationships and Bridges (force canvases,
+vertical day strip), **Org chart** as a collapsible indented tree. **Map**
+(flat and globe, drawn with Skia from `d3-geo` paths) shipped early, in PR 1,
+as the People | Teams | Map switcher's third segment: night shading, a time
+slider and tappable markers, using `shared/people/map-spots` (placement,
+shared with desktop), `sun`, `zones` and the shared `land-110m.json`. Skip Relationships and Bridges (force canvases,
 desktop-sized). Each joins the top switcher. Pure helpers (`rhythm`, `zones`,
 `sun`, `buildOrgChart`) are shared; `buildOrgChart` still lives in
 `src/` and moves to `shared/` first (it is on the "Later" list in

@@ -5,6 +5,7 @@ import { ScreenChrome } from "@/components/screen-chrome";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { NewTeamSheet } from "@/screens/NewTeamSheet";
 import { TeamsList } from "@/screens/TeamsList";
+import { PeopleMap } from "@/screens/PeopleMap";
 import { PressableScale } from "@/components/PressableScale";
 import { SearchField } from "@/components/SearchField";
 import { EmptyState } from "@/components/EmptyState";
@@ -37,7 +38,7 @@ export function PeopleScreen() {
   const [grouping, setGroupingState] = useState<ListGrouping>(loadGrouping);
   // Location and Last met read the clock, so the grouping is redone when the screen reloads.
   const [now, setNow] = useState(() => new Date());
-  const [mode, setMode] = useState<"people" | "teams">("people");
+  const [mode, setMode] = useState<"people" | "teams" | "map">("people");
   const [newTeam, setNewTeam] = useState(false);
   const setGrouping = (g: ListGrouping) => {
     setGroupingState(g);
@@ -85,9 +86,9 @@ export function PeopleScreen() {
       tintColor={t.accent}
       fontStyle={{ color: t.textSecondary, fontSize: 14, fontWeight: "600" }}
       activeFontStyle={{ color: t.accentFg, fontSize: 14, fontWeight: "600" }}
-      values={["People", "Teams"]}
-      selectedIndex={mode === "people" ? 0 : 1}
-      onChange={(e) => setMode(e.nativeEvent.selectedSegmentIndex === 1 ? "teams" : "people")}
+      values={["People", "Teams", "Map"]}
+      selectedIndex={mode === "people" ? 0 : mode === "teams" ? 1 : 2}
+      onChange={(e) => { const i = e.nativeEvent.selectedSegmentIndex; setMode(i === 1 ? "teams" : i === 2 ? "map" : "people"); }}
     />
   );
 
@@ -95,7 +96,7 @@ export function PeopleScreen() {
     <View style={s.root}>
       <ScreenChrome
         title="People"
-        right={mode === "teams"
+        right={mode === "map" ? [] : mode === "teams"
           ? [{ kind: "button", key: "new-team", label: "New team", icon: ICON_ADD, onPress: toolbarPress(() => setNewTeam(true)) }]
           : [{
             kind: "menu",
@@ -105,7 +106,7 @@ export function PeopleScreen() {
             actions: LIST_GROUPINGS.map((g) => ({ label: g.label, isOn: g.value === grouping, onPress: toolbarPress(() => setGrouping(g.value)) })),
           }]}
       />
-      {mode === "teams" ? <TeamsList header={switcher} /> : (
+      {mode === "map" ? <PeopleMap people={people.filter((p) => p.status === "confirmed")} header={switcher} /> : mode === "teams" ? <TeamsList header={switcher} /> : (
       <SectionList
         sections={sections}
         keyExtractor={(p, i) => `${p.id}-${i}`}
