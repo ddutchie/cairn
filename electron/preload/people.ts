@@ -2,7 +2,7 @@
 
 import { invokeContract, onIpcEvent } from "./ipc";
 import type { IpcEvents } from "../../shared/ipc/contract";
-import type { PeopleStatus, PersonCreateInput, PersonPatch } from "../../shared/types/people";
+import type { AddMemberInput, PeopleStatus, PersonCreateInput, PersonPatch, TeamCreateInput, TeamPatch } from "../../shared/types/people";
 import type { MigrationApprovals } from "../../shared/types/people-migration";
 import type { AttendeeInput, PeopleListFilter, PersonEdgeInput, PersonEdgePatch } from "../../shared/types/people-view";
 
@@ -22,6 +22,18 @@ export const peopleApi = {
       add:    (input: PersonEdgeInput) => invokeContract("db:people:edge:add", input),
       update: (id: string, patch: PersonEdgePatch) => invokeContract("db:people:edge:update", { id, patch }),
       remove: (id: string) => invokeContract("db:people:edge:remove", { id }),
+    },
+    merge:      (keepId: string, dropId: string) => invokeContract("db:people:merge", { keepId, dropId }),
+    teams: {
+      list:   (workspaceId: string) => invokeContract("db:people:teams:list", { workspaceId }),
+      create: (input: TeamCreateInput) => invokeContract("db:people:team:create", input),
+      update: (id: string, patch: TeamPatch) => invokeContract("db:people:team:update", { id, patch }),
+      delete: (id: string) => invokeContract("db:people:team:delete", { id }),
+      merge:  (keepId: string, dropId: string) => invokeContract("db:people:team:merge", { keepId, dropId }),
+      memberships: (workspaceId: string) => invokeContract("db:people:memberships:list", { workspaceId }),
+      addMember: (input: AddMemberInput) => invokeContract("db:people:team:member:add", input),
+      endMember: (teamId: string, personId: string, endedAt?: string) => invokeContract("db:people:team:member:end", { teamId, personId, endedAt }),
+      deleteMember: (teamId: string, personId: string) => invokeContract("db:people:team:member:delete", { teamId, personId }),
     },
     meetings:       (personId: string, limit?: number) => invokeContract("db:people:meetings", { personId, limit }),
     mentionNoteIds: (personId: string) => invokeContract("db:people:mentionNoteIds", { personId }),

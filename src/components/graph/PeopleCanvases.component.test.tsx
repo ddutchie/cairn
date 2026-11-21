@@ -18,7 +18,7 @@ import { ConnectionsGraph } from "@/components/people/ConnectionsGraph";
 const person = (id: string, name: string, types: RelationshipType[], extra: Partial<PersonSummary> = {}): PersonSummary => ({
   id, workspaceId: "ws1", name, aliases: [], emails: [],
   relationship: types.map((type) => ({ type, provenance: "explicit" as const })),
-  status: "confirmed", provenance: "explicit", isMe: false, agentPrivate: false,
+  status: "confirmed", provenance: "explicit", isMe: false, agentPrivate: false, teams: [],
   createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z", ...extra,
 });
 
@@ -29,11 +29,11 @@ beforeEach(() => seed([]));
 
 describe("OrgChartCanvas", () => {
   it("says so when nobody people exist, and when no reporting lines do", () => {
-    const first = render(<OrgChartCanvas />);
+    const first = render(<OrgChartCanvas />, { wrapper: TooltipProvider });
     expect(screen.getByText(/No people yet/)).toBeInTheDocument();
     first.unmount();
     seed([person("a", "Ann", ["peer"])]);
-    render(<OrgChartCanvas />);
+    render(<OrgChartCanvas />, { wrapper: TooltipProvider });
     expect(screen.getByText(/No reporting lines yet/)).toBeInTheDocument();
     expect(screen.getByText("Not in a reporting line (1)")).toBeInTheDocument();
   });
@@ -45,7 +45,7 @@ describe("OrgChartCanvas", () => {
       person("rep", "Dana Report", ["direct_report"]),
       person("pal", "Pat Peer", ["peer"]),
     ]);
-    render(<OrgChartCanvas />);
+    render(<OrgChartCanvas />, { wrapper: TooltipProvider });
     expect(screen.getByRole("button", { name: /^Big Boss, Manager, 1 direct report/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Me Myself \(you\)/ })).toBeInTheDocument();
     expect(screen.getByText("Not in a reporting line (1)")).toBeInTheDocument();
@@ -54,11 +54,29 @@ describe("OrgChartCanvas", () => {
     expect(useCairnStore.getState().activeView).toBe("insights");
   });
 
-  it("opens a person from the keyboard", () => {
+  it("cards are native buttons, so the keyboard reaches them", () => {
     seed([person("me", "Me Myself", [], { isMe: true }), person("rep", "Dana Report", ["direct_report"])]);
-    render(<OrgChartCanvas />);
-    fireEvent.keyDown(screen.getByRole("button", { name: /^Dana Report/ }), { key: "Enter" });
-    expect(useCairnStore.getState().peoplePanelId).toBe("rep");
+    render(<OrgChartCanvas />, { wrapper: TooltipProvider });
+    const card = screen.getByRole("button", { name: /^Dana Report/ });
+    expect(card.tagName).toBe("BUTTON");
+    card.focus();
+    expect(document.activeElement).toBe(card);
+  });
+
+  it("shows the team tree, with each team's lead and size", () => {
+    seed([
+      person("me", "Me Myself", [], { isMe: true, team: "Sync" }),
+      person("rep", "Dana Report", ["direct_report"], { team: "Sync" }),
+    ]);
+    const t = (id: string, name: string, extra = {}) => ({ id, workspaceId: "ws1", name, kind: "team" as const, links: [], createdAt: "", updatedAt: "", ...extra });
+    useCairnStore.setState({ teams: [t("pl", "Platform"), t("sy", "Sync", { parentTeamId: "pl", leadPersonId: "rep" })] });
+    const opened: string[] = [];
+    render(<OrgChartCanvas onOpenTeam={(n) => opened.push(n)} />, { wrapper: TooltipProvider });
+    fireEvent.click(screen.getByRole("button", { name: "Teams" }));
+    expect(screen.getByRole("button", { name: "Platform, 2 people. Open team" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Sync, Lead Dana Report · 2 people. Open team" }));
+    expect(opened).toEqual(["sy"]);
+    useCairnStore.setState({ teams: [] });
   });
 });
 

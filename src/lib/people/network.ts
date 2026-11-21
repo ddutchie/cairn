@@ -61,9 +61,10 @@ const RELATIONSHIP_KIND: Partial<Record<RelationshipType, { kind: LinkKind; dire
   direct_report: { kind: "reporting", directed: true, meIsSource: true },
   manager: { kind: "reporting", directed: true, meIsSource: false },
   peer: { kind: "peer", directed: false, meIsSource: true },
-  stakeholder: { kind: "stakeholder", directed: true, meIsSource: true },
+  // Same direction as the edge each chip stands for (shared/people/chip-edges.ts), so a chip and its edge are one link.
+  stakeholder: { kind: "stakeholder", directed: true, meIsSource: false },
   mentor: { kind: "mentor", directed: true, meIsSource: false },
-  buddy: { kind: "buddy", directed: true, meIsSource: true },
+  buddy: { kind: "buddy", directed: true, meIsSource: false },
 };
 
 const pairKey = (kind: LinkKind, a: string, b: string, directed: boolean) =>
@@ -98,7 +99,8 @@ export function deriveLinks(
     const { kind, directed } = EDGE_KIND[e.type];
     const key = pairKey(kind, e.sourceId, e.targetId, directed);
     if (seen.has(key)) continue;
-    // An ended edge is history; it must not hide a current relationship chip.
+    // An edge decides for its pair, current or ended: the main process already took a chip away
+    // when its edge to you ended (shared/people/chip-edges.ts), so a chip left here is a different fact.
     if (!e.endedAt) seen.add(key);
     links.push({
       id: `e:${e.id}`, kind, source: e.sourceId, target: e.targetId, directed,

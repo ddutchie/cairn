@@ -45,3 +45,42 @@ describe("MCP tools/list", () => {
     expect(JSON.stringify(searchNotes.inputSchema)).toContain("Pagination offset");
   });
 });
+
+describe("MCP instructions", () => {
+  it("sends the workflow at initialize, naming only tools the server lists", async () => {
+    const server = buildMcpServer({} as never);
+    const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverSide);
+    const client = new Client({ name: "test", version: "1" });
+    await client.connect(clientSide);
+    const text = client.getInstructions() ?? "";
+    const { tools } = await client.listTools();
+    await client.close();
+    expect(text).toContain("task_progress");
+    const listed = new Set(tools.map((t) => t.name));
+    // Every snake_case word in the text that looks like a tool name must be one.
+    for (const name of text.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []) expect(listed.has(name), name).toBe(true);
+  });
+});
+
+describe("MCP legacy arguments", () => {
+  it("still validates the older people call shapes, though they are not listed", async () => {
+    const server = buildMcpServer({ getDb: () => { throw new Error("reached the handler"); }, getWorkspacePath: () => "" } as never);
+    const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverSide);
+    const client = new Client({ name: "test", version: "1" });
+    await client.connect(clientSide);
+    const listed = JSON.stringify((await client.listTools()).tools.find((t) => t.name === "people"));
+    expect(listed).not.toContain("edgeType");
+    expect(listed).not.toContain("provenance");
+    // A schema error would say "Invalid arguments"; getting as far as the handler means it validated.
+    for (const args of [
+      { action: "upsert", name: "Sam", provenance: "inferred" },
+      { action: "link", link: "edge", edgeType: "manager_of", personId: "a", otherPersonId: "b" },
+    ]) {
+      const r = await client.callTool({ name: "people", arguments: args });
+      expect(JSON.stringify(r.content)).not.toMatch(/Invalid arguments|invalid_value|Invalid option/i);
+    }
+    await client.close();
+  });
+});

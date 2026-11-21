@@ -16,7 +16,6 @@ import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { Button, FOCUS_RING } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Combobox } from "@/components/ui/combobox";
 import { Toggle } from "@/components/ui/toggle";
@@ -40,6 +39,7 @@ import {
 import { peopleClient } from "@/lib/ipc/people";
 import { applicableFields, PROFILE_FIELD_LABEL, type AutofillProposal } from "../../../shared/people/autofill";
 import { ConnectionsGraph } from "./ConnectionsGraph";
+import { BlurInput, Field } from "./fields";
 import { PlaceInput } from "./PlaceInput";
 import { latestProfileValue, noteProfileWrite } from "./recent-profile-writes";
 import { NextMeeting, ProfileLine, slackStatusText, usePersonProfile } from "./PersonOneOnOne";
@@ -119,36 +119,6 @@ function PersonHeader({ page, profile, compact, editing, onToggleEdit }: { page:
 
 // ── Settings (editing) ──────────────────────────────────────────────────────
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-1 @md:grid-cols-[9rem_1fr] items-start gap-x-3 gap-y-1 py-2 border-b border-[var(--border-subtle)] last:border-0">
-      <MicroLabel className="@md:pt-1.5 text-xs">{label}</MicroLabel>
-      <div className="min-w-0">{children}</div>
-    </div>
-  );
-}
-
-/**
- * A text input that saves on blur or Enter. Callers key it by the saved value
- * (see BlurInput below), so a save or an outside change starts a fresh draft.
- */
-function DraftInput({ value, onSave, placeholder, ariaLabel }: {
-  value: string; onSave: (v: string) => void; placeholder?: string; ariaLabel: string;
-}) {
-  const [draft, setDraft] = useState(value);
-  return (
-    <Input
-      value={draft}
-      aria-label={ariaLabel}
-      placeholder={placeholder}
-      className="text-xs"
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => { if (draft !== value) onSave(draft); }}
-      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-    />
-  );
-}
-
 /** A role, team, place or time zone: one short line, saved on blur, with a message when it isn't valid. */
 function ProfileInput({ field, personId, value, placeholder, timezone }: { field: ProfileField; personId: string; value: string; placeholder: string; timezone?: string }) {
   const updatePerson = useCairnStore((s) => s.updatePerson);
@@ -181,10 +151,6 @@ function ProfileInput({ field, personId, value, placeholder, timezone }: { field
       {error && <p role="alert" className="mt-1 text-2xs text-[var(--danger)]">{error}</p>}
     </>
   );
-}
-
-function BlurInput(props: React.ComponentProps<typeof DraftInput>) {
-  return <DraftInput key={props.value} {...props} />;
 }
 
 function PersonSettings({ page, profile }: { page: PersonPageModel; profile: PersonProfile | null }) {
@@ -244,8 +210,8 @@ function PersonSettings({ page, profile }: { page: PersonPageModel; profile: Per
       <Field label="Role">
         <ProfileInput field="title" personId={person.id} value={person.title ?? ""} placeholder="e.g. Senior Software Engineer" />
       </Field>
-      <Field label="Team">
-        <ProfileInput field="team" personId={person.id} value={person.team ?? ""} placeholder="e.g. Sync" />
+      <Field label="Teams">
+        <PersonTeams personId={person.id} teams={person.teams} />
       </Field>
       <Field label="Location">
         <ProfileInput field="location" personId={person.id} value={person.location ?? ""} timezone={person.timezone} placeholder="e.g. Berlin, Germany" />
@@ -373,6 +339,7 @@ function PersonSettings({ page, profile }: { page: PersonPageModel; profile: Per
           </div>
         </div>
       </Field>
+      <MergeDuplicate personId={person.id} name={person.name} />
       <div className="pt-4">
         <ConfirmButton
           variant="outline"
@@ -635,12 +602,121 @@ export function PersonPage({ page, compact = false }: { page: PersonPageModel | 
   return <PersonPageBody page={page} compact={compact} />;
 }
 
+/**
+ * The teams someone is on, each removable (kept as history), plus adding them
+ * to another; joining never takes them off a team, so moving is take off and
+ * add. Past teams are listed under, quietly.
+ */
+function PersonTeams({ personId, teams }: { personId: string; teams: PersonPageModel["person"]["teams"] }) {
+  const { allTeams, memberships, updatePerson, addTeamMember, endTeamMember } = useCairnStore(useShallow((s) => ({
+    allTeams: s.teams, memberships: s.teamMemberships, updatePerson: s.updatePerson, addTeamMember: s.addTeamMember, endTeamMember: s.endTeamMember,
+  })));
+  const [moves, setMoves] = useState(0);
+  const current = new Set(teams.map((t) => t.teamId));
+  const byId = new Map(allTeams.map((t) => [t.id, t]));
+  const past = memberships.filter((m) => m.personId === personId && m.endedAt && !current.has(m.teamId) && byId.has(m.teamId));
+  return (
+    <div className="space-y-1.5">
+      {teams.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5" aria-label="Their teams">
+          {teams.map((t) => (
+            <li key={t.teamId} className="inline-flex items-center gap-0.5 rounded-full border border-[var(--border-subtle)] py-0.5 pl-2.5 pr-0.5 text-xs text-[var(--text-secondary)]">
+              {t.name}
+              {(t.role || t.kind !== "team") && <span className="text-2xs text-[var(--text-tertiary)]">&nbsp;· {t.role ?? t.kind}</span>}
+              <IconButton label={`Take them off ${t.name}`} size="sm" onClick={() => void endTeamMember(t.teamId, personId)}><X size={11} /></IconButton>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {allTeams.some((t) => !current.has(t.id)) && (
+          <Combobox<string>
+            ariaLabel="Add to a team" value={null} size="sm" placeholder="Add to a team" searchPlaceholder="Find a team"
+            options={allTeams.filter((t) => !current.has(t.id)).map((t) => ({ value: t.id, label: t.name, description: t.kind !== "team" ? t.kind : undefined }))}
+            onChange={(teamId) => void addTeamMember({ teamId, personId })}
+          />
+        )}
+        <div className="min-w-0 flex-1">
+          {/* Remounted after each move so the typed name doesn't stay as a draft and re-apply on the next blur. */}
+          <BlurInput key={moves} ariaLabel="Move to a new team" placeholder={teams.length ? "Or move to a new team" : "e.g. Sync"} value=""
+            onSave={(v) => { if (v.trim()) { void updatePerson(personId, { team: v }); setMoves((n) => n + 1); } }} />
+        </div>
+      </div>
+      {past.length > 0 && (
+        <p className="text-2xs text-[var(--text-tertiary)]">
+          Before: {past.map((m) => `${byId.get(m.teamId)!.name} (until ${formatDate(m.endedAt!)})`).join(", ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Fold a duplicate into this person: pick them, then confirm. */
+function MergeDuplicate({ personId, name }: { personId: string; name: string }) {
+  const { people, suggestions, mergePeople } = useCairnStore(useShallow((s) => ({ people: s.people, suggestions: s.peopleSuggestions, mergePeople: s.mergePeople })));
+  const [other, setOther] = useState<string | null>(null);
+  const candidates = [...people, ...suggestions].filter((p) => p.id !== personId);
+  if (candidates.length === 0) return null;
+  const picked = candidates.find((p) => p.id === other);
+  return (
+    <Field label="Duplicate">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Combobox<string>
+          ariaLabel="Duplicate of this person" value={other} size="sm" placeholder="Same person as…" searchPlaceholder="Find a person"
+          options={candidates.map((p) => ({ value: p.id, label: p.name, description: p.status === "suggested" ? "Suggested" : p.title, keywords: p.aliases.join(" ") }))}
+          onChange={setOther}
+        />
+        {picked && (
+          <ConfirmButton size="sm" variant="outline" confirmLabel={`Merge ${picked.name} into ${name}?`} onConfirm={() => { void mergePeople(personId, picked.id); setOther(null); }}>
+            Merge into {name.split(" ")[0]}
+          </ConfirmButton>
+        )}
+      </div>
+      <p className="mt-1 text-2xs text-[var(--text-tertiary)]">Their meetings, notes, tasks and teams move here; their name becomes an alias.</p>
+    </Field>
+  );
+}
+
+/**
+ * A person capture or an agent proposed (an attendee name, an inferred fact)
+ * is not in the list until confirmed. Say so on their page, which chat and
+ * notes can open directly, and let the user settle it there.
+ */
+function SuggestionBanner({ page }: { page: PersonPageModel }) {
+  const { confirm, dismiss, people, mergePeople } = useCairnStore(useShallow((s) => ({
+    confirm: s.confirmPersonSuggestion, dismiss: s.dismissPersonSuggestion, people: s.people, mergePeople: s.mergePeople,
+  })));
+  const { person } = page;
+  if (person.status !== "suggested" && person.status !== "dismissed") return null;
+  const dismissed = person.status === "dismissed";
+  return (
+    <div role="status" className="mb-6 flex flex-wrap items-center gap-2 rounded-lg border border-[color-mix(in_srgb,var(--warning)_40%,var(--border-subtle))] bg-[color-mix(in_srgb,var(--warning)_8%,var(--surface-2))] px-3 py-2">
+      <p className="min-w-0 flex-1 text-xs text-[var(--text-secondary)]">
+        {dismissed
+          ? "You dismissed this person, so they stay out of your list and capture won't propose them again."
+          : "Suggested from a note or by the assistant. Confirm to add them to your people."}
+      </p>
+      <Button size="xs" variant="accent" onClick={() => void confirm(person.id)}>{dismissed ? "Add back" : "Confirm"}</Button>
+      {!dismissed && people.length > 0 && (
+        <Combobox<string>
+          ariaLabel="Same person as" value={null} size="sm" align="end" placeholder="Same as…" searchPlaceholder="Find who they are"
+          options={people.filter((p) => p.id !== person.id).map((p) => ({ value: p.id, label: p.name, description: p.title, keywords: p.aliases.join(" ") }))}
+          // The person you already have stays; this suggestion folds into them.
+          onChange={(id) => void mergePeople(id, person.id)}
+        />
+      )}
+      {!dismissed && <Button size="xs" variant="ghost" onClick={() => void dismiss(person.id)}>Dismiss</Button>}
+    </div>
+  );
+}
+
 function PersonPageBody({ page, compact }: { page: PersonPageModel; compact: boolean }) {
   const [editing, setEditing] = useState(false);
   // One read for the header and for the Slack status in Settings.
   const profile = usePersonProfile(page.person);
   return (
     <div className={compact ? "px-4 py-4" : "max-w-[820px] px-8 py-8"}>
+      <SuggestionBanner page={page} />
       <PersonHeader page={page} profile={profile} compact={compact} editing={editing} onToggleEdit={() => setEditing((e) => !e)} />
       {editing && <PersonSettings page={page} profile={profile} />}
       <NextMeeting person={page.person} timeline={page.timeline} />

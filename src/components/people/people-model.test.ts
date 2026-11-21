@@ -5,7 +5,7 @@ import type { PersonRelationView, PersonSummary } from "../../../shared/types/pe
 const p = (name: string, types: PersonSummary["relationship"][number]["type"][]): PersonSummary => ({
   id: name, workspaceId: "ws", name, aliases: [], emails: [],
   relationship: types.map((type) => ({ type, provenance: "explicit" })),
-  status: "confirmed", provenance: "explicit", isMe: false, agentPrivate: false, createdAt: "", updatedAt: "",
+  status: "confirmed", provenance: "explicit", isMe: false, agentPrivate: false, teams: [], createdAt: "", updatedAt: "",
 });
 
 const rel = (role: PersonRelationView["role"], otherName: string, edge: Partial<PersonRelationView["edge"]> = {}) =>

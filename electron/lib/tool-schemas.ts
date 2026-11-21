@@ -14,7 +14,8 @@
 import * as z from "zod";
 
 import { isCairnReadTool } from "../../shared/agent/tool-names";
-import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION_DESKTOP, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION } from "../../shared/agent/people-tools";
+import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_PARAM_DESCRIPTIONS as PD, PEOPLE_TOOL_DESCRIPTION_DESKTOP } from "../../shared/agent/people-tools";
+import { LINK_KINDS, PERSON_EDGE_TYPES, PROVENANCES } from "../../shared/types/people";
 
 // ── Shared field shapes ────────────────────────────────────────────────────────
 
@@ -228,30 +229,43 @@ export const TOOL_SCHEMAS = {
   people: {
     description: PEOPLE_TOOL_DESCRIPTION_DESKTOP,
     schema: z.object({
-      action:       z.enum(["query", "get", "timeline", "relationships", "inventory", "upsert", "link"]),
-      personId:     sIdOpt.describe("get/timeline/relationships/upsert: the person (or pass name)"),
-      name:         sStrOpt.describe("query: name filter; get/upsert: the person's name"),
-      relationship: sStrOpt.describe("query: only people with this relationship to the user (e.g. direct_report, manager, peer, stakeholder, mentor)"),
-      status:       z.enum(["confirmed", "suggested", "dismissed"]).optional().describe("query: filter; upsert/link: status of what you write (default confirmed for stated facts)"),
-      provenance:   z.enum(["explicit", "convention", "inferred"]).optional().describe("upsert/link: explicit = stated in text, inferred = your judgment"),
-      aliases:      z.array(z.string()).optional().describe("upsert: other names (added to existing)"),
-      emails:       z.array(z.string()).optional().describe("upsert: email addresses (added to existing)"),
+      action:       z.enum(["query", "get", "timeline", "relationships", "inventory", "teams", "upsert", "link", "archive", "merge", "team_upsert", "team_delete"]),
+      personId:     sIdOpt.describe(PD.personId),
+      name:         sStrOpt.describe(PD.name),
+      relationship: sStrOpt.describe(PD.relationship),
+      status:       z.enum(["confirmed", "suggested", "dismissed"]).optional().describe(PD.status),
+      aliases:      z.array(z.string()).optional().describe(PD.aliases),
+      emails:       z.array(z.string()).optional().describe(PD.emails),
       relationships: z.array(z.object({
         type:  z.enum(["direct_report", "manager", "peer", "stakeholder", "mentor", "buddy", "recruiter", "candidate", "other"]),
-        label: sStrOpt.describe(RELATIONSHIP_LABEL_DESCRIPTION),
-      })).optional().describe("upsert: relationship(s) to the user (replaces the list)"),
-      cadence:      z.enum(["weekly", "biweekly", "monthly", ""]).optional().describe("upsert: 1:1 cadence, empty to clear"),
-      title:        sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.title),
-      team:         sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.team),
-      location:     sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.location),
-      timezone:     sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.timezone),
-      slackId:      sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.slackId),
-      personaNoteId: sIdOpt.describe("upsert: the note about this person"),
-      link:         z.enum(["edge", "attendee", "mention"]).optional().describe("link: what to link"),
-      edgeType:     z.enum(["manager_of", "mentor_of", "buddy_of", "stakeholder_of", "partner"]).optional().describe("link edge: personId <edgeType> otherPersonId"),
-      otherPersonId: sIdOpt.describe("link edge: the other person"),
-      noteId:       sIdOpt.describe("link attendee/mention: the note"),
-      remove:       sBoolOpt.describe("link: remove instead of add"),
+        label: sStrOpt.describe(PD.relationshipLabel),
+      })).optional().describe(PD.relationships),
+      cadence:      z.enum(["weekly", "biweekly", "monthly", ""]).optional().describe(PD.cadence),
+      title:        sStrOpt.describe(PD.title),
+      team:         sStrOpt.describe(PD.team),
+      teamInfo:     z.object({
+        kind:        z.enum(["team", "guild", "project", "committee"]).optional(),
+        description: sStrOpt,
+        lead:        sStrOpt,
+        parentTeam:  sStrOpt,
+        channel:     sStrOpt,
+        links:       z.array(z.object({ label: sStrOpt, url: z.string() })).optional(),
+        members:     z.array(z.string()).optional(),
+        role:        sStrOpt,
+        removeMembers: z.array(z.string()).optional(),
+        rename:      sStrOpt,
+        mergeInto:   sStrOpt,
+      }).optional().describe(PD.teamInfo),
+      location:     sStrOpt.describe(PD.location),
+      timezone:     sStrOpt.describe(PD.timezone),
+      slackId:      sStrOpt.describe(PD.slackId),
+      personaNoteId: sIdOpt.describe(PD.personaNoteId),
+      link:         z.enum(LINK_KINDS).optional().describe(PD.link),
+      otherPersonId: sIdOpt.describe(PD.otherPersonId),
+      endedAt:      sStrOpt.describe(PD.endedAt),
+      label:        sStrOpt.describe(PD.label),
+      noteId:       sIdOpt.describe(PD.noteId),
+      remove:       sBoolOpt.describe(PD.remove),
       limit:        z.number().optional().default(25),
     }),
   },
@@ -383,6 +397,20 @@ export const CHAT_EXCLUDED_TOOLS: ToolName[] = [
 ];
 
 // Chat-only tools (not exposed via MCP)
+/**
+ * Arguments older clients still send. They are accepted when a tool is called
+ * (the MCP server validates against these as well) but not offered in the tool
+ * list, so they cost nothing. A client that cached an earlier tool list keeps
+ * working: `people` once took `provenance`, and `link: "edge"` with `edgeType`.
+ */
+export const LEGACY_TOOL_ARGS: Record<string, z.ZodRawShape> = {
+  people: {
+    provenance: z.enum(PROVENANCES).optional(),
+    edgeType: z.enum(PERSON_EDGE_TYPES).optional(),
+    link: z.enum([...LINK_KINDS, "edge"]).optional(),
+  },
+};
+
 export const CHAT_ONLY_TOOLS: ToolName[] = ["spawn_tasks_from_note", "ask_questions", "suggest_connections"];
 
 export type ToolSchemaEntry = { description: string; schema: z.ZodObject<z.ZodRawShape> };

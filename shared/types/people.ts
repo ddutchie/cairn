@@ -45,9 +45,16 @@ export type Person = {
   provenance: Provenance;
   /** Hiring stage, for candidates. */
   stage?: string;
-  /** Role, team, place and IANA time zone: what you know about them, in your words. */
+  /** Role, place and IANA time zone: what you know about them, in your words. */
   title?: string;
+  /**
+   * Their home team's name, read from `team_memberships` (the first current
+   * membership of a team of kind "team", else of any kind). Read-only: write
+   * membership with `PersonPatch.team` or the team queries.
+   */
   team?: string;
+  /** Every team they are on now, home team first. */
+  teams: PersonTeam[];
   location?: string;
   timezone?: string;
   /** The user themself; one per workspace. */
@@ -65,6 +72,8 @@ export type Person = {
  */
 export const PERSON_EDGE_TYPES = ["manager_of", "mentor_of", "buddy_of", "stakeholder_of", "partner"] as const;
 export type PersonEdgeType = (typeof PERSON_EDGE_TYPES)[number];
+/** What the agent's `link` takes: an edge type (personId <type> otherPersonId), or a note to put personId on. */
+export const LINK_KINDS = [...PERSON_EDGE_TYPES, "attendee", "mention"] as const;
 
 /** An edge as seen from one person, including the derived inverse ("reports_to"). */
 export type PersonEdgeRole =
@@ -180,10 +189,107 @@ export type PersonPatch = Partial<{
   provenance: Provenance;
   stage: string | null;
   title: string | null;
+  /** Move them to this team (by name, created when new), off their other teams of kind "team". `null` takes them off those. */
   team: string | null;
   location: string | null;
   timezone: string | null;
   isMe: boolean;
   agentPrivate: boolean;
   archivedAt: string | null;
+}>;
+
+// ── Teams ─────────────────────────────────────
+
+/** A link on a team: its board, docs, on-call page. */
+export interface TeamLink {
+  label: string;
+  url: string;
+}
+
+/**
+ * What a group is. A person has one home team of kind "team" at a time; they
+ * can be in any number of guilds, projects and committees beside it.
+ */
+export const TEAM_KINDS = ["team", "guild", "project", "committee"] as const;
+export type TeamKind = (typeof TEAM_KINDS)[number];
+
+/**
+ * What you know about a team. Its id is fixed when it is made (from the
+ * workspace and the name, so two devices making "Sync" make one row) and
+ * kept through renames; membership points at the id (`TeamMembership`).
+ */
+export type Team = {
+  id: ID;
+  workspaceId: ID;
+  name: string;
+  kind: TeamKind;
+  /** What the team owns and works on, in your words. */
+  description?: string;
+  leadPersonId?: ID;
+  /** The team this one sits under, for the org chart. */
+  parentTeamId?: ID;
+  /** Where to reach the team, e.g. "#sync-team". */
+  channel?: string;
+  links: TeamLink[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
+ * One person on one team. One row per pair (id from both), so a second stint
+ * reuses the row: joining again clears `endedAt` and sets a new `startedAt`.
+ * Leaving sets `endedAt`, which keeps who was on the team and when.
+ */
+export type TeamMembership = {
+  id: ID;
+  workspaceId: ID;
+  teamId: ID;
+  personId: ID;
+  /** Their part on the team, in your words: "Tech lead", "Embedded from Design". */
+  role?: string;
+  startedAt?: string;
+  endedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export interface AddMemberInput {
+  teamId: string;
+  personId: string;
+  /** Free text; `null` clears it, undefined keeps what is there. */
+  role?: string | null;
+  /** When they joined. Default: now, for a new or ended membership. `null` means unknown. */
+  startedAt?: string | null;
+}
+
+/** A current membership as a person carries it. */
+export interface PersonTeam {
+  teamId: ID;
+  name: string;
+  kind: TeamKind;
+  role?: string;
+  startedAt?: string;
+}
+
+export interface TeamCreateInput {
+  id?: ID;
+  workspaceId: ID;
+  name: string;
+  kind?: TeamKind;
+  description?: string;
+  leadPersonId?: ID;
+  parentTeamId?: ID;
+  channel?: string;
+  links?: TeamLink[];
+}
+
+/** A partial update. `null` clears an optional field. A rename keeps the id, so members stay. */
+export type TeamPatch = Partial<{
+  name: string;
+  kind: TeamKind;
+  description: string | null;
+  leadPersonId: ID | null;
+  parentTeamId: ID | null;
+  channel: string | null;
+  links: TeamLink[];
 }>;

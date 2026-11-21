@@ -12,7 +12,7 @@ import type { PersonPage as PersonPageModel } from "../../../shared/types/people
 
 const person = {
   id: "p1", workspaceId: "ws", name: "Ada", aliases: [], emails: [], relationship: [], status: "confirmed",
-  provenance: "explicit", isMe: false, agentPrivate: false, createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z",
+  provenance: "explicit", isMe: false, agentPrivate: false, teams: [], createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z",
 };
 const model = { person, relations: [], timeline: [], persona: null } as unknown as PersonPageModel;
 const updatePerson = vi.fn(async () => {});

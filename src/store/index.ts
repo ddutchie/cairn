@@ -386,7 +386,7 @@ function mergeEntitySnapshot(
     // People are per workspace: drop the cache so the pickers reload for the new one.
     const workspaceChanged = nextWorkspaceId !== current.activeWorkspaceId;
     set({
-      ...(workspaceChanged ? { people: [], peopleSuggestions: [], peopleLoaded: false } : {}),
+      ...(workspaceChanged ? { people: [], peopleSuggestions: [], teams: [], teamMemberships: [], peopleLoaded: false } : {}),
       workspaces: nextWorkspaces,
       projects: nextProjects,
       notes: nextNotes,

@@ -20,7 +20,7 @@ import { NextMeeting, ProfileLine, localTimeIn, slackStatusText, usePersonProfil
 
 const person = (extra: Partial<Person> = {}): Person => ({
   id: "p1", workspaceId: "ws1", name: "Ana Ruiz", aliases: [], emails: [], relationship: [], status: "confirmed", provenance: "explicit",
-  isMe: false, agentPrivate: false, createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z", ...extra,
+  isMe: false, agentPrivate: false, teams: [], createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z", ...extra,
 });
 const future = new Date(Date.now() + 3 * 86_400_000).toISOString();
 const meetingItem = (id: string, at: string, title = "Weekly 1:1"): PersonTimelineItem => ({

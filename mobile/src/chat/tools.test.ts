@@ -175,7 +175,11 @@ describe("People layer: what the model sees", () => {
     const action = (mobile.jsonSchema as { properties: { action: { enum: string[] } } }).properties.action.enum;
     // `inventory` (the migration scan) reads files, so it is desktop-only; everything else matches.
     expect(action).toEqual(desktop.action.options.filter((o) => o !== "inventory"));
-    expect(mobile.description).toBe(TOOL_SCHEMAS.people.description.replace(/, 'inventory' \([^)]*\)/, ""));
+    expect(TOOL_SCHEMAS.people.description).toContain(", inventory (");
+    expect(mobile.description).toBe(TOOL_SCHEMAS.people.description.replace(/, inventory \([^)]*\)/, ""));
+    // Every argument says the same thing on both.
+    const mobileProps = (mobile.jsonSchema as { properties: Record<string, { description?: string }> }).properties;
+    for (const [k, field] of Object.entries(desktop)) expect(mobileProps[k].description, k).toBe((field as { description?: string }).description);
     // The arguments on other tools exist on both, with the same words.
     for (const [tool, args] of Object.entries(PEOPLE_TOOL_ARGS)) {
       for (const a of args) {

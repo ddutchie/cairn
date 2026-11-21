@@ -26,6 +26,9 @@ export const SYNCABLE_TABLES = [
   "task_cards",
   // People layer (protocol 5). DDL in ./people-schema.ts; no FKs.
   "people",
+  // Teams (protocol 7). DDL in ./people-schema.ts; no FKs.
+  "teams",
+  "team_memberships",
   "person_edges",
   "meetings",
   "meeting_attendees",

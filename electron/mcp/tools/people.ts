@@ -12,12 +12,17 @@ import "../../../shared/people/place-data";
 import { makeFrontmatterReader, refreshMeetingFrontmatter } from "../../people-files";
 import { buildInventory } from "../../db/people-migration";
 import { peopleTool, setCardOwnerArg, setNoteAttendees, type PeopleToolContext } from "../../../shared/people/tool";
+import { mergePeople } from "../../db/people-queries";
 
 type Args = Record<string, unknown>;
 type Db = Database.Database;
 
 function context(db: Db, workspacePath: string): PeopleToolContext {
-  return { meetingsChanged: (noteIds) => refreshMeetingFrontmatter(db, workspacePath, noteIds) };
+  return {
+    meetingsChanged: (noteIds) => refreshMeetingFrontmatter(db, workspacePath, noteIds),
+    // The desktop's merge, so an agent's merge also moves checklist owners and drops the Slack cache.
+    mergePeople: (d, keepId, dropId) => mergePeople(d as Db, keepId, dropId),
+  };
 }
 
 /** The `people` tool. `workspaceId` is resolved by the dispatcher. */

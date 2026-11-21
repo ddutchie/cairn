@@ -17,11 +17,16 @@ import {
 import { captureNoteMeeting, loadCandidates, meetingLinkPending, resolvePerson } from "./capture";
 import { ownedItemsIn } from "./action-items";
 import { edgeRowId } from "./ids";
+import {
+  addMember, createTeam, deleteTeam, endMember, findTeamByName, foldTeamName, getTeam, listMemberships, listTeams,
+  mergeTeams, normTeamName, teamKind, updateTeam,
+} from "./team-queries";
+import { mergePeople } from "./merge";
 import { cleanProfileFieldWithPlaces, zoneForPlace } from "./place-zone";
 import { cleanRelationshipLabel, parseMeetingDate, PROFILE_FIELDS } from "./parse";
 import {
-  PEOPLE_STATUSES, PERSON_EDGE_TYPES, PROVENANCES, RELATIONSHIP_TYPES,
-  type Person, type PeopleStatus, type PersonPatch, type Provenance, type Relationship,
+  LINK_KINDS, PEOPLE_STATUSES, PERSON_EDGE_TYPES, PROVENANCES, RELATIONSHIP_TYPES, TEAM_KINDS,
+  type Person, type PeopleStatus, type PersonPatch, type Provenance, type Relationship, type Team, type TeamPatch,
 } from "../types/people";
 
 type Args = Record<string, any>;
@@ -34,17 +39,23 @@ type Db = SyncDb;
  */
 export interface PeopleToolContext {
   meetingsChanged?: (noteIds: string[]) => void;
+  /** Merge two people. The desktop supplies its own, which also moves checklist owners and drops the Slack cache. */
+  mergePeople?: (db: Db, keepId: string, dropId: string) => ReturnType<typeof mergePeople>;
 }
 
 const errMsg = (err: unknown) => (err instanceof Error ? err.message : String(err));
 const strList = (x: unknown): string[] => (Array.isArray(x) ? x.filter((v): v is string => typeof v === "string" && v.trim().length > 0) : []);
 const oneOf = <T extends string>(all: readonly T[], v: unknown): T | undefined => (all as readonly unknown[]).includes(v) ? v as T : undefined;
 
-/** What an agent writes is confirmed when stated, a suggestion when inferred, unless it says otherwise. */
+/**
+ * What an agent writes is confirmed by default; status "suggested" marks it as
+ * inferred, which only fills gaps. `provenance` is no longer offered to the
+ * model but is still read from older calls.
+ */
 function writeStatus(args: Args): { status: PeopleStatus; provenance: Provenance } {
-  const provenance = oneOf(PROVENANCES, args.provenance) ?? "explicit";
-  const status = oneOf(PEOPLE_STATUSES, args.status) ?? (provenance === "inferred" ? "suggested" : "confirmed");
-  return { status, provenance };
+  const given = oneOf(PROVENANCES, args.provenance);
+  const status = oneOf(PEOPLE_STATUSES, args.status) ?? (given === "inferred" ? "suggested" : "confirmed");
+  return { status, provenance: given ?? (status === "suggested" ? "inferred" : "explicit") };
 }
 
 function personSummary(p: Person) {
@@ -55,7 +66,7 @@ function personSummary(p: Person) {
     ...(p.relationship.length ? { relationship: p.relationship.map((r) => (r.label ? `${r.type} (${r.label})` : r.type)) } : {}),
     ...(p.status !== "confirmed" ? { status: p.status } : {}),
     ...(p.title ? { title: p.title } : {}),
-    ...(p.team ? { team: p.team } : {}),
+    ...(p.teams.length ? { teams: p.teams.map((t) => [t.name, t.kind !== "team" ? t.kind : null, t.role].filter(Boolean).join(", ")) } : {}),
     ...(p.location ? { location: p.location } : {}),
     ...(p.cadence ? { cadence: p.cadence } : {}),
     ...(p.isMe ? { isMe: true } : {}),
@@ -104,6 +115,11 @@ export function peopleTool(db: Db, ctx: PeopleToolContext, args: Args): unknown 
       case "relationships": return relationships(db, workspaceId, args);
       case "upsert": return upsert(db, workspaceId, args);
       case "link": return link(db, ctx, workspaceId, args);
+      case "archive": return archive(db, workspaceId, args);
+      case "merge": return merge(db, ctx, workspaceId, args);
+      case "teams": return teams(db, workspaceId, args);
+      case "team_upsert": return teamUpsert(db, workspaceId, args);
+      case "team_delete": return teamDelete(db, workspaceId, args);
       default: return { error: `Unknown people action "${args.action}"` };
     }
   } catch (err) {
@@ -305,10 +321,218 @@ function upsert(db: Db, workspaceId: string, args: Args) {
   if (args.personaNoteId) patch.personaNoteId = args.personaNoteId;
   Object.assign(patch, profile);
   if (slackId && (!existing.slackId || provenance === "explicit")) patch.slackId = slackId;
-  // An agent can confirm a suggestion, but never resurrects someone the user dismissed.
+  // An agent can confirm a suggestion, but never resurrects someone the user dismissed. Writing a person
+  // as a stated fact (explicit, no status given) confirms a suggestion: capture often creates the stub
+  // (an attendee name) a moment before the agent fills the person in, and that person is real.
   if (oneOf(PEOPLE_STATUSES, args.status) && existing.status !== "dismissed") patch.status = args.status;
+  else if (args.status === undefined && existing.status === "suggested" && status === "confirmed") patch.status = "confirmed";
   if (Object.keys(patch).length === 0) return { updated: false, person: personSummary(existing) };
   return { updated: true, person: personSummary(updatePerson(db, existing.id, patch)) };
+}
+
+// ── archive and merge ───────────────────────────────────────────────────────
+
+/** Archive someone (they leave the list, nothing is lost); `remove: true` brings them back. */
+function archive(db: Db, workspaceId: string, args: Args) {
+  const p = findPerson(db, workspaceId, args);
+  if (isErr(p)) return p;
+  const restore = args.remove === true;
+  if (!!p.archivedAt === !restore) return { [restore ? "restored" : "archived"]: false, person: personSummary(p) };
+  return { [restore ? "restored" : "archived"]: true, person: personSummary(updatePerson(db, p.id, { archivedAt: restore ? null : new Date().toISOString() })) };
+}
+
+/** Two people who are one: `otherPersonId` folds into this person, who keeps their own name. */
+function merge(db: Db, ctx: PeopleToolContext, workspaceId: string, args: Args) {
+  const p = findPerson(db, workspaceId, args);
+  if (isErr(p)) return p;
+  const other = findPerson(db, workspaceId, { personId: args.otherPersonId });
+  if (isErr(other)) return { error: `otherPersonId: ${other.error}` };
+  const { person, meetingNoteIds } = (ctx.mergePeople ?? mergePeople)(db, p.id, other.id);
+  if (meetingNoteIds.length) ctx.meetingsChanged?.(meetingNoteIds);
+  return { merged: true, person: personSummary(person), removed: { id: other.id, name: other.name } };
+}
+
+// ── teams ───────────────────────────────────────────────────────────────────
+
+/** The team a call names: by id, else by name (the oldest when two share it). */
+function findTeam(db: Db, workspaceId: string, ref: unknown): Team | { error: string } {
+  const s = typeof ref === "string" ? ref.trim() : "";
+  if (!s) return { error: "Pass team (the team's name)" };
+  const byId = getTeam(db, s);
+  if (byId && byId.workspaceId === workspaceId) return byId;
+  return findTeamByName(db, workspaceId, s) ?? { error: `No team named "${s}". Teams: ${listTeams(db, workspaceId).map((t) => t.name).join(", ") || "none yet"}` };
+}
+
+/** Every team with its people, or one (with who used to be on it) when `team` names it. */
+function teams(db: Db, workspaceId: string, args: Args) {
+  const rows = listTeams(db, workspaceId);
+  const people = new Map(listPeople(db, workspaceId, { includeArchived: true }).map((p) => [p.id, p]));
+  const memberships = listMemberships(db, workspaceId);
+  const byId = new Map(rows.map((t) => [t.id, t]));
+  const nameCount = new Map<string, number>();
+  for (const t of rows) nameCount.set(foldTeamName(t.name), (nameCount.get(foldTeamName(t.name)) ?? 0) + 1);
+  const view = (t: Team, withPast: boolean) => {
+    const mine = memberships.filter((m) => m.teamId === t.id && people.has(m.personId))
+      .sort((a, b) => people.get(a.personId)!.name.localeCompare(people.get(b.personId)!.name));
+    const member = (m: (typeof mine)[number]) => {
+      const p = people.get(m.personId)!;
+      return {
+        id: p.id, name: p.name, ...(p.title ? { title: p.title } : {}), ...(m.role ? { role: m.role } : {}),
+        ...(m.startedAt ? { since: m.startedAt } : {}), ...(m.endedAt ? { left: m.endedAt } : {}),
+      };
+    };
+    const current = mine.filter((m) => !m.endedAt && !people.get(m.personId)!.archivedAt);
+    const lead = t.leadPersonId ? people.get(t.leadPersonId) : undefined;
+    const zones = [...new Set(current.map((m) => people.get(m.personId)!.timezone).filter(Boolean))];
+    return {
+      teamId: t.id,
+      name: t.name,
+      ...(t.kind !== "team" ? { kind: t.kind } : {}),
+      ...(t.description ? { description: t.description } : {}),
+      ...(lead ? { lead: { id: lead.id, name: lead.name, ...(current.some((m) => m.personId === lead.id) ? {} : { onTeam: false }) } } : {}),
+      ...(t.parentTeamId && byId.get(t.parentTeamId) ? { parentTeam: byId.get(t.parentTeamId)!.name } : {}),
+      ...(t.channel ? { channel: t.channel } : {}),
+      ...(t.links.length ? { links: t.links } : {}),
+      members: current.map(member),
+      ...(withPast && mine.some((m) => m.endedAt) ? { pastMembers: mine.filter((m) => m.endedAt).map(member) } : {}),
+      ...(zones.length ? { timezones: zones } : {}),
+      ...((nameCount.get(foldTeamName(t.name)) ?? 0) > 1 ? { duplicateName: true } : {}),
+    };
+  };
+  if (typeof args.team === "string" && args.team.trim()) {
+    const t = findTeam(db, workspaceId, args.team);
+    return isErr(t) ? t : view(t, true);
+  }
+  const limit = typeof args.limit === "number" && args.limit > 0 ? args.limit : 50;
+  const onATeam = new Set(memberships.filter((m) => !m.endedAt).map((m) => m.personId));
+  const live = [...people.values()].filter((p) => !p.archivedAt && p.status === "confirmed");
+  return {
+    teams: rows.slice(0, limit).map((t) => view(t, false)),
+    total: rows.length,
+    withoutTeam: live.filter((p) => !onATeam.has(p.id)).length,
+    ...([...nameCount.values()].some((n) => n > 1) ? { note: "Teams marked duplicateName share a name; merge them with team_upsert teamInfo.mergeInto (by teamId)." } : {}),
+  };
+}
+
+const personRef = (db: Db, workspaceId: string, ref: string) => findPerson(db, workspaceId, getPerson(db, ref) ? { personId: ref } : { name: ref });
+
+/**
+ * Create or update a team's details (`teamInfo`), add people to it
+ * (`teamInfo.members`, with `teamInfo.role`), take people off it
+ * (`teamInfo.removeMembers`), or fold it into another (`teamInfo.mergeInto`).
+ * What the user set wins over an inferred value.
+ */
+function teamUpsert(db: Db, workspaceId: string, args: Args) {
+  const name = typeof args.team === "string" ? normTeamName(args.team) : "";
+  if (!name) return { error: "Pass team (the team's name)" };
+  const info = (args.teamInfo && typeof args.teamInfo === "object" ? args.teamInfo : {}) as Args;
+  const { provenance } = writeStatus(args);
+  const fill = provenance === "explicit";
+  if (info.kind !== undefined && !(TEAM_KINDS as readonly unknown[]).includes(info.kind)) return { error: `kind must be one of: ${TEAM_KINDS.join(", ")}` };
+
+  if (typeof info.mergeInto === "string" && info.mergeInto.trim()) {
+    const drop = findTeam(db, workspaceId, args.team);
+    if (isErr(drop)) return drop;
+    const keep = findTeam(db, workspaceId, info.mergeInto);
+    if (isErr(keep)) return { error: `mergeInto: ${keep.error}` };
+    const kept = mergeTeams(db, keep.id, drop.id);
+    return { merged: true, removed: { teamId: drop.id, name: drop.name }, team: teams(db, workspaceId, { team: kept.id }) };
+  }
+
+  // Resolve every reference before anything is written, so a typo can't leave half a change behind
+  // (a rename that stuck, with a retry by the old name then making a second team).
+  const clearLead = info.lead === "";
+  const lead = typeof info.lead === "string" && info.lead.trim() ? personRef(db, workspaceId, info.lead) : undefined;
+  if (isErr(lead)) return { error: `lead: ${lead.error}` };
+  let parentTeamId: string | null | undefined;
+  if (info.parentTeam === "") parentTeamId = null;
+  else if (typeof info.parentTeam === "string" && info.parentTeam.trim()) {
+    // A parent that doesn't exist is an error, not a new team: a typo would otherwise make one.
+    const parent = findTeam(db, workspaceId, info.parentTeam);
+    if (isErr(parent)) return { error: `parentTeam: ${parent.error}. Create it first with team_upsert.` };
+    parentTeamId = parent.id;
+  }
+  const joining: { ref: string; person: Person }[] = [];
+  for (const ref of strList(info.members)) {
+    const p = personRef(db, workspaceId, ref);
+    if (isErr(p)) return { error: `members: ${p.error}` };
+    joining.push({ ref, person: p });
+  }
+  const leaving: Person[] = [];
+  for (const ref of strList(info.removeMembers)) {
+    const p = personRef(db, workspaceId, ref);
+    if (isErr(p)) return { error: `removeMembers: ${p.error}` };
+    leaving.push(p);
+  }
+  const links = Array.isArray(info.links) ? info.links : undefined;
+  const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+  // `role: ""` clears a role; leaving it out keeps what a member has.
+  const role = typeof info.role === "string" ? (info.role.trim() || null) : undefined;
+
+  const found = getTeam(db, name) ?? findTeamByName(db, workspaceId, name);
+  const existing = found && found.workspaceId === workspaceId ? found : null;
+  const created = !existing;
+
+  return db.transaction(() => {
+    let team = existing;
+    if (!team) {
+      team = createTeam(db, {
+        workspaceId, name, kind: info.kind !== undefined ? teamKind(info.kind) : undefined,
+        description: text(info.description), channel: text(info.channel), links,
+        leadPersonId: lead?.id, parentTeamId: parentTeamId ?? undefined,
+      });
+    } else {
+      const t = team;
+      const patch: TeamPatch = {};
+      const take = (has: boolean) => fill || !has;
+      // A rename replaces what the user set, so only an explicit write makes one.
+      if (fill && text(info.rename)?.trim()) patch.name = text(info.rename)!;
+      if (info.kind !== undefined && take(t.kind !== "team")) patch.kind = teamKind(info.kind);
+      if (text(info.description) !== undefined && take(!!t.description)) patch.description = text(info.description)!;
+      if (text(info.channel) !== undefined && take(!!t.channel)) patch.channel = text(info.channel)!;
+      if (links && take(t.links.length > 0)) patch.links = links;
+      if (lead && take(!!t.leadPersonId)) patch.leadPersonId = lead.id;
+      else if (clearLead && fill) patch.leadPersonId = null;
+      if (parentTeamId !== undefined && take(!!t.parentTeamId)) patch.parentTeamId = parentTeamId;
+      if (Object.keys(patch).length) team = updateTeam(db, t.id, patch);
+    }
+
+    // Members join (a guild or project beside their own team; nobody moves). The lead is one of them.
+    const added: string[] = [];
+    const roles = new Map(listMemberships(db, workspaceId).filter((m) => m.teamId === team!.id && !m.endedAt).map((m) => [m.personId, m.role]));
+    const current = new Set(roles.keys());
+    const members = [...joining, ...(lead ? [{ ref: "", person: lead }] : [])];
+    for (const { ref, person } of members) {
+      // A role goes to the members the call named. A guess doesn't replace or clear a role someone set.
+      let setRole = ref ? role : undefined;
+      if (!fill && roles.get(person.id)) setRole = undefined;
+      if (!fill && setRole === null) setRole = undefined;
+      if (current.has(person.id) && setRole === undefined) continue;
+      addMember(db, { teamId: team.id, personId: person.id, ...(setRole !== undefined ? { role: setRole } : {}) });
+      if (!current.has(person.id)) added.push(person.name);
+      current.add(person.id);
+    }
+    const removed: string[] = [];
+    for (const p of leaving) {
+      if (!current.has(p.id)) continue;
+      endMember(db, team.id, p.id);
+      removed.push(p.name);
+    }
+    return {
+      [created ? "created" : "updated"]: true,
+      team: teams(db, workspaceId, { team: team.id }),
+      ...(added.length ? { addedMembers: added } : {}),
+      ...(removed.length ? { removedMembers: removed } : {}),
+    };
+  })();
+}
+
+/** Delete a team: its memberships go with it, and teams under it move up. */
+function teamDelete(db: Db, workspaceId: string, args: Args) {
+  const t = findTeam(db, workspaceId, args.team);
+  if (isErr(t)) return t;
+  deleteTeam(db, t.id);
+  return { deleted: true, team: { teamId: t.id, name: t.name } };
 }
 
 function noteInWorkspace(db: Db, noteId: unknown, workspaceId: string): string | { error: string } {
@@ -323,18 +547,31 @@ function link(db: Db, ctx: PeopleToolContext, workspaceId: string, args: Args) {
   const { status, provenance } = writeStatus(args);
   const remove = args.remove === true;
 
-  switch (args.link) {
+  // `link` names the edge type itself; older calls passed link "edge" with `edgeType`.
+  const edgeType = oneOf(PERSON_EDGE_TYPES, args.link) ?? (args.link === "edge" ? oneOf(PERSON_EDGE_TYPES, args.edgeType) : undefined);
+  if (args.link === "edge" && !edgeType) return { error: `link must be one of: ${LINK_KINDS.join(", ")}` };
+  switch (edgeType ? "edge" : args.link) {
     case "edge": {
-      const type = oneOf(PERSON_EDGE_TYPES, args.edgeType);
-      if (!type) return { error: `edgeType must be one of: ${PERSON_EDGE_TYPES.join(", ")}` };
+      const type = edgeType!;
       const other = findPerson(db, workspaceId, { personId: args.otherPersonId });
       if (isErr(other)) return other;
       if (remove) {
         removeEdge(db, edgeRowId(type, p.id, other.id));
         return { removed: true, edge: { source: p.name, type, target: other.name } };
       }
-      const edge = addEdge(db, { workspaceId, sourceId: p.id, targetId: other.id, type, status, provenance });
-      return { linked: true, edge: { id: edge.id, source: p.name, type, target: other.name, status: edge.status } };
+      // `endedAt` records that it's over ("former manager", history kept); without it the edge is current.
+      let endedAt: string | undefined;
+      if (typeof args.endedAt === "string" && args.endedAt.trim()) {
+        endedAt = args.endedAt.trim() === "now" ? new Date().toISOString() : parseMeetingDate(args.endedAt) ?? undefined;
+        if (!endedAt) return { error: `Couldn't read endedAt "${args.endedAt}". Use YYYY-MM-DD, an ISO datetime or "now".` };
+      }
+      const { label, error } = cleanRelationshipLabel(args.label);
+      if (error) return { error };
+      const edge = addEdge(db, { workspaceId, sourceId: p.id, targetId: other.id, type, status, provenance, ...(label !== undefined ? { label } : {}), endedAt });
+      return {
+        linked: true,
+        edge: { id: edge.id, source: p.name, type, target: other.name, status: edge.status, ...(edge.label ? { label: edge.label } : {}), ...(edge.endedAt ? { ended: edge.endedAt } : {}) },
+      };
     }
     case "attendee": {
       const noteId = noteInWorkspace(db, args.noteId, workspaceId);
@@ -362,7 +599,7 @@ function link(db: Db, ctx: PeopleToolContext, workspaceId: string, args: Args) {
       return { [remove ? "removed" : "linked"]: true, mention: { noteId, personId: p.id, name: p.name } };
     }
     default:
-      return { error: "link must be one of: edge, attendee, mention" };
+      return { error: `link must be one of: ${LINK_KINDS.join(", ")}` };
   }
 }
 

@@ -71,10 +71,12 @@ describe("open items", () => {
 describe("saveProfile", () => {
   const edit = { title: "Senior Engineer", team: "Sync", location: "Berlin", timezone: "Europe/Berlin", slackId: "U01ABC" };
   it("stores the fields and clears a blank one", () => {
-    saveProfile("ana", edit);
-    expect(h.db.prepare("SELECT title, team, location, timezone, slack_id AS s FROM people WHERE id='ana'").get())
-      .toEqual({ title: "Senior Engineer", team: "Sync", location: "Berlin", timezone: "Europe/Berlin", s: "U01ABC" });
-    saveProfile("ana", { team: "  " });
-    expect(h.db.prepare("SELECT title, team FROM people WHERE id='ana'").get()).toEqual({ title: "Senior Engineer", team: null });
+    const saved = saveProfile("ana", edit);
+    expect(h.db.prepare("SELECT title, location, timezone, slack_id AS s FROM people WHERE id='ana'").get())
+      .toEqual({ title: "Senior Engineer", location: "Berlin", timezone: "Europe/Berlin", s: "U01ABC" });
+    // The team is a membership of a team row, not a column.
+    expect(saved.team).toBe("Sync");
+    const cleared = saveProfile("ana", { team: "  " });
+    expect(cleared).toMatchObject({ title: "Senior Engineer", team: undefined, teams: [] });
   });
 });

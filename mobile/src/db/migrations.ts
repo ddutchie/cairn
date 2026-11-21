@@ -11,7 +11,10 @@
  */
 
 import type * as SQLite from "expo-sqlite";
-import { PEOPLE_ADDED_COLUMNS, PEOPLE_SYNC_TABLES_SQL } from "@cairn/shared/sync/people-schema";
+import { PEOPLE_ADDED_COLUMNS, PEOPLE_SYNC_TABLES_SQL, TEAM_MEMBERSHIPS_SYNC_TABLE_SQL, TEAMS_SYNC_TABLE_SQL } from "@cairn/shared/sync/people-schema";
+import { adoptPeopleStructure } from "@cairn/shared/people/adopt";
+import { createExpoSyncDb } from "./expo-sync-db";
+import { MOBILE_TRIGGERS_SQL } from "./schema";
 
 /**
  * Ordered migrations. Index N (0-based) becomes user_version N+1 once applied.
@@ -226,6 +229,23 @@ const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
     for (const column of ["title", "team", "location", "timezone"]) {
       if (!cols.includes(column)) db.execSync(`ALTER TABLE people ADD COLUMN ${column} TEXT`);
     }
+  },
+  // v13: teams (sync protocol 7). Fresh installs have it from the base schema;
+  // capture triggers come free from SYNCABLE_TABLES.
+  (db) => {
+    db.execSync(TEAMS_SYNC_TABLE_SQL);
+  },
+  // v14: team memberships and team kinds (sync protocol 7). Then, once, every
+  // person's free-text team becomes a membership and structural relationship
+  // chips become edges to you, exactly as the desktop's v69 does (same ids,
+  // so both devices write the same rows).
+  (db) => {
+    const cols = db.getAllSync<{ name: string }>("PRAGMA table_info(teams)").map((c) => c.name);
+    if (!cols.includes("kind")) db.execSync("ALTER TABLE teams ADD COLUMN kind TEXT NOT NULL DEFAULT 'team'");
+    db.execSync(TEAM_MEMBERSHIPS_SYNC_TABLE_SQL);
+    // The capture triggers for the new table come from SYNCABLE_TABLES, which ran before this table existed.
+    db.execSync(MOBILE_TRIGGERS_SQL);
+    adoptPeopleStructure(createExpoSyncDb(db));
   },
 ];
 

@@ -265,6 +265,20 @@ const FEATURES = [
       "Org chart and Relationships: Two new canvases in Insights, and the same people on your phone.",
     ],
   },
+  {
+    id: "v3.3.0-teams",
+    version: "v3.3.0",
+    title: "Teams, and better People pictures",
+    category: "People",
+    description:
+      "Teams have their own page: what they own, who leads them and where they sit. The assistant can read and update them, and the org chart, list, Bridges and Map got a design pass.",
+    highlights: [
+      "Team pages: Describe a team, set its lead and parent team, give members a role, and see who used to be on it.",
+      "Guilds and projects: Someone has one team and can be in any number of guilds, projects and committees.",
+      "Ask about teams: The assistant lists teams, fills them in, and merges duplicate teams or people.",
+      "Org chart by team: Highlight one team, or switch to the team tree; group the list by team or place, and spin the globe.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

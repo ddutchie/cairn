@@ -5,7 +5,7 @@ import type { NetworkLink } from "./network";
 
 const p = (id: string, isMe = false): PersonSummary => ({
   id, workspaceId: "w", name: id, aliases: [], emails: [], relationship: [], status: "confirmed", provenance: "explicit",
-  isMe, agentPrivate: false, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+  isMe, agentPrivate: false, teams: [], createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
 });
 const link = (source: string, target: string, ended = false): NetworkLink => ({
   id: `${source}-${target}`, kind: "peer", source, target, directed: false, ended, derived: false, weight: 1,

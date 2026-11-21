@@ -6,7 +6,7 @@ import { sunAt, sunElevation } from "./sun";
 
 const p = (id: string, extra: Partial<PersonSummary> = {}): PersonSummary => ({
   id, workspaceId: "w", name: id, aliases: [], emails: [], relationship: [], status: "confirmed", provenance: "explicit",
-  isMe: false, agentPrivate: false, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", ...extra,
+  isMe: false, agentPrivate: false, teams: [], createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", ...extra,
 });
 const now = new Date("2026-11-20T12:00:00Z");
 const ago = (d: number) => new Date(now.getTime() - d * 86_400_000).toISOString();

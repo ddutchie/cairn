@@ -17,11 +17,66 @@
 /** The people tables the sync engine replicates, in FK-safe replay order. */
 export const PEOPLE_SYNC_TABLES = [
   "people",
+  "teams",
+  "team_memberships",
   "person_edges",
   "meetings",
   "meeting_attendees",
   "note_mentions",
 ] as const;
+
+/**
+ * Teams (sync protocol 7). `teams` is what you know about a group (what it
+ * owns, who leads it, the team it sits under, where to reach it); `kind` says
+ * whether it is a team, a guild, a project or a committee. Its id comes from
+ * the workspace and the name it was made with (`teamRowId`) and never
+ * changes, so a rename is one row.
+ *
+ * `team_memberships` says who is on which team: one row per (team, person)
+ * with a deterministic id (`membershipRowId`), a free-text role and the dates
+ * they joined and left. Leaving sets `ended_at`, so the history stays.
+ * `people.team` (the free-text team of the first People builds) is no longer
+ * read or written; migrations turn it into memberships once.
+ *
+ * Added after v66, so their own migrations create them on existing installs;
+ * they are also part of {@link PEOPLE_SYNC_TABLES_SQL} for fresh ones.
+ */
+export const TEAMS_SYNC_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS teams (
+  id             TEXT NOT NULL PRIMARY KEY,
+  workspace_id   TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  kind           TEXT NOT NULL DEFAULT 'team',
+  description    TEXT,
+  lead_person_id TEXT,
+  parent_team_id TEXT,
+  channel        TEXT,
+  links          TEXT NOT NULL DEFAULT '[]',
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL,
+  hlc            TEXT,
+  deleted_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_teams_ws ON teams(workspace_id);
+`;
+
+export const TEAM_MEMBERSHIPS_SYNC_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS team_memberships (
+  id           TEXT NOT NULL PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  team_id      TEXT NOT NULL,
+  person_id    TEXT NOT NULL,
+  role         TEXT,
+  started_at   TEXT,
+  ended_at     TEXT,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  hlc          TEXT,
+  deleted_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_team_memberships_team ON team_memberships(team_id);
+CREATE INDEX IF NOT EXISTS idx_team_memberships_person ON team_memberships(person_id);
+`;
 
 export const PEOPLE_SYNC_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS people (
@@ -116,7 +171,8 @@ CREATE TABLE IF NOT EXISTS note_mentions (
 );
 CREATE INDEX IF NOT EXISTS idx_note_mentions_note ON note_mentions(note_id);
 CREATE INDEX IF NOT EXISTS idx_note_mentions_person ON note_mentions(person_id);
-`;
+${TEAMS_SYNC_TABLE_SQL}
+${TEAM_MEMBERSHIPS_SYNC_TABLE_SQL}`;
 
 /**
  * Columns the people layer adds to existing synced tables. Older peers ignore

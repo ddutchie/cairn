@@ -16,7 +16,7 @@
  *       CAIRN_SITE_DIR=/path npm run screenshots
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { buildScreenshotMock, PROJ_A } from "../fixtures/screenshot-fixture";
 import * as path from "path";
 import * as fs from "fs";
@@ -350,7 +350,37 @@ const PEOPLE_SHOTS: Shot[] = [
     await p.keyboard.type("Prep my 1:1 with @An", { delay: 20 });
     await p.waitForTimeout(700);
   } },
+  // The People view's own pictures, picked from its switcher.
+  { file: "docs/people-teams.png", view: "people", setup: (p) => peoplePicture(p, "Teams") },
+  { file: "docs/people-team-page.png", view: "people", setup: async (p) => {
+    await peoplePicture(p, "Teams");
+    await press(p.getByRole("button", { name: /^Sync/ }).first());
+    await p.waitForTimeout(700);
+  } },
+  { file: "docs/people-org-teams.png", view: "people", setup: async (p) => {
+    await peoplePicture(p, "Org chart");
+    await press(p.getByRole("group", { name: "Org chart of" }).getByRole("button", { name: "Teams" }));
+    await p.waitForTimeout(900);
+  } },
+  { file: "docs/people-zones.png", view: "people", setup: (p) => peoplePicture(p, "Time zones") },
+  { file: "docs/people-rhythm.png", view: "people", setup: (p) => peoplePicture(p, "Rhythm") },
+  { file: "docs/people-bridges.png", view: "people", setup: (p) => peoplePicture(p, "Bridges", 2500) },
+  { file: "docs/people-map.png", view: "people", setup: (p) => peoplePicture(p, "Map") },
+  { file: "docs/people-globe.png", view: "people", setup: async (p) => {
+    await peoplePicture(p, "Map");
+    await press(p.getByRole("group", { name: "Map projection" }).getByRole("button", { name: "Globe" }));
+    await p.waitForTimeout(900);
+  } },
 ];
+
+/** Click through the DOM, like the Insights tabs above: a pointer click can be blocked by an overlay in the fixture. */
+const press = (l: Locator) => l.evaluate((el) => (el as HTMLElement).click());
+
+/** Pick one of the People view's pictures from its switcher. */
+async function peoplePicture(p: Page, label: string, settle = 900): Promise<void> {
+  await press(p.getByRole("group", { name: "People view" }).getByRole("button", { name: label, exact: true }));
+  await p.waitForTimeout(settle);
+}
 
 test.describe("people screenshots", () => {
   test.setTimeout(120_000);

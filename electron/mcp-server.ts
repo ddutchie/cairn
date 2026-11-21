@@ -12,8 +12,9 @@
 import http from "http";
 import Database from "better-sqlite3";
 import * as z from "zod";
-import { CHAT_ONLY_TOOLS, TOOL_SCHEMAS, toolParametersJsonSchema } from "./lib/tool-schemas";
+import { CHAT_ONLY_TOOLS, LEGACY_TOOL_ARGS, TOOL_SCHEMAS, toolParametersJsonSchema } from "./lib/tool-schemas";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { MCP_SERVER_INSTRUCTIONS } from "./mcp/instructions";
 import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -127,13 +128,13 @@ function createWorkspaceBinding(initialDbPath: string) {
 type WorkspaceBinding = ReturnType<typeof createWorkspaceBinding>;
 
 export function buildMcpServer(binding: WorkspaceBinding): McpServer {
-  const server = new McpServer({ name: "cairn", version: "1.0.0" });
+  const server = new McpServer({ name: "cairn", version: "1.0.0" }, { instructions: MCP_SERVER_INSTRUCTIONS });
 
   // Register tools from TOOL_SCHEMAS, excluding chat-only tools.
   const chatOnlySet = new Set<string>(CHAT_ONLY_TOOLS);
   for (const [name, { description, schema }] of Object.entries(TOOL_SCHEMAS)) {
     if (chatOnlySet.has(name)) continue;
-    server.tool(name, description, schema.shape as Record<string, z.ZodTypeAny>,
+    server.tool(name, description, { ...(schema.shape as Record<string, z.ZodTypeAny>), ...LEGACY_TOOL_ARGS[name] },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async (args: Record<string, any>) => {
         const result = await executeTool(binding.getDb(), binding.getWorkspacePath(), name, args);

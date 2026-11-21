@@ -230,5 +230,4 @@ Before writing a helper, look here. If the thing exists, use it; if it almost fi
 
 ## Project Management
 
-Use cairn mcp server to manage notes, tasks and idea flow nodes.  
-When you find anything interesting create a note in the right project and add a card to the board (if needed).
+Track work in Cairn through the cairn MCP server; it sends its own workflow when you connect (`electron/mcp/instructions.ts`).

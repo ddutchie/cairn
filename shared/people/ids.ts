@@ -82,3 +82,18 @@ export function actionItemLineKey(rawLine: string): string {
 export function migratedPersonId(workspaceId: string, noteId: string): string {
   return `mig:${workspaceId}:${noteId}`;
 }
+
+/**
+ * A team, from the workspace and the folded name it was first made with, so
+ * two devices that each make "Sync" before they sync make one row. The id is
+ * kept through renames; a later team that folds to a name whose id is taken
+ * by a renamed one gets the next free `~2`, `~3`… (`createTeam`).
+ */
+export function teamRowId(workspaceId: string, foldedName: string, n = 1): string {
+  return n > 1 ? `team:${workspaceId}:${foldedName}~${n}` : `team:${workspaceId}:${foldedName}`;
+}
+
+/** One person on one team: a second stint reuses the row. */
+export function membershipRowId(teamId: string, personId: string): string {
+  return `tm:${teamId}:${personId}`;
+}
