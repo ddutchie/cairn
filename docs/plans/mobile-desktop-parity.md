@@ -18,7 +18,7 @@ Legend: **Yes** = same job done; **Partial** = some of it; **No** = not on mobil
 | Insights (8 canvases) | No | | Low: one or two that read well on a phone (for example the bullet or ridgeline chart) |
 | Automations | No | Run in the desktop app | Maybe: a read-only list of runs plus the notification feed |
 | Usage | Yes | Workspace tab (a tool, with the tab bar) | done |
-| Today | **No** | Still no screen, route or tab; `get_today` is also missing on mobile (confirmed 2026-11-22). Desktop has it as a view; the desktop sidebar lists it above Automations | **Yes, high**: the natural phone home screen, and the data already syncs. Candidate home for it: the first tab or the top of Projects, with the Workspace tab keeping the tools |
+| Today | **No** | Still no screen, route or tab; `get_today` is also missing on mobile (confirmed 2026-11-22). Desktop has it as a view; the desktop sidebar lists it above Automations | **Yes, high**: the biggest gap. Note: the desktop *brief* is a file under the automation output folder and does not sync; the tasks, meetings and people it draws on do. See `docs/plans/mobile-today.md`. Decided 2026-11-22: a Workspace tool (`/workspace/today`), pinnable to the accessory; build a local Today from synced data first, the synced brief second |
 | Search | Yes | Own tab | done |
 | Chat | Partial | See Chat. The model chip panel now covers provider, model, temperature and max steps in the chat box | see Chat |
 
@@ -104,7 +104,7 @@ Planned, not built: share extension and a lock-screen capture control (`mobile-c
 
 ## Suggested order
 
-1. Today screen and the `get_today` tool: biggest gap, best fit for a phone.
+1. Today screen and the `get_today` tool: biggest gap, best fit for a phone. Planned in `docs/plans/mobile-today.md` (Workspace tool, local first).
 2. People: a reporting-line Org chart (needs `network.ts` moved to `shared/`).
 3. Settings: Tags, Data (storage and reset), Writing style page, Commands and a `/` picker in Chat, About.
 4. Tools: `task_progress`, `upsert_project`.
