@@ -1,6 +1,6 @@
 # Mobile Today
 
-Status: proposal, 2026-11-22. Nothing built. Biggest desktop/mobile parity gap (`docs/plans/mobile-desktop-parity.md`).
+Status: proposal, placement decided 2026-11-22 (Workspace tool). Nothing built. Biggest desktop/mobile parity gap (`docs/plans/mobile-desktop-parity.md`).
 
 ## What desktop has
 
@@ -25,23 +25,26 @@ What the phone does have locally: projects, tasks with due dates and columns, no
 1. **A first.** It has no desktop dependency, reuses data and widgets' counting that already exist, and fits the phone ("what needs me today"). Name it Today, same as desktop, and keep the sections it can really back.
 2. **B second**, behind a decision on transport. Cheapest: a synced `today_briefs` row per day (JSON in a column, last-writer-wins, marks as a second column or row) so it rides the oplog the phone already trusts. A file read from the iCloud folder would work like attachments but adds a second sync path for text data.
 
-## Where it lives (decision for the owner)
+## Where it lives: a Workspace tool (decided)
 
-- **First tab.** Today replaces Projects as the launch tab; Projects stays one tap away. Strongest "home screen" feel; changes the launch flow and the tab count (five tabs already; NativeTabs would need Today to displace one, so Search or Calendar would have to move into Workspace).
-- **Top of Projects** *(recommended)*. A Today card stack above the project list, tappable into a full `today` screen inside the Projects stack. No new tab, no launch change, Workspace keeps the tools. Cheap to move later.
-- Widgets, quick actions and a `cairn://today` link should open it either way.
+Today is a **Workspace tool**, like People, Knowledge graph and Usage: one more entry in `WORKSPACE_TOOLS` (`mobile/src/lib/workspace-tools.ts`) with a live line ("3 due today, 1 overdue"), a screen at `/workspace/today`, and an entry in `PINNABLE`, so it can be pinned to the accessory above the tab bar or shown from any tab by pressing and holding its row (the same press-and-hold flow the other tools use, and the Duo side-rail button). No new tab, no change to launch. Widgets, quick actions and a `cairn://today` link open `/workspace/today`.
+
+Consequences:
+- The tool list and pin menu already exist (`WorkspaceScreen`, `PinnedAccessory`, `pin-menu.ts`, `screen-chrome.tsx`, `ProjectsSplitView`, `ProjectsTreeSidebar`); adding a `ToolId` and a route covers them. Cross-tab opens use `{ withAnchor: true }` like the other tools.
+- The accessory is 56pt tall, so a pinned Today shows the live line and opens the full screen on tap; the full screen is not rendered inside the accessory.
+- Today is no longer the launch screen. If it should be a morning home, the pin makes it one tap from every tab; revisit a top-of-Projects card only if usage says people don't pin it.
+- The `liveLine` for Today must stay cheap and synchronous (it runs on every Workspace render); counts come from indexed due-date queries.
 
 ## Scope for the first PR (A, on the Projects tab)
 
 1. Shared: `shared/today/` gets a pure `localTodayFacts(...)` (or reuse `projectFacts` if it is already DB-agnostic; `today-facts.ts` takes a better-sqlite3 handle, so port the queries to mobile's `getDb` and keep the shaping pure and shared).
 2. Mobile queries: due today / overdue tasks, today's meetings/events, people due (`RhythmList` already computes), open action items.
-3. Screen `app/(tabs)/(projects)/projects/today.tsx` plus a compact card at the top of Projects; use `TabScreen`, theme tokens, `ModalSafeView` not needed (tab screen).
+3. Screen `app/(tabs)/(workspace)/workspace/today.tsx` (Workspace stack, `TabScreen`, theme tokens; no `ModalSafeView`, it is a tab screen), a `today` entry in `WORKSPACE_TOOLS`/`PINNABLE` with a live line, and the "Today" row in the Workspace list.
 4. `get_today` chat tool on mobile returning the same digest shape from the local facts (so the tool exists and chat can answer "what's on today" even before B).
 5. Tests for the fact shaping; changelog; update the parity matrix (Today: Partial).
 
 ## Open questions
 
-- Where it lives (above). 
 - Should A's "Need you" be a heuristic (overdue + due today + blocked + unanswered action items) or omitted until B?
 - B transport: synced row vs iCloud file; does desktop write the day's brief fast enough for the phone to show it in the morning (it runs unattended before work, so yes when the desktop is awake)?
 - Marks: written from the phone? If yes they must sync back, which pushes B toward a row.
