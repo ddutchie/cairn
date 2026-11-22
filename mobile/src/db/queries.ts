@@ -433,8 +433,9 @@ export function listDueTasks(limit = 8, onDate?: string): { id: string; title: s
  * Open tasks due on or before `day` (local `YYYY-MM-DD`), oldest first, with their project's name. Feeds Today.
  *
  * `due_date` can be a bare date (a local calendar day) or a timestamp (whose local day depends on the
- * time zone), and SQLite cannot compare both by local day. So this is a deliberate superset: it keeps
- * everything whose stored date text is up to a day past `day` (no zone is more than a day off), and the
+ * time zone, and may carry its own offset), and SQLite cannot compare both by local day. So this is a
+ * deliberate superset: it keeps everything whose stored date text is up to two days past `day` (a +14:00
+ * stamp seen from UTC-11 is two calendar days off its text), and the
  * caller classifies each row by local calendar day (`getDueDateStatus`). No limit, so counts are complete.
  */
 export function listOpenDueTasks(day: string): { id: string; title: string; due_date: string; priority: string | null; project_name: string | null }[] {
@@ -445,7 +446,7 @@ export function listOpenDueTasks(day: string): { id: string; title: string; due_
      LEFT JOIN projects p ON p.id = c.project_id
      WHERE c.deleted_at IS NULL AND c.archived_at IS NULL AND c.due_date IS NOT NULL
        AND (col.id IS NULL OR col.type != 'done' OR col.deleted_at IS NOT NULL)
-       AND substr(c.due_date, 1, 10) <= date(?, '+1 day')
+       AND substr(c.due_date, 1, 10) <= date(?, '+2 day')
      ORDER BY c.due_date ASC`,
     day,
   );

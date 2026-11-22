@@ -34,12 +34,12 @@ beforeEach(() => {
 });
 
 describe("listOpenDueTasks", () => {
-  it("returns open, dated, live tasks due up to a day past the date (the caller classifies by local day), oldest first", () => {
+  it("returns open, dated, live tasks due up to two days past the date (the caller classifies by local day), oldest first", () => {
     card("late", "2026-11-20", "todo");
     card("today", "2026-11-22", "todo");
     card("iso", "2026-11-22T09:00:00.000Z", "todo");
-    card("future", "2026-11-23", "todo"); // inside the one-day slack
-    card("far", "2026-11-24", "todo");
+    card("future", "2026-11-23", "todo"); // inside the slack
+    card("far", "2026-11-25", "todo");
     card("done", "2026-11-20", "done");
     card("nodue", null, "todo");
     card("arch", "2026-11-20", "todo", "2026-11-21");
@@ -49,12 +49,15 @@ describe("listOpenDueTasks", () => {
   it("keeps a timestamp that is still the day in a zone west of UTC, and does not cap the list", () => {
     // 2026-11-23T07:00Z is Nov 22 at UTC-8: the caller classifies it, the query must not drop it.
     card("west", "2026-11-23T07:00:00.000Z", "todo");
+    // 2026-11-24T00:30+14:00 is Nov 22 23:30 at UTC-11: two days past its stored text.
+    card("offset", "2026-11-24T00:30:00+14:00", "todo");
     card("beyond", "2026-11-25", "todo");
     for (let i = 0; i < 80; i++) card(`t${i}`, "2026-11-01", "todo");
     const ids = listOpenDueTasks("2026-11-22").map((t) => t.id);
     expect(ids).toContain("west");
+    expect(ids).toContain("offset");
     expect(ids).not.toContain("beyond");
-    expect(ids).toHaveLength(81);
+    expect(ids).toHaveLength(82);
   });
 });
 
