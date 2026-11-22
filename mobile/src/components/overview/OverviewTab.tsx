@@ -285,9 +285,9 @@ export function OverviewTab({
             </View>
             <View style={styles.instrumentMain}>
               <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4 }}>
+                <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 4 }}>
                   <RollingText text={String(instrumentPct)} style={{ ...typeScale.display, color: t.textPrimary }} />
-                  <Text style={[typeScale.caption, { color: t.textTertiary }]}>%</Text>
+                  <Text style={[typeScale.caption, { color: t.textTertiary, marginBottom: 4 }]}>%</Text>
                 </View>
                 <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", marginTop: 2 }}>
                   <RollingText text={`${instrumentDone} / ${instrumentTotal}`} style={{ ...typeScale.caption, color: t.textPrimary, fontWeight: "600", fontFamily: "Menlo" }} />
@@ -361,7 +361,7 @@ export function OverviewTab({
           <Text style={[typeScale.micro, styles.kpiLabel, { color: t.textTertiary }]}>Needs attention</Text>
           <View style={styles.kpiValueRow}>
             <Text style={[typeScale.heading, { color: t.textPrimary }]}>{needsAttention}</Text>
-            <Text style={[typeScale.caption, { color: t.textTertiary }]}>/ {openCards.length}</Text>
+            <Text style={[typeScale.caption, { color: t.textTertiary, marginBottom: 2 }]}>/ {openCards.length}</Text>
           </View>
           <Text style={[typeScale.caption, { color: needsAttention > 0 ? t.danger : t.success, fontWeight: "600", marginTop: 4, fontSize: 11 }]} numberOfLines={1}>
             {needsAttention > 0 ? `${overdueCount} overdue · ${todayCount} today` : "All caught up"}
@@ -831,7 +831,7 @@ function makeStyles(t: Theme) {
     kpiCellTint: {},
     kpiAccent: { position: "absolute", top: 0, left: 0, right: 0, height: 3 },
     kpiLabel: { fontSize: 10, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" },
-    kpiValueRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 4 },
+    kpiValueRow: { flexDirection: "row", alignItems: "flex-end", gap: 6, marginTop: 4 },
     emptyQueue: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 12, borderWidth: 1, borderStyle: "dashed" },
     emptyIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", borderWidth: 1 },
     emptyAction: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1 },

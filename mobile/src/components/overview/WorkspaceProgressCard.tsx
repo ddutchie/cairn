@@ -40,9 +40,9 @@ export function WorkspaceProgressCard({ progress }: { progress: WorkspaceProgres
       </Text>
       <View style={styles.main}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4 }}>
+          <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 4 }}>
             <RollingText text={String(progress.completionRate)} style={{ ...typeScale.display, color: t.textPrimary }} />
-            <Text style={[typeScale.caption, { color: t.textTertiary }]}>%</Text>
+            <Text style={[typeScale.caption, { color: t.textTertiary, marginBottom: 4 }]}>%</Text>
           </View>
           <View style={styles.countLine}>
             <RollingText text={`${progress.doneCards} / ${progress.totalCards}`} style={{ ...typeScale.caption, color: t.textPrimary, fontWeight: "600", fontFamily: "Menlo" }} />
