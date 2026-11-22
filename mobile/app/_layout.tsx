@@ -260,9 +260,13 @@ function RootNavigator({
       <Stack.Screen name="card/[id]" />
       <Stack.Screen name="sync" options={{ title: "Sync", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
+      <Stack.Screen name="restore" options={{ title: "Deleted Notes" }} />
       <Stack.Screen name="settings/ai" options={{ title: "AI settings", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="settings/tools" options={{ title: "Tools & Services", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="settings/appearance" options={{ title: "Appearance", presentation: "modal", contentStyle: cardStyle }} />
+      {/* Pushed inside the settings modal (AI settings → Providers); declared so the title is intentional. */}
+      <Stack.Screen name="settings/providers" options={{ title: "AI Providers" }} />
+      <Stack.Screen name="settings/usage" options={{ title: "Usage" }} />
       {/* Native iOS sheets for the contextual pickers (tags, move,
           wikilink, due date) — UISheetPresentationController gives
           blur, drag-to-dismiss and detents for free. Expansion is
