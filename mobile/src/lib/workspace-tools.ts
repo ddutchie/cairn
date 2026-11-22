@@ -84,6 +84,24 @@ export function usePinnedTool(): ToolId | null {
 
 /** Space a screen should leave at the bottom for the pinned accessory, or 0 when none is showing. */
 export function useAccessoryVisible(): boolean {
+  return useAccessoryContext().showAccessory;
+}
+
+/** Wide windows have no accessory; the pinned tool is a toolbar button on every tab but Workspace and Chat instead. */
+export function usePinnedToolForRail(): ToolId | null {
+  const pinned = usePinnedTool();
+  const { showRail } = useAccessoryContext();
+  return showRail ? pinned : null;
+}
+
+export const TOOL_SYMBOL = {
+  people: "person.2",
+  graph: "point.3.connected.trianglepath.dotted",
+  usage: "chart.bar",
+  sync: "arrow.triangle.2.circlepath",
+} as const satisfies Record<ToolId, string>;
+
+function useAccessoryContext(): { showAccessory: boolean; showRail: boolean } {
   const pathname = usePathname();
   const inWorkspace = pathname === "/workspace" || pathname.startsWith("/workspace/");
   // Chat has its own composer at the bottom, so the accessory stays out of it.
@@ -92,7 +110,7 @@ export function useAccessoryVisible(): boolean {
   // (the unfolded Duo, two columns) it would leave an empty band under both. The tool is still
   // one tap away in the Workspace tab there.
   const wide = useWindowDimensions().width >= WIDE_MIN_WIDTH;
-  return !inWorkspace && !inChat && !wide;
+  return { showAccessory: !inWorkspace && !inChat && !wide, showRail: !inWorkspace && !inChat && wide };
 }
 
 export function useAccessoryInset(): number {

@@ -41,7 +41,7 @@ import { getActiveSource } from "@/db";
 import { useTightSideRail } from "@/lib/layout";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { haptics } from "@/haptics";
-import { WORKSPACE_TOOLS, liveLine, useAccessoryVisible, usePinnedTool, type ToolId } from "@/lib/workspace-tools";
+import { TOOL_SYMBOL, WORKSPACE_TOOLS, usePinnedToolForRail } from "@/lib/workspace-tools";
 import { requestSync, switchSource } from "@/sync/controller";
 import { useSyncSources } from "@/sync/useSyncSources";
 import { useTheme } from "@/theme";
@@ -63,12 +63,6 @@ const SHOW_CAIRN_STACK = false;
  * trailing icon buttons) above the list — the same Toolbar pattern the
  * `ChromeColumn` content columns use.
  */
-const TOOL_SYMBOL = {
-  people: "person.2",
-  graph: "point.3.connected.trianglepath.dotted",
-  usage: "chart.bar",
-  sync: "arrow.triangle.2.circlepath",
-} as const satisfies Record<ToolId, string>;
 
 export function ProjectsTreeSidebar({
   title,
@@ -94,9 +88,8 @@ export function ProjectsTreeSidebar({
   const t = useTheme();
   const router = useRouter();
   // The pinned tool floats above the tab bar on a narrow window; on a wide one the system would
-  // reserve a band under both columns for it, so it sits at the top of this list instead.
-  const pinnedTool = usePinnedTool();
-  const accessoryShown = useAccessoryVisible();
+  // reserve a band under both columns for it, so it becomes a button in the toolbar (the rail) instead.
+  const pinnedTool = usePinnedToolForRail();
   const hideTrailingActions = useTightSideRail();
   // Tight rail: trailing buttons collapse into the system "..." overflow menu
   // (secondaryAction) — one pill above the 5-tab rail. Roomy layouts keep them
@@ -215,31 +208,6 @@ export function ProjectsTreeSidebar({
         {progress && (progress.totalCards > 0 || progress.totalNotes > 0) && (
           <WorkspaceProgressHeader progress={progress} />
         )}
-        {pinnedTool && !accessoryShown ? (
-          <Section>
-            <HStack
-              spacing={12}
-              modifiers={[
-                padding({ horizontal: 4, vertical: 6 }),
-                frame({ maxWidth: Infinity, alignment: "leading" }),
-                contentShape(shapes.rectangle()),
-                onTapGesture(() => {
-                  haptics.selection();
-                  router.push(WORKSPACE_TOOLS[pinnedTool].href);
-                }),
-                accessibilityAddTraits(["isButton"]),
-              ]}
-            >
-              <Image systemName={TOOL_SYMBOL[pinnedTool]} color={t.accent} size={20} />
-              <VStack alignment="leading" spacing={2}>
-                <Text modifiers={[font({ textStyle: "body", weight: "medium" })]}>{WORKSPACE_TOOLS[pinnedTool].title}</Text>
-                <Text modifiers={[font({ textStyle: "footnote" }), foregroundStyle({ type: "hierarchical", style: "secondary" })]}>
-                  {liveLine(pinnedTool)}
-                </Text>
-              </VStack>
-            </HStack>
-          </Section>
-        ) : null}
         <Section>{list.nodes.map(row)}</Section>
       </List>
       <Toolbar.Content>
@@ -295,6 +263,18 @@ export function ProjectsTreeSidebar({
             single "..." button above the 5-tab pill. Roomy layouts (portrait,
             unfolded, regular iPhones) keep all three buttons inline. Only the
             placement differs — each button is written once. */}
+        {pinnedTool ? (
+          <ToolbarItem {...trailingItem("high")}>
+            <Button
+              label={WORKSPACE_TOOLS[pinnedTool].title}
+              systemImage={TOOL_SYMBOL[pinnedTool]}
+              onPress={() => {
+                haptics.selection();
+                router.push(WORKSPACE_TOOLS[pinnedTool].href);
+              }}
+            />
+          </ToolbarItem>
+        ) : null}
         <ToolbarItem {...trailingItem("high")}>
           <Button
             label="Capture"
