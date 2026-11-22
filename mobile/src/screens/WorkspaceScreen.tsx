@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { ActionSheetIOS, Alert, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { ActionSheetIOS, Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack, useFocusEffect, useRouter, type Href } from "expo-router";
 import { BarChart3, FolderOpen, Network, Pin, RefreshCw, Settings, Users } from "lucide-react-native";
 import type { ReactNode } from "react";
@@ -11,7 +11,6 @@ import { showPinMenu } from "@/lib/pin-menu";
 import { getActiveSource } from "@/db";
 import { switchSource } from "@/sync/controller";
 import { useSyncSources } from "@/sync/useSyncSources";
-import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 const ICONS: Record<ToolId, typeof Users> = { people: Users, graph: Network, usage: BarChart3, sync: RefreshCw };
@@ -26,8 +25,6 @@ type Row = { key: string; title: string; line: string; href: Href; icon: typeof 
 export function WorkspaceScreen() {
   const t = useTheme();
   const s = useMemo(() => makeStyles(t), [t]);
-  // Regular width (the unfolded Duo, iPad): two columns instead of a stretched phone list.
-  const wide = useWindowDimensions().width >= WIDE_MIN_WIDTH;
   const router = useRouter();
   const pinned = usePinnedTool();
   const [lines, setLines] = useState<Record<string, string>>({});
@@ -69,7 +66,7 @@ export function WorkspaceScreen() {
     return (
       <PressableScale
         key={r.key}
-        style={[s.row, wide && s.rowWide]}
+        style={s.row}
         onPress={() => router.push(r.href)}
         onLongPress={r.tool ? () => showPinMenu(r.tool!, isPinned) : undefined}
         accessibilityLabel={`${r.title}, ${r.line}${isPinned ? ", shown above the tab bar" : ""}`}
@@ -104,7 +101,8 @@ export function WorkspaceScreen() {
           {sources.length > 1 ? <Text style={s.chevron}>›</Text> : null}
         </PressableScale>
         <Text style={s.section}>Tools</Text>
-        <View style={wide ? s.grid : undefined}>{tools.map(renderRow)}{renderRow(usage)}</View>
+        {tools.map(renderRow)}
+        {renderRow(usage)}
         <Text style={s.section}>Settings</Text>
         {renderRow(settings)}
         <Text style={s.hint}>Press and hold a tool to show it above the tab bar.</Text>
@@ -116,8 +114,6 @@ export function WorkspaceScreen() {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     list: { padding: 12, paddingBottom: 120 },
-    grid: { flexDirection: "row", flexWrap: "wrap", columnGap: 6 },
-    rowWide: { width: "49.5%" },
     section: { ...typeScale.label, color: t.textTertiary, marginTop: 14, marginBottom: 8, marginLeft: 4 },
     row: {
       flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 14,
