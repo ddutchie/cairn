@@ -14,7 +14,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useSyncStatus } from "@/sync/useSyncStatus";
-import { Settings, Settings2, Sparkles, Trash2, Wrench } from "lucide-react-native";
+import { Check, Cpu, Repeat, Server, Settings, Settings2, Sparkles, Star, Thermometer, Trash2, Wrench } from "lucide-react-native";
 import { TabScreen } from "@/components/TabScreen";
 import { ICON_DELETE } from "@/components/toolbar-icons";
 import { EmptyState } from "@/components/EmptyState";
@@ -26,7 +26,17 @@ import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage
 import { redactValue } from "@cairn/shared/chat/redaction";
 import { hasProvider, resolveProvider } from "@/chat/providers";
 import { resetAppleSession } from "@/chat/providers/apple";
-import { getOpenAIModel, getProviderPref, getActiveProvider, getChatPersonalityId, setChatPersonalityId } from "@/chat/ai-config";
+import {
+  getOpenAIModel,
+  getProviderPref,
+  getActiveProvider,
+  getChatPersonalityId,
+  setChatPersonalityId,
+  getChatTemperature,
+  setChatTemperature,
+  getChatMaxSteps,
+  setChatMaxSteps,
+} from "@/chat/ai-config";
 import { fetchPersonalitiesManifest, getCachedPersonalitiesManifest } from "@/chat/personalities-registry";
 import { getModelInfo, getModelCatalogVersion, subscribeModelCatalog } from "@/chat/models-dev";
 import { supportsImageInput } from "@cairn/shared/models/model-catalog";
@@ -59,7 +69,7 @@ import { safeToolOutput } from "@/chat/tool-output";
 import { fetchManifest } from "@/chat/registry";
 import { useSharedValue, withSpring, useDerivedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { COMPOSER, GUTTER, SPRING } from "@/components/chat/attachment-panel/constants";
+import { COMPOSER, SPRING } from "@/components/chat/attachment-panel/constants";
 import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
 import { useFold, useTopHalf } from "@/lib/use-fold";
 
@@ -198,7 +208,7 @@ export default function ChatScreen() {
   // Composer height below its attachment strip: one row at rest, two while typing.
   const composerRows = useSharedValue<number>(COMPOSER.rowHeight);
   const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
+  const { height } = useWindowDimensions();
   // Wide windows open touched notes/tasks in a column beside the chat (folding a
   // Duo with a preview open keeps it: the pane fills the window, its ✕ returns
   // to the conversation). Shared with Graph/Calendar — see SidePreview.
@@ -294,19 +304,31 @@ export default function ChatScreen() {
 
   // Chat personality, picked from the `+` panel (or AI settings, re-read on focus).
   const [personalityId, setPersonalityId] = useState(() => getChatPersonalityId());
+  const [, setPersonalityCatalogRev] = useState(0);
+  // Tuning shown in the model chip's panel (also set in AI settings, re-read on focus).
+  const [temperature, setTemperature] = useState<number | undefined>(() => getChatTemperature());
+  const [maxSteps, setMaxSteps] = useState(() => getChatMaxSteps());
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       refreshConfigured();
       setPersonalityId(getChatPersonalityId());
+      setTemperature(getChatTemperature());
+      setMaxSteps(getChatMaxSteps());
       // Keep the `+` panel's personality list current (a conditional GET; the cache is
       // what the panel reads). A personality the registry dropped is cleared, as AI
       // settings does.
-      void fetchPersonalitiesManifest().then(({ manifest }) => {
+      // Checked against the catalogue cached when it lands (a superseded fetch may
+      // return an older snapshot), and only while this focus is current.
+      void fetchPersonalitiesManifest().then(() => {
+        if (!alive) return;
+        const list = getCachedPersonalitiesManifest()?.personalities;
         const id = getChatPersonalityId();
-        if (manifest && id && !manifest.personalities.some((p) => p.id === id)) setChatPersonalityId("");
+        if (list && id && !list.some((p) => p.id === id)) setChatPersonalityId("");
         setPersonalityId(getChatPersonalityId());
+        // The panel reads the cache at render: re-render even when the id is unchanged.
+        setPersonalityCatalogRev((rev) => rev + 1);
       });
       void fetchManifest(false).then(() => setRegistryRevision((revision) => revision + 1));
       resolveProvider()
@@ -633,13 +655,111 @@ export default function ChatScreen() {
   // so the content must not add that inset a second time.
   const headerInset = glassHeader && conflicts === 0 ? headerHeight : 0;
   const androidModelMenu = Platform.OS === "ios" ? null : modelToolbarMenu(modelMenu);
-  // iOS: the model chip in the composer's second row (shown while typing). Capped so the
-  // `+`, mic and send keep their room: the row's padding, three gaps and those buttons.
-  const composerWidth = width - composerLeftInset - insets.left - insets.right - GUTTER * 2;
   const modelChip =
-    Platform.OS === "ios" && modelMenu ? <ModelChip model={modelMenu} maxWidth={Math.max(120, composerWidth - 140)} /> : undefined;
+    Platform.OS === "ios" && modelMenu ? (
+      <ModelChip model={modelMenu} onOpen={(x) => hostRef.current?.openModel(x)} />
+    ) : undefined;
 
-  // The `+` panel's rows under the attach group: session settings, then AI settings.
+  // The model chip's panel: favorites one tap away, provider and the full model list
+  // as lists in the panel, then tuning (the same presets as AI settings).
+  const formatSteps = (n: number) => (n >= 1000 ? "No limit" : String(n));
+  const modelGroups: MenuGroup[] = modelMenu
+    ? [
+        {
+          key: "favorites",
+          rows: modelMenu.favorites.map((name) => ({
+            key: `fav-${name}`,
+            label: name,
+            Icon: name === modelMenu.current ? Check : Star,
+            onPress: () => {
+              haptics.selection();
+              modelMenu.pickModel(name);
+            },
+          })),
+        },
+        {
+          key: "model",
+          rows: [
+            ...(modelMenu.providers.length > 1
+              ? [
+                  {
+                    key: "provider",
+                    label: "Provider",
+                    Icon: Server,
+                    value: modelMenu.providerName,
+                    more: true,
+                    choices: modelMenu.providers.map((p) => ({ key: p.id, label: p.name, selected: p.id === modelMenu.activeId })),
+                    onChoose: (id: string) => {
+                      haptics.selection();
+                      modelMenu.pickProvider(id);
+                    },
+                  },
+                ]
+              : []),
+            {
+              key: "model",
+              label: "Model",
+              Icon: Cpu,
+              value: modelMenu.current,
+              more: true,
+              choices: [...modelMenu.favorites, ...modelMenu.models.filter((m) => !modelMenu.favorites.includes(m))].map((name) => ({
+                key: name,
+                label: name,
+                selected: name === modelMenu.current,
+              })),
+              onChoose: (name: string) => {
+                haptics.selection();
+                modelMenu.pickModel(name);
+              },
+            },
+          ],
+        },
+        {
+          key: "tuning",
+          rows: [
+            {
+              key: "temperature",
+              label: "Temperature",
+              Icon: Thermometer,
+              value: temperature == null ? "Auto" : temperature.toFixed(1),
+              more: true,
+              slider: {
+                min: 0,
+                max: 1,
+                step: 0.1,
+                value: temperature,
+                placeholder: 0.3,
+                format: (v: number) => v.toFixed(1),
+                autoLabel: "Auto (model default)",
+                onChange: (v: number | undefined) => {
+                  haptics.selection();
+                  setChatTemperature(v);
+                  setTemperature(v);
+                },
+              },
+            },
+            {
+              key: "max-steps",
+              label: "Max steps",
+              Icon: Repeat,
+              value: formatSteps(maxSteps),
+              more: true,
+              choices: [10, 20, 30, 50, 1000].map((n) => ({ key: String(n), label: formatSteps(n), selected: maxSteps === n })),
+              onChoose: (key: string) => {
+                const n = Number(key);
+                haptics.selection();
+                setChatMaxSteps(n);
+                setMaxSteps(n);
+              },
+            },
+            { key: "model-settings", label: "AI settings", Icon: Settings, more: true, onPress: () => router.push("/settings/ai") },
+          ],
+        },
+      ]
+    : [];
+
+  // The `+` panel's rows under the attach group: personality and tools. AI settings
+  // lives in the model chip's panel when there is one.
   const personalities = getCachedPersonalitiesManifest()?.personalities ?? [];
   const personalityName = personalities.find((p) => p.id === personalityId)?.definition.name;
   const menuGroups: MenuGroup[] = [
@@ -670,12 +790,15 @@ export default function ChatScreen() {
         { key: "tools", label: "Tools & services", Icon: Wrench, more: true, onPress: () => router.push("/settings/tools") },
       ],
     },
-    {
-      key: "chat",
-      rows: [
-        { key: "ai-settings", label: "AI settings", Icon: Settings, more: true, onPress: () => router.push("/settings/ai") },
-      ],
-    },
+    // No model chip (Apple on-device, Android): AI settings stays here instead.
+    ...(modelChip
+      ? []
+      : [
+          {
+            key: "chat",
+            rows: [{ key: "ai-settings", label: "AI settings", Icon: Settings, more: true, onPress: () => router.push("/settings/ai") }],
+          },
+        ]),
   ];
   const showToolsPills = laptop && !inputFocused && !keyboardVisible;
   const bottomRing = showToolsPills ? renderContextRing("bottom") : null;
@@ -967,6 +1090,7 @@ export default function ChatScreen() {
           onAddAttachments={onAddAttachments}
           allowImages={allowImages}
           groups={menuGroups}
+          modelGroups={modelGroups}
         />
         {toolsPill}
         {settingsPill}

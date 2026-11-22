@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState, type ReactElement } from "react";
-import { PixelRatio } from "react-native";
+import { useCallback, useRef, useState, type ComponentRef, type ReactElement } from "react";
+import { Pressable, StyleSheet, Text } from "react-native";
+import { ChevronDown } from "lucide-react-native";
 import { Stack, useFocusEffect } from "expo-router";
 import {
   getActiveProvider,
@@ -16,24 +17,14 @@ import {
 import { listModels } from "@/chat/providers/openai";
 import { ICON_MODEL } from "@/components/toolbar-icons";
 import { type as typeScale, useTheme, withAlpha } from "@/theme";
-import {
-  Button as SUIButton,
-  HStack,
-  Host,
-  Image as SUIImage,
-  Menu,
-  Section,
-  Text as SUIText,
-} from "@expo/ui/swift-ui";
-import { backgroundOverlay, clipShape, font, foregroundStyle, frame, lineLimit, padding, truncationMode } from "@expo/ui/swift-ui/modifiers";
 
 /** Menus get unwieldy past this; favorites + the current model are always kept. */
 const MAX_MODELS = 40;
 
 /**
  * Model/provider switching for Chat, shared by two renderers:
- *  - iOS: a chip in the composer's second row (shown while typing), opening a
- *    native menu — `ModelChip`.
+ *  - iOS: a chip in the composer's second row (shown while typing), opening the
+ *    chat panel's model view — `ModelChip` (the rows are built by the screen).
  *  - Android: a `Stack.Toolbar.Menu` in the header's right toolbar —
  *    `modelToolbarMenu`.
  * Hidden unless the OpenAI-compatible path is the one the chat actually uses
@@ -170,92 +161,44 @@ export function modelToolbarMenu(m: ModelMenuState | null): ReactElement | null 
   );
 }
 
-/** The provider / favorites / model sections of the SwiftUI model menu. */
-function ModelMenuSections({ model: m }: { model: ModelMenuState }) {
+/**
+ * iOS composer chip: the model id (and, with more than one provider saved, the
+ * provider's name, dimmer) in a capsule. It sits in the composer's second row,
+ * which only shows while typing. Tapping it opens the chat panel's model view
+ * (provider, model and tuning) growing out of the chip; `onOpen` gets the chip's
+ * centre x in the window. While a reply is running it can't be tapped, so the
+ * model can't change mid-turn.
+ */
+export function ModelChip({ model: m, onOpen }: { model: ModelMenuState; onOpen: (centerX: number) => void }) {
+  const t = useTheme();
+  const ref = useRef<ComponentRef<typeof Pressable>>(null);
   return (
-    <>
+    <Pressable
+      ref={ref}
+      accessibilityRole="button"
+      accessibilityLabel={`Model: ${m.current}${m.providers.length > 1 ? `, ${m.providerName}` : ""}. Model and settings`}
+      accessibilityState={{ disabled: m.disabled }}
+      disabled={m.disabled}
+      hitSlop={6}
+      onPress={() => ref.current?.measureInWindow((x, _y, w) => onOpen(x + w / 2))}
+      style={[chipStyles.chip, { backgroundColor: withAlpha(t.textPrimary, 0.08) }]}
+    >
+      <Text style={[typeScale.caption, chipStyles.model, { color: t.textPrimary }]} numberOfLines={1} ellipsizeMode="middle">
+        {m.current}
+      </Text>
       {m.providers.length > 1 ? (
-        <Section title="Provider">
-          {m.providers.map((p) => (
-            <SUIButton
-              key={p.id}
-              label={p.name}
-              systemImage={p.id === m.activeId ? "checkmark" : undefined}
-              onPress={() => m.pickProvider(p.id)}
-            />
-          ))}
-        </Section>
+        <Text style={[typeScale.caption, chipStyles.provider, { color: t.textTertiary }]} numberOfLines={1}>
+          {m.providerName}
+        </Text>
       ) : null}
-      {m.favorites.length > 0 ? (
-        <Section title="Favorites">
-          {m.favorites.map((name) => (
-            <SUIButton
-              key={name}
-              label={name}
-              systemImage={name === m.current ? "checkmark" : "star.fill"}
-              onPress={() => m.pickModel(name)}
-            />
-          ))}
-        </Section>
-      ) : null}
-      <Section title="Model">
-        {m.models.map((name) => (
-          <SUIButton
-            key={name}
-            label={name}
-            systemImage={name === m.current ? "checkmark" : undefined}
-            onPress={() => m.pickModel(name)}
-          />
-        ))}
-      </Section>
-    </>
+      <ChevronDown size={12} color={t.textSecondary} strokeWidth={2.25} />
+    </Pressable>
   );
 }
 
-/**
- * iOS composer chip: the model id (and, with more than one provider saved, the
- * provider's name, dimmer) in a capsule, opening a native menu of providers and
- * models with a checkmark on the active ones. It sits in the composer's second
- * row, which only shows while typing, so the header no longer spends its title on
- * the model. While a reply is running the chip renders without the menu, so the
- * model can't change mid-turn.
- */
-export function ModelChip({ model: m, maxWidth }: { model: ModelMenuState; maxWidth: number }) {
-  const t = useTheme();
-  // SwiftUI font sizes are fixed points, so apply the OS text-size setting ourselves
-  // (RN text does this implicitly) to the theme type-scale tokens.
-  const size = Math.round(typeScale.caption.fontSize * PixelRatio.getFontScale());
-  const label = (
-    // frame(maxWidth) truncates inside the capsule: a long model id
-    // ("muse-spark-1.3-contributor") must not push the mic and send buttons off.
-    <HStack
-      spacing={5}
-      alignment="center"
-      modifiers={[
-        padding({ horizontal: 12, vertical: 7 }),
-        backgroundOverlay({ color: withAlpha(t.textPrimary, 0.08) }),
-        clipShape("capsule"),
-        frame({ maxWidth }),
-      ]}
-    >
-      <SUIText modifiers={[font({ weight: "medium", size }), foregroundStyle(t.textPrimary), lineLimit(1), truncationMode("middle")]}>
-        {m.current}
-      </SUIText>
-      {m.providers.length > 1 ? (
-        <SUIText modifiers={[font({ size }), foregroundStyle(t.textTertiary), lineLimit(1)]}>{m.providerName}</SUIText>
-      ) : null}
-      <SUIImage systemName="chevron.down" size={9} color={t.textSecondary} />
-    </HStack>
-  );
-  return (
-    <Host matchContents style={{ maxWidth }}>
-      {m.disabled ? (
-        label
-      ) : (
-        <Menu label={label}>
-          <ModelMenuSections model={m} />
-        </Menu>
-      )}
-    </Host>
-  );
-}
+const chipStyles = StyleSheet.create({
+  // Shrinks within the composer's chip slot (flex: 1), so a long id truncates before the mic and send buttons.
+  chip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, minWidth: 0, flexShrink: 1 },
+  model: { fontWeight: "500", flexShrink: 1 },
+  provider: { flexShrink: 2 },
+});

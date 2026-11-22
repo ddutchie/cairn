@@ -4,8 +4,9 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { Check, ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react-native";
 import { MENU, menuThumbSize, type Frame } from "./constants";
-import { useTheme, withAlpha, useIsDark } from "@/theme";
+import { type, useTheme, withAlpha, useIsDark } from "@/theme";
 import { LIQUID_GLASS } from "./glass";
+import { MenuSlider } from "./menu-slider";
 import type { LibraryPhoto } from "./use-photo-library";
 
 export type MenuAction = "camera" | "photos" | "files";
@@ -31,6 +32,26 @@ export interface MenuRow {
   choices?: MenuChoice[];
   /** A choice was picked. The panel closes first. */
   onChoose?: (key: string) => void;
+  /**
+   * A stepped value set inside the panel: tapping the row shows a slider (and, with
+   * `autoLabel`, a row to go back to the default). Changes apply as you slide; the
+   * panel stays open.
+   */
+  slider?: MenuSliderSpec;
+}
+
+export interface MenuSliderSpec {
+  min: number;
+  max: number;
+  step: number;
+  /** Undefined: the default (`autoLabel`) is in use. */
+  value: number | undefined;
+  /** Where the thumb rests while the default is in use. */
+  placeholder: number;
+  format: (v: number) => string;
+  onChange: (v: number | undefined) => void;
+  /** Row under the slider that returns to the default ("Auto (model default)"). */
+  autoLabel?: string;
 }
 
 export interface MenuChoice {
@@ -78,7 +99,7 @@ export function AttachmentMenu({
   const shown = groups.filter((g) => g.rows.length > 0);
   // The row whose choices are showing in place of the groups (null: the groups).
   const [openKey, setOpenKey] = useState<string | null>(null);
-  const sub = openKey ? shown.flatMap((g) => g.rows).find((r) => r.key === openKey && r.choices) : undefined;
+  const sub = openKey ? shown.flatMap((g) => g.rows).find((r) => r.key === openKey && (r.choices || r.slider)) : undefined;
 
   const rowBody = (row: MenuRow) => {
     const color = row.destructive ? t.danger : fg;
@@ -106,7 +127,7 @@ export function AttachmentMenu({
         accessibilityLabel={row.value ? `${row.label}: ${row.value}` : row.label}
         accessibilityState={{ disabled: !!row.disabled }}
         disabled={row.disabled}
-        onPress={row.choices ? () => setOpenKey(row.key) : row.onPress}
+        onPress={row.choices || row.slider ? () => setOpenKey(row.key) : row.onPress}
       >
         {rowBody(row)}
       </Pressable>
@@ -132,6 +153,37 @@ export function AttachmentMenu({
         </View>
       </Pressable>
       {separator("sub-sep")}
+      {sub.slider ? (
+        <>
+          <MenuSlider
+            label={sub.label}
+            min={sub.slider.min}
+            max={sub.slider.max}
+            step={sub.slider.step}
+            value={sub.slider.value}
+            placeholder={sub.slider.placeholder}
+            format={sub.slider.format}
+            onChange={sub.slider.onChange}
+            fg={fg}
+            accent={t.accent}
+          />
+          {sub.slider.autoLabel ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={sub.slider.autoLabel}
+              accessibilityState={{ selected: sub.slider.value == null }}
+              onPress={() => sub.slider?.onChange(undefined)}
+            >
+              <View style={[styles.row, { width }]}>
+                {sub.slider.value == null ? <Check size={MENU.iconSize} color={fg} strokeWidth={2} /> : <View style={styles.iconSpace} />}
+                <Text style={[styles.label, { color: fg }]} numberOfLines={1}>
+                  {sub.slider.autoLabel}
+                </Text>
+              </View>
+            </Pressable>
+          ) : null}
+        </>
+      ) : null}
       {(sub.choices ?? []).map((c) => (
         <Pressable
           key={c.key}
@@ -233,7 +285,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
     fontWeight: "500",
   },
-  value: { fontSize: 15, marginLeft: 8, maxWidth: 120 },
+  value: { fontSize: type.body.fontSize, marginLeft: 8, maxWidth: 120 },
   gap: { height: MENU.groupGap, justifyContent: "center", paddingLeft: MENU.iconInset + MENU.iconSize + MENU.labelGap },
   hairline: { height: StyleSheet.hairlineWidth },
 });

@@ -12,7 +12,7 @@ import { AttachmentMenu, type MenuAction, type MenuGroup } from "./attachment-me
 import { AttachmentPanel } from "./attachment-panel";
 import { CameraBar } from "./camera-bar";
 import { CameraSheet, type CameraSheetHandle } from "./camera-sheet";
-import { COMPOSER, DURATION, EASE_FADE, EASE_OUT, GRID, GUTTER, MENU, menuHeightFor, SPRING, type Frame } from "./constants";
+import { COMPOSER, DURATION, EASE_FADE, EASE_OUT, GRID, GUTTER, MENU, menuHeightFor, PLUS_CENTER_X, SPRING, type Frame } from "./constants";
 import { PhotoGrid, PhotoGridBar, type PhotoGridHandle } from "./photo-grid";
 import { usePhotoLibrary, type LibraryPhoto } from "./use-photo-library";
 import { cameraUriToAttachment, libraryPhotoToAttachment, pickFiles } from "@/chat/file-attachments";
@@ -20,10 +20,14 @@ import type { Attachment } from "@/chat/agent";
 
 type Mode = "closed" | "menu" | "photos" | "camera";
 type Sheet = "photos" | "camera";
+/** What the menu holds: `+` (attach rows, recent photos, the caller's groups) or the model chip's groups. */
+type Kind = "attach" | "model";
 
 export interface CairnAttachmentHostHandle {
   toggle: () => void;
   open: () => void;
+  /** Opens the model view, growing from the chip whose centre is at `centerX` in the window. */
+  openModel: (centerX: number) => void;
   close: () => void;
   isOpen: () => boolean;
 }
@@ -43,12 +47,14 @@ export interface CairnAttachmentHostProps {
    * closes before a row's `onPress` runs.
    */
   groups: MenuGroup[];
+  /** The model chip's view (provider, model, tuning). The panel closes before a row acts. */
+  modelGroups?: MenuGroup[];
   /** Left edge of the composer in book pose (see CairnMorphComposer); 0 spans the window. */
   leftInset?: number;
 }
 
 export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAttachmentHostProps>(function CairnAttachmentHost(
-  { strip, plusOut, composerBottom, rowsHeight, existingCount, onAddAttachments, allowImages, groups, leftInset = 0 },
+  { strip, plusOut, composerBottom, rowsHeight, existingCount, onAddAttachments, allowImages, groups, modelGroups = [], leftInset = 0 },
   ref,
 ) {
   const { width: windowWidth, height } = useWindowDimensions();
@@ -64,6 +70,9 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
   const leadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [mode, setMode] = useState<Mode>("closed");
+  const [kind, setKind] = useState<Kind>("attach");
+  // Where the panel grows from, relative to its container: the `+`, or the model chip.
+  const [originX, setOriginX] = useState(PLUS_CENTER_X);
   const [sheet, setSheet] = useState<Sheet>("photos");
   const [facing, setFacing] = useState<CameraType>("back");
   const [flash, setFlash] = useState<FlashMode>("off");
@@ -93,9 +102,11 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
   // screen, landscape) caps it below the status bar and lets it scroll.
   const gridWidth = width - GUTTER * 2;
   const menuWidth = Math.min(MENU.width, gridWidth);
-  const showRecent = allowImages && status !== "denied" && status !== "empty";
-  const attachRows = allowImages ? 3 : 0;
-  const naturalHeight = menuHeightFor(menuWidth, [attachRows, ...groups.map((g) => g.rows.length)], showRecent);
+  const isModel = kind === "model";
+  const showRecent = !isModel && allowImages && status !== "denied" && status !== "empty";
+  const attachRows = !isModel && allowImages ? 3 : 0;
+  const shownGroups = isModel ? modelGroups : groups;
+  const naturalHeight = menuHeightFor(menuWidth, [attachRows, ...shownGroups.map((g) => g.rows.length)], showRecent);
   const menuTopMin = insets.top + GUTTER;
   const menuHeight = Math.min(naturalHeight, height - insets.bottom - GUTTER - menuTopMin);
   const menuTopMax = height - insets.bottom - menuHeight - GUTTER;
@@ -126,6 +137,8 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
   }, []);
 
   const openMenu = useCallback(() => {
+    setKind("attach");
+    setOriginX(PLUS_CENTER_X);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     plusOut.set(withSpring(1, SPRING.panel));
     morph.set(0);
@@ -141,6 +154,25 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
       blur.set(withTiming(0, { duration: DURATION.blur, easing: EASE_FADE }));
     }, DURATION.plusLead);
   }, [attach, blur, clearLead, gridOpacity, menuOpacity, morph, open, plusOut]);
+
+  // The model view: same panel, grown from the chip; the `+` stays put.
+  const openModel = useCallback(
+    (centerX: number) => {
+      if (mode !== "closed" || leadTimer.current !== null) return;
+      setKind("model");
+      setOriginX(centerX - left);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      morph.set(0);
+      attach.set(0);
+      gridOpacity.set(0);
+      menuOpacity.set(1);
+      blur.set(1);
+      setMode("menu");
+      open.set(withSpring(1, SPRING.panel));
+      blur.set(withTiming(0, { duration: DURATION.blur, easing: EASE_FADE }));
+    },
+    [attach, blur, gridOpacity, left, menuOpacity, mode, morph, open],
+  );
 
   const dismiss = useCallback(() => {
     clearLead();
@@ -271,7 +303,7 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
           ]
         : [],
     };
-    const wrapped = groups.map((g) => ({
+    const wrapped = (kind === "model" ? modelGroups : groups).map((g) => ({
       ...g,
       rows: g.rows.map((row) => ({
         ...row,
@@ -289,8 +321,8 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
           : undefined,
       })),
     }));
-    return [attach, ...wrapped];
-  }, [allowImages, dismiss, groups, onMenuActionInternal]);
+    return kind === "model" ? wrapped : [attach, ...wrapped];
+  }, [allowImages, dismiss, groups, kind, modelGroups, onMenuActionInternal]);
 
   const capturePhoto = useCallback(async () => {
     if (capturing.current) return;
@@ -317,7 +349,7 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
     else dismiss();
   }, [dismiss, mode, openMenu]);
 
-  useImperativeHandle(ref, () => ({ toggle, open: openMenu, close: dismiss, isOpen: () => mode !== "closed" }), [toggle, openMenu, dismiss, mode]);
+  useImperativeHandle(ref, () => ({ toggle, open: openMenu, openModel, close: dismiss, isOpen: () => mode !== "closed" }), [toggle, openMenu, openModel, dismiss, mode]);
 
   const isFlying = flights.length > 0;
   if (mode === "closed") return null;
@@ -333,6 +365,7 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
           menuHeight={menuHeight}
           menuTopMin={menuTopMin}
           menuTopMax={menuTopMax}
+          originX={originX}
           gridWidth={gridWidth}
           gridHeight={gridHeight}
           interactive={isFlying ? "none" : mode === "menu" ? "menu" : "grid"}

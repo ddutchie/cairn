@@ -20,6 +20,7 @@ export function AttachmentPanel({
   menuHeight,
   menuTopMin,
   menuTopMax,
+  originX = PLUS_CENTER_X,
   gridWidth,
   gridHeight,
   interactive,
@@ -42,6 +43,8 @@ export function AttachmentPanel({
   menuTopMin: number;
   /** Lowest the menu's top may sit, so a composer low on the screen (keyboard down) doesn't push the menu off it. */
   menuTopMax: number;
+  /** Centre x the panel grows from and shrinks back to: the `+` (default) or the model chip. */
+  originX?: number;
   gridWidth: number;
   gridHeight: number;
   interactive: "menu" | "grid" | "none";
@@ -62,7 +65,7 @@ export function AttachmentPanel({
     let r = mix(m, MENU.radius, GRID.panelRadius);
     const o = open.get();
     const well = COMPOSER.plusWell;
-    x = mix(o, PLUS_CENTER_X - well / 2, x);
+    x = mix(o, originX - well / 2, x);
     y = mix(o, plusCenter - well / 2, y);
     w = mix(o, well, w);
     h = mix(o, well, h);
