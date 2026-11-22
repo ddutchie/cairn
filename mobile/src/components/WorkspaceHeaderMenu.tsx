@@ -96,7 +96,7 @@ export function WorkspaceMenuItems({
           ))}
         </Stack.Toolbar.Menu>
         <Stack.Toolbar.Menu inline title="People">
-          <Stack.Toolbar.MenuAction icon={ICON_PEOPLE} onPress={() => router.push("/people" as Href)}>
+          <Stack.Toolbar.MenuAction icon={ICON_PEOPLE} onPress={() => router.push("/workspace/people" as Href)}>
             People
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
@@ -134,7 +134,7 @@ export function WorkspaceMenuItems({
             ))}
           </Section>
           <Section title="People">
-            <Button label="People" systemImage="person.2" onPress={() => router.push("/people" as Href)} />
+            <Button label="People" systemImage="person.2" onPress={() => router.push("/workspace/people" as Href)} />
           </Section>
           {sync ? (
             <Section title="Sync">

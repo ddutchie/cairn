@@ -5,7 +5,8 @@
    worklets / useAnimatedStyle — never during JS render. The plain fields
    (ctrl.dragging, ctrl.scrollLocked, ctrl.setContainer) are safe to read here. */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from "react-native";
+import { useAccessoryInset } from "@/lib/workspace-tools";
+import { View, Text, ScrollView, Pressable, useWindowDimensions, type LayoutChangeEvent } from "react-native";
 import { ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react-native";
 import { useDragController, DragOverlay } from "@/dnd";
 import { tagsByRow, type CalendarCard } from "@/db/queries";
@@ -90,6 +91,7 @@ export function CalendarView({
 }) {
   const t = useTheme();
   const styles = useCalendarStyles();
+  const accessoryInset = useAccessoryInset();
 
   // Layout is controlled when `layoutProp` is supplied, else internal.
   const [layoutInternal, setLayoutInternal] = useState<CalendarLayout>("month");
@@ -219,7 +221,9 @@ export function CalendarView({
   return (
     <View ref={ctrl.setContainer} style={[styles.root, book && { flexDirection: "row" }]} collapsable={false} onLayout={onRootLayout}>
       {/* Grid column: the whole screen normally, the half before the crease in book pose. */}
-      <View style={book && crease.split ? { width: crease.split.before } : { flex: 1 }}>
+      <View style={book && crease.split ? { width: crease.split.before, padding: 12, paddingRight: 6 } : { flex: 1 }}>
+      {/* Wide: the grid reads as a card on the page, like the day list beside it. */}
+      <View style={book ? styles.bookCard : { flex: 1 }}>
       {/* Toolbar */}
       <View style={styles.toolbar}>
         <View style={styles.navGroup}>
@@ -360,6 +364,7 @@ export function CalendarView({
       </View>
 
       </View>
+      </View>
 
       {/* Bottom band — a fixed-height, independently-scrolling area holding the
           selected-day list and the Unscheduled tray, with padding to clear the
@@ -371,12 +376,12 @@ export function CalendarView({
         style={[
           styles.bottomBand,
           book && crease.split
-            ? { flex: 1, marginLeft: crease.split.gutter, borderTopWidth: 0, borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: t.border }
+            ? [{ flex: 1, marginLeft: crease.split.gutter, marginVertical: 12, marginRight: 12 }, styles.bookCard]
             : { height: bottomBandHeight },
         ]}
       >
         <ScrollView
-          contentContainerStyle={{ paddingBottom: bottomInset + 16 }}
+          contentContainerStyle={{ paddingBottom: bottomInset + accessoryInset + 16 }}
           showsVerticalScrollIndicator
           scrollEnabled={!ctrl.scrollLocked}
           nestedScrollEnabled

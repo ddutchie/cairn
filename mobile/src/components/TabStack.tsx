@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { Stack , ThemeProvider, DarkTheme, DefaultTheme } from "expo-router";
+import { Stack, ThemeProvider, DarkTheme, DefaultTheme } from "expo-router";
+import { useAccessoryInset } from "@/lib/workspace-tools";
 import { useColorScheme } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/theme";
@@ -30,11 +31,22 @@ import { useTheme } from "@/theme";
 export function useTabContentStyle() {
   const t = useTheme();
   const { left, right } = useSafeAreaInsets();
-  return { backgroundColor: t.background, paddingLeft: left, paddingRight: right };
+  // The pinned tool's accessory floats over the bottom of the screen (everywhere
+  // but the Workspace tab), so the content ends above it.
+  const accessory = useAccessoryInset();
+  return { backgroundColor: t.background, paddingLeft: left, paddingRight: right, paddingBottom: accessory };
 }
 
+/**
+ * Title rule: every tab root and pushed screen gets the small inline title, so
+ * the same band sits above every tab (a large title ate a third of the Duo's
+ * closed display). Buttons go through `ScreenChrome` so the back label, haptics
+ * and Duo side-rail overflow apply everywhere; Chat (glass header, model menu)
+ * and Search (search bar) add their own header options on top. A screen that
+ * really wants a large title can pass `largeTitle`.
+ */
 export function TabStack({
-  largeTitle = true,
+  largeTitle = false,
   children,
 }: {
   largeTitle?: boolean;

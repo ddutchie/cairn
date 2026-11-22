@@ -4,5 +4,5 @@ import { TabStack } from "@/components/TabStack";
 // search field owns the header area, so a large scrolling title just fights the
 // results list and search bar for space.
 export default function SearchLayout() {
-  return <TabStack largeTitle={false} />;
+  return <TabStack />;
 }

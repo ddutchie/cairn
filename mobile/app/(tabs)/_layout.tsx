@@ -4,6 +4,8 @@ import { useColorScheme } from "react-native";
 import { resetProjectsSelection } from "@/components/ProjectsSplitView";
 import { useAppQuickActions } from "@/quick-actions";
 import { useTheme } from "@/theme";
+import { PinnedAccessory } from "@/components/PinnedAccessory";
+import { useAccessoryVisible, usePinnedTool } from "@/lib/workspace-tools";
 import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
 
 // A crash inside a tab shows a recoverable screen instead of a white screen.
@@ -24,6 +26,8 @@ export default function TabsLayout() {
   // pop — reset the selection ourselves. (A tap from another tab just switches.)
   const pathname = usePathname();
   const onProjects = pathname === "/projects" || pathname.startsWith("/projects/");
+  const pinned = usePinnedTool();
+  const showAccessory = useAccessoryVisible();
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       {/* tintColor accents the selected tab (icon + label) with our brand
@@ -49,14 +53,17 @@ export default function TabsLayout() {
           <NativeTabs.Trigger.Label>Calendar</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
-        <NativeTabs.Trigger name="graph">
-          <NativeTabs.Trigger.Icon sf="point.3.connected.trianglepath.dotted" md="hub" />
-          <NativeTabs.Trigger.Label>Graph</NativeTabs.Trigger.Label>
-        </NativeTabs.Trigger>
-
         <NativeTabs.Trigger name="chat">
           <NativeTabs.Trigger.Icon sf="bubble.left.and.bubble.right.fill" md="chat" />
           <NativeTabs.Trigger.Label>Chat</NativeTabs.Trigger.Label>
+        </NativeTabs.Trigger>
+
+        {/* Workspace is a home, not a "More" list: People, the graph and
+            settings, each with a live line. Five tabs including Search fit
+            without iOS folding any into More. */}
+        <NativeTabs.Trigger name="workspace">
+          <NativeTabs.Trigger.Icon sf="square.grid.2x2.fill" md="apps" />
+          <NativeTabs.Trigger.Label>Workspace</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
         {/* Search last so it sits on the far right — matches the iOS search-tab
@@ -65,6 +72,13 @@ export default function TabsLayout() {
           <NativeTabs.Trigger.Icon sf="magnifyingglass" md="search" />
           <NativeTabs.Trigger.Label>Search</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
+        {/* The tool pinned from the Workspace tab. Hidden while you are already in
+            the Workspace tab, where the same row is on screen. */}
+        {pinned && showAccessory ? (
+          <NativeTabs.BottomAccessory>
+            <PinnedAccessory tool={pinned} />
+          </NativeTabs.BottomAccessory>
+        ) : null}
       </NativeTabs>
     </ThemeProvider>
   );

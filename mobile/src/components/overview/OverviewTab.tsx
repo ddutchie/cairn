@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, type StyleProp, type ViewStyle } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
-import { FileText, Circle as CircleIcon, Pin, StickyNote, ListTodo, AlertTriangle, Clock3, Folder, FolderCode, Activity, Kanban } from "lucide-react-native";
+import { FileText, Circle as CircleIcon, Pin, StickyNote, ListTodo, AlertTriangle, Clock3, Folder, FolderCode, Kanban } from "lucide-react-native";
 import { COLUMN_COLORS, PRIORITY_COLOR, COLUMN_TYPE_ORDER } from "@cairn/shared/ui/constants";
 import { getDueDateStatus, formatRelative, parseIsoLocal, formatDate } from "@cairn/shared/format/date";
 import { stripMarkdown } from "@cairn/shared/notes/text";
@@ -118,7 +118,7 @@ export function OverviewTab({
       const d = parseIsoLocal(overdueCards[0].dueDate!);
       d.setHours(0, 0, 0, 0);
       const days = Math.round((d.getTime() - today.getTime()) / 86_400_000);
-      q.push({ card: overdueCards[0], label: `Overdue · ${Math.abs(days)}d`, tone: "overdue" });
+      q.push({ card: overdueCards[0], label: `Overdue, ${Math.abs(days)}d`, tone: "overdue" });
     }
     if (todayCards[0] && q.length < 3) {
       q.push({ card: todayCards[0], label: "Due today", tone: "today" });
@@ -127,7 +127,7 @@ export function OverviewTab({
       const d = parseIsoLocal(upcomingCards[0].dueDate!);
       d.setHours(0, 0, 0, 0);
       const days = Math.round((d.getTime() - today.getTime()) / 86_400_000);
-      q.push({ card: upcomingCards[0], label: `Up next · in ${days}d`, tone: "upcoming" });
+      q.push({ card: upcomingCards[0], label: `Up next, in ${days}d`, tone: "upcoming" });
     }
     if (q.length < 3 && overdueCards[1]) {
       const d = parseIsoLocal(overdueCards[1].dueDate!);
@@ -281,18 +281,15 @@ export function OverviewTab({
               </Svg>
             </View>
             <View style={styles.instrumentHead}>
-              <Text style={[typeScale.micro, { color: needsAttention > 0 ? t.warning : t.textTertiary, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" }]}>{progressLabel}</Text>
+              <Text style={[typeScale.micro, { color: needsAttention > 0 ? t.warning : t.textTertiary, fontWeight: "600" }]}>{progressLabel}</Text>
             </View>
             <View style={styles.instrumentMain}>
               <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4 }}>
-                  <RollingText text={String(instrumentPct)} style={{ ...typeScale.display, color: t.textPrimary }} />
-                  <Text style={[typeScale.caption, { color: t.textTertiary }]}>%</Text>
+                <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6 }}>
+                  <RollingText text={String(instrumentDone)} style={{ ...typeScale.display, color: t.textPrimary }} />
+                  <Text style={[typeScale.body, { color: t.textTertiary, marginBottom: 4 }]}>of {instrumentTotal}</Text>
                 </View>
-                <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", marginTop: 2 }}>
-                  <RollingText text={`${instrumentDone} / ${instrumentTotal}`} style={{ ...typeScale.caption, color: t.textPrimary, fontWeight: "600", fontFamily: "Menlo" }} />
-                  <Text style={[typeScale.caption, { color: t.textTertiary }]}> done · {openCards.length} open · {doneCards.length} done</Text>
-                </View>
+                <Text style={[typeScale.caption, { color: t.textSecondary, marginTop: 2 }]}>done, {openCards.length} still open</Text>
               </View>
               <ProgressRing percent={instrumentPct} size={74} stroke={5} variant="instrument" />
             </View>
@@ -328,7 +325,7 @@ export function OverviewTab({
 
   const focusBar = (
       <View style={[styles.focusBar, { backgroundColor: t.surface, borderColor: t.border }, elevation.sm as StyleProp<ViewStyle>]}>
-        <Text style={[typeScale.micro, { color: t.textTertiary, fontWeight: "700", letterSpacing: 0.5, textTransform: "uppercase", marginRight: 4 }]}>Focus</Text>
+        <Text style={[typeScale.micro, { color: t.textTertiary, fontWeight: "700", marginRight: 4 }]}>Focus</Text>
         {(["all", "today", "overdue", "pinned"] as FocusFilter[]).map((k) => {
           const label =
             k === "all" ? `All · ${focusCounts.all} open` : k === "today" ? `Due today · ${focusCounts.today}` : k === "overdue" ? `Overdue · ${focusCounts.overdue}` : `Pinned · ${focusCounts.pinned}`;
@@ -350,36 +347,33 @@ export function OverviewTab({
           );
         })}
         <View style={{ flex: 1 }} />
-        <Text style={[typeScale.micro, { color: t.textTertiary, fontFamily: "Menlo" }]}>{focus === "all" ? "Showing all" : `Filtered: ${focusLabel[focus]}`} · {filteredQueue.length || focusCounts[focus]} items</Text>
+        <Text style={[typeScale.micro, { color: t.textTertiary, fontVariant: ["tabular-nums"] }]}>{focus === "all" ? "Showing all" : `Filtered: ${focusLabel[focus]}`} · {filteredQueue.length || focusCounts[focus]} items</Text>
       </View>
   );
 
   const kpi = (
       <View style={[styles.kpiStrip, { backgroundColor: t.surface, borderColor: t.border }]}>
         <View style={[styles.kpiCell, { borderColor: t.border, borderRightWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth }]}>
-          <View style={[styles.kpiAccent, { backgroundColor: t.danger }]} />
           <Text style={[typeScale.micro, styles.kpiLabel, { color: t.textTertiary }]}>Needs attention</Text>
           <View style={styles.kpiValueRow}>
             <Text style={[typeScale.heading, { color: t.textPrimary }]}>{needsAttention}</Text>
-            <Text style={[typeScale.caption, { color: t.textTertiary }]}>/ {openCards.length}</Text>
+            <Text style={[typeScale.caption, { color: t.textTertiary, marginBottom: 2 }]}>{needsAttention === 1 ? "task" : "tasks"}</Text>
           </View>
           <Text style={[typeScale.caption, { color: needsAttention > 0 ? t.danger : t.success, fontWeight: "600", marginTop: 4, fontSize: 11 }]} numberOfLines={1}>
-            {needsAttention > 0 ? `${overdueCount} overdue · ${todayCount} today` : "All caught up"}
+            {needsAttention > 0 ? `${overdueCount} overdue, ${todayCount} today` : "All caught up"}
           </Text>
         </View>
         <View style={[styles.kpiCell, { borderColor: t.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
-          <View style={[styles.kpiAccent, { backgroundColor: t.success }]} />
-          <Text style={[typeScale.micro, styles.kpiLabel, { color: t.textTertiary }]}>Completion</Text>
+          <Text style={[typeScale.micro, styles.kpiLabel, { color: t.textTertiary }]}>Open tasks</Text>
           <View style={styles.kpiValueRow}>
-            <Text style={[typeScale.heading, { color: t.textPrimary }]}>{instrumentPct}%</Text>
-            <Text style={[typeScale.caption, { color: t.textTertiary }]}>{instrumentDone}/{instrumentTotal}</Text>
+            <Text style={[typeScale.heading, { color: t.textPrimary }]}>{openCards.length}</Text>
+            <Text style={[typeScale.caption, { color: t.textTertiary }]}>{openCards.length === 1 ? "task" : "tasks"}</Text>
           </View>
           <Text style={[typeScale.caption, { color: t.textTertiary, marginTop: 4, fontSize: 11 }]} numberOfLines={1}>
-            {instrumentTotal > 0 ? `${instrumentDone} done · ${openCards.length} open` : "No tasks yet"}
+            {instrumentTotal > 0 ? `${inProgressCount} in progress` : "No tasks yet"}
           </Text>
         </View>
         <View style={[styles.kpiCell, styles.kpiCellTint, { backgroundColor: withAlpha(t.surface2, 0.6), borderColor: t.border, borderRightWidth: StyleSheet.hairlineWidth }]}>
-          <View style={[styles.kpiAccent, { backgroundColor: t.info }]} />
           <Text style={[typeScale.micro, styles.kpiLabel, { color: t.textTertiary }]}>Knowledge</Text>
           <View style={styles.kpiValueRow}>
             <Text style={[typeScale.heading, { color: t.textPrimary }]}>{totalNotes}</Text>
@@ -390,7 +384,6 @@ export function OverviewTab({
           </Text>
         </View>
         <View style={[styles.kpiCell, styles.kpiCellTint, { backgroundColor: withAlpha(t.surface2, 0.6), borderColor: t.border }]}>
-          <View style={[styles.kpiAccent, { backgroundColor: t.warning }]} />
           <Text style={[typeScale.micro, styles.kpiLabel, { color: t.textTertiary }]}>Bottleneck</Text>
           <View style={styles.kpiValueRow}>
             <Text style={[typeScale.heading, { color: t.textPrimary }]}>{bottleneck ? bottleneck.count : "—"}</Text>
@@ -425,7 +418,6 @@ export function OverviewTab({
         ) : (
           filteredQueue.map(({ card, label, tone }) => {
             const col = metricColumns.find((c) => c.id === card.columnId) ?? data.columns.find((c) => c.id === card.columnId);
-            const prioColor = (PRIORITY_COLOR as Record<string, string>)[card.priority] ?? t.textTertiary;
             return (
               <Pressable
                 key={card.id}
@@ -450,7 +442,7 @@ export function OverviewTab({
                   {tone === "overdue" ? <AlertTriangle size={14} color={tone === "overdue" ? t.danger : tone === "today" ? t.warning : t.accent} /> : tone === "today" ? <Clock3 size={14} color={t.warning} /> : <StickyNote size={12} color={t.accent} />}
                 </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={[typeScale.micro, { color: tone === "overdue" ? t.danger : tone === "today" ? t.warning : t.textTertiary, fontWeight: "700", letterSpacing: 0.3, textTransform: "uppercase", fontSize: 10 }]}>{label}</Text>
+                  <Text style={[typeScale.micro, { color: tone === "overdue" ? t.danger : tone === "today" ? t.warning : t.textTertiary, fontWeight: "700", fontSize: 10 }]}>{label}</Text>
                   <Text style={[typeScale.control, { color: t.textPrimary, fontWeight: "600" }]} numberOfLines={1}>
                     {card.title}
                   </Text>
@@ -459,7 +451,6 @@ export function OverviewTab({
                   </Text>
                 </View>
                 <Text style={[typeScale.micro, { color: t.textSecondary, fontWeight: "600", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1, borderColor: t.border, backgroundColor: t.surface2 }]}>Open →</Text>
-                <View style={[styles.queueStripe, { backgroundColor: prioColor }]} />
               </Pressable>
             );
           })
@@ -470,9 +461,6 @@ export function OverviewTab({
   const flow = (
       <View style={[styles.bentoCard, { backgroundColor: t.surface, borderColor: t.border }]}>
         <View style={styles.bentoHeader}>
-          <View style={[styles.bentoIcon, { backgroundColor: t.surface2, borderColor: t.border }]}>
-            <Text style={{ fontSize: 10, color: t.textTertiary }}>▦</Text>
-          </View>
           <Text style={[typeScale.caption, { color: t.textPrimary, fontWeight: "600" }]}>Task flow</Text>
           <Text style={[typeScale.micro, styles.bentoSub, { color: t.textTertiary }]}> — {bottleneck ? `${bottleneck.name} is the bottleneck (${bottleneck.count} of ${openCards.length} open)` : `${openCards.length} open`}</Text>
         </View>
@@ -498,7 +486,7 @@ export function OverviewTab({
                   <View style={[styles.barTrack, { backgroundColor: t.surface2, borderColor: isBottleneck ? withAlpha(t.warning, 0.5) : t.border }, isBottleneck && { borderWidth: 1, shadowColor: t.warning, shadowOpacity: 0.15, shadowRadius: 6, shadowOffset: { width: 0, height: 0 } }]}>
                     <View style={{ width: `${Math.max(pct, count > 0 ? 8 : 0)}%`, height: "100%", borderRadius: 10, backgroundColor: color }} />
                   </View>
-                  <Text style={[typeScale.caption, styles.barCount, { color: t.textTertiary, fontFamily: "Menlo" }]}>{count}</Text>
+                  <Text style={[typeScale.caption, styles.barCount, { color: t.textTertiary, fontVariant: ["tabular-nums"] }]}>{count}</Text>
                 </View>
               );
             })}
@@ -518,9 +506,6 @@ export function OverviewTab({
   const priority = (
       <View style={[styles.bentoCard, { backgroundColor: t.surface, borderColor: t.border }]}>
         <View style={styles.bentoHeader}>
-          <View style={[styles.bentoIcon, { backgroundColor: t.surface2, borderColor: t.border }]}>
-            <AlertTriangle size={10} color={t.textTertiary} />
-          </View>
           <Text style={[typeScale.caption, { color: t.textPrimary, fontWeight: "600" }]}>Open by priority</Text>
         </View>
         <View style={styles.priorityGrid}>
@@ -538,7 +523,7 @@ export function OverviewTab({
             return (
               <View key={key} style={[styles.priorityTile, { backgroundColor: bg, borderColor: active ? (color === t.textTertiary ? t.border : withAlpha(color, 0.3)) : t.border }]}>
                 <Text style={[typeScale.heading, { color: active ? color : t.textTertiary }]}>{n}</Text>
-                <Text style={[typeScale.micro, { color: t.textTertiary, fontWeight: "600", letterSpacing: 0.4, textTransform: "uppercase", fontSize: 10 }]}>{label}</Text>
+                <Text style={[typeScale.micro, { color: t.textTertiary, fontWeight: "600", fontSize: 10 }]}>{label}</Text>
                 <Text style={[typeScale.micro, { color: t.textTertiary, fontSize: 10, marginTop: 2 }]}>{n ? `${n} open` : "—"}</Text>
               </View>
             );
@@ -567,11 +552,8 @@ export function OverviewTab({
       <View style={[styles.notesCard, { backgroundColor: t.surface, borderColor: t.border }]}>
         <View style={styles.notesHeader}>
           <View style={styles.bentoHeader}>
-            <View style={[styles.bentoIcon, { backgroundColor: t.surface2, borderColor: t.border }]}>
-              <FileText size={10} color={t.textTertiary} />
-            </View>
             <Text style={[typeScale.caption, { color: t.textPrimary, fontWeight: "600" }]}>Notes</Text>
-            <Text style={[typeScale.micro, styles.bentoSub, { color: t.textTertiary }]}> · {totalNotes} total{pinneNotesLabel(pinnedNotes.length)} · {recentNotes.length} recent</Text>
+            <Text style={[typeScale.micro, styles.bentoSub, { color: t.textTertiary }]}> · {totalNotes} total{pinneNotesLabel(pinnedNotes.length)}</Text>
           </View>
           <Pressable onPress={nav.onViewNotes}>
             <Text style={[typeScale.caption, { color: t.accent, fontWeight: "600", fontSize: 12 }]}>Open notes →</Text>
@@ -584,7 +566,7 @@ export function OverviewTab({
             <View>
               <View style={styles.notesSubHeader}>
                 <Pin size={10} color={t.textTertiary} />
-                <Text style={[typeScale.micro, { color: t.textTertiary, fontWeight: "700", letterSpacing: 0.4, textTransform: "uppercase", fontSize: 10 }]}>Pinned · keeps focus</Text>
+                <Text style={[typeScale.micro, { color: t.textTertiary, fontWeight: "700", fontSize: 10 }]}>Pinned · keeps focus</Text>
               </View>
               {pinnedNotes.length === 0 ? (
                 <Text style={[typeScale.caption, { color: t.textTertiary, fontSize: 12, paddingVertical: 8 }]}>No pinned notes</Text>
@@ -606,7 +588,7 @@ export function OverviewTab({
                             {snippet || "Empty note"}
                           </Text>
                         </View>
-                        <Text style={[typeScale.micro, { color: t.textTertiary, fontFamily: "Menlo", fontSize: 10 }]}>{formatRelative(n.updatedAt)}</Text>
+                        <Text style={[typeScale.micro, { color: t.textTertiary, fontVariant: ["tabular-nums"], fontSize: 10 }]}>{formatRelative(n.updatedAt)}</Text>
                       </Pressable>
                     );
                   })}
@@ -616,7 +598,7 @@ export function OverviewTab({
             <View>
               <View style={styles.notesSubHeader}>
                 <FileText size={10} color={t.textTertiary} />
-                <Text style={[typeScale.micro, { color: t.textTertiary, fontWeight: "700", letterSpacing: 0.4, textTransform: "uppercase", fontSize: 10 }]}>Recent</Text>
+                <Text style={[typeScale.micro, { color: t.textTertiary, fontWeight: "700", fontSize: 10 }]}>Recent</Text>
               </View>
               {recentNotes.length === 0 ? (
                 <Text style={[typeScale.caption, { color: t.textTertiary, fontSize: 12, paddingVertical: 8 }]}>No recent notes</Text>
@@ -638,7 +620,7 @@ export function OverviewTab({
                             {preview || "Empty note"}
                           </Text>
                         </View>
-                        <Text style={[typeScale.micro, { color: t.textTertiary, fontFamily: "Menlo", fontSize: 10 }]}>{formatRelative(n.updatedAt)}</Text>
+                        <Text style={[typeScale.micro, { color: t.textTertiary, fontVariant: ["tabular-nums"], fontSize: 10 }]}>{formatRelative(n.updatedAt)}</Text>
                       </Pressable>
                     );
                   })}
@@ -651,18 +633,11 @@ export function OverviewTab({
   );
 
   const activity = (
-      <View style={[styles.activityCard, { backgroundColor: t.surface, borderColor: t.border, borderLeftColor: withAlpha(t.accent, 0.6) }]}>
+      <View style={[styles.activityCard, { backgroundColor: t.surface, borderColor: t.border}]}>
         <View style={styles.activityHeader}>
           <View style={styles.bentoHeader}>
-            <View style={[styles.bentoIcon, { backgroundColor: t.surface2, borderColor: t.border }]}>
-              <Activity size={10} color={t.textTertiary} />
-            </View>
             <Text style={[typeScale.caption, { color: t.textPrimary, fontWeight: "600" }]}>Activity log</Text>
-            <Text style={[typeScale.micro, { color: t.textTertiary }]}> · full history</Text>
-          </View>
-          <Text style={[typeScale.micro, { color: t.textTertiary, fontFamily: "Menlo", fontSize: 10 }]}>
-            {activityByDay.reduce((n, g) => n + g.items.length, 0)} events
-          </Text>
+                      </View>
         </View>
         {activityByDay.length === 0 ? (
           <Text style={[typeScale.caption, { color: t.textTertiary, textAlign: "center", paddingVertical: 16 }]}>No activity yet — changes will appear here</Text>
@@ -670,8 +645,8 @@ export function OverviewTab({
           <View style={{ gap: 12 }}>
             {activityByDay.map((group) => (
               <View key={group.label}>
-                <Text style={[typeScale.micro, { color: t.textTertiary, fontWeight: "700", marginBottom: 4, fontSize: 10, letterSpacing: 0.4, textTransform: "uppercase" }]}>{group.label}</Text>
-                <View style={[styles.activityGroup, { backgroundColor: t.surface, borderColor: t.border }]}>
+                <Text style={[typeScale.micro, { color: t.textTertiary, fontWeight: "700", marginBottom: 4, fontSize: 10 }]}>{group.label}</Text>
+                <View style={styles.activityGroup}>
                   {group.items.map((item, i) => (
                     <Pressable
                       key={`${item.type}:${item.id}`}
@@ -687,7 +662,7 @@ export function OverviewTab({
                           {item.subtitle}
                         </Text>
                       )}
-                      <Text style={[typeScale.micro, { color: t.textTertiary, fontFamily: "Menlo", fontSize: 10 }]}>{formatRelative(item.updatedAt)}</Text>
+                      <Text style={[typeScale.micro, { color: t.textTertiary, fontVariant: ["tabular-nums"], fontSize: 10 }]}>{formatRelative(item.updatedAt)}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -829,21 +804,18 @@ function makeStyles(t: Theme) {
     kpiStrip: { borderWidth: 1, borderRadius: 12, overflow: "hidden", flexDirection: "row", flexWrap: "wrap" },
     kpiCell: { width: "50%", padding: 12, gap: 2, position: "relative" },
     kpiCellTint: {},
-    kpiAccent: { position: "absolute", top: 0, left: 0, right: 0, height: 3 },
-    kpiLabel: { fontSize: 10, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" },
-    kpiValueRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 4 },
+    kpiLabel: { fontSize: 10, fontWeight: "600" },
+    kpiValueRow: { flexDirection: "row", alignItems: "flex-end", gap: 6, marginTop: 4 },
     emptyQueue: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 12, borderWidth: 1, borderStyle: "dashed" },
     emptyIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", borderWidth: 1 },
     emptyAction: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1 },
     queueCard: { flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderRadius: 12, borderWidth: 1 },
     queueIcon: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-    queueStripe: { width: 3, alignSelf: "stretch", borderRadius: 2, marginLeft: 6 },
     bentoCard: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 12 },
     // Wraps (and the subtitle shrinks) so a long subtitle in a narrow column wraps
     // under the title instead of running off the card.
     bentoHeader: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 1, flexWrap: "wrap" },
     bentoSub: { flexShrink: 1 },
-    bentoIcon: { width: 20, height: 20, borderRadius: 6, alignItems: "center", justifyContent: "center", borderWidth: 1 },
     barRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 },
     barLabel: { width: 92, fontSize: 12, textAlign: "right" },
     barTrack: { flex: 1, height: 10, borderRadius: 10, overflow: "hidden", flexDirection: "row", alignItems: "center", padding: 2, borderWidth: 1 },
@@ -859,9 +831,9 @@ function makeStyles(t: Theme) {
     notesSubHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
     noteRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
     noteIcon: { width: 24, height: 24, borderRadius: 6, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-    activityCard: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 12, borderLeftWidth: 2 },
+    activityCard: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 12 },
     activityHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-    activityGroup: { borderWidth: 1, borderRadius: 10, overflow: "hidden" },
+    activityGroup: { overflow: "hidden" },
     activityRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 9, paddingHorizontal: 12 },
     statRow: { flexDirection: "row", gap: 8 },
     card: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 8 },

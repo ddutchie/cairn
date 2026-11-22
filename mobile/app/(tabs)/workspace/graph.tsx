@@ -5,6 +5,7 @@ import { getKnowledgeGraph, listWorkspaceIds, type KnowledgeGraph, type GraphEdg
 import type { GraphMode } from "@/graph/useGraphControls";
 import { GRAPH_RENDERER } from "@/graph/renderer";
 import type { LabelMode } from "@cairn/shared/ui/graph";
+import { KnowledgeGraphSkia } from "@/components/KnowledgeGraphSkia";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { ICON_GRAPH_FORCE, ICON_GRAPH_RADIAL, ICON_LABELS, ICON_LABELS_SMART, ICON_LABELS_ALL, ICON_LABELS_MINIMAL } from "@/components/toolbar-icons";
@@ -14,16 +15,16 @@ import { semanticEdges } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useTheme } from "@/theme";
 import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
-import { railToolbar, useTightSideRail } from "@/components/screen-chrome";
+import { ScreenChrome } from "@/components/screen-chrome";
 
-// Skia is the default renderer. The legacy D3 WebView inlines the full D3
-// bundle (~274 KB) as a string, so both are loaded lazily: opening the app or
-// other tabs never evaluates either module, only the Graph tab on first view.
-const KnowledgeGraphView = lazy(() =>
-  GRAPH_RENDERER === "webview"
-    ? import("@/components/KnowledgeGraphWebView").then((m) => ({ default: m.KnowledgeGraphWebView }))
-    : import("@/components/KnowledgeGraphSkia").then((m) => ({ default: m.KnowledgeGraphSkia })),
+// Skia is the default renderer and is imported eagerly: Worklets Bundle Mode only
+// knows the worklets of modules in the initial bundle, so a lazy chunk containing
+// Reanimated hooks fails with "Unable to resolve worklet" when the graph opens.
+// The legacy D3 WebView inlines a ~274 KB bundle, so only it stays lazy.
+const KnowledgeGraphWebView = lazy(() =>
+  import("@/components/KnowledgeGraphWebView").then((m) => ({ default: m.KnowledgeGraphWebView })),
 );
+const KnowledgeGraphView = GRAPH_RENDERER === "webview" ? KnowledgeGraphWebView : KnowledgeGraphSkia;
 
 /**
  * Workspace-wide Knowledge Graph — every project, note, card and tag wired by
@@ -38,7 +39,6 @@ const KnowledgeGraphView = lazy(() =>
 export default function GraphScreen() {
   const router = useRouter();
   const t = useTheme();
-  const tightRail = useTightSideRail();
   // Wide windows open a picked note/task beside the graph (shared with Chat/Calendar).
   // No title beside the canvas when wide (like Chat) — the layout + label
   // controls dock into the side rail instead.
@@ -138,50 +138,28 @@ export default function GraphScreen() {
   return (
     <TabScreen>
       <Stack.Screen options={sp.screenOptions} />
-      {!isEmpty && sp.showToolbar ? (
-        <Stack.Toolbar placement="right">
-          {railToolbar(
-            tightRail,
-            <Stack.Toolbar.Menu
-              key="layout"
-              icon={mode === "force" ? ICON_GRAPH_FORCE : ICON_GRAPH_RADIAL}
-              accessibilityLabel="Graph layout"
-            >
-              <Stack.Toolbar.Label>{mode === "force" ? "Force" : "Radial"}</Stack.Toolbar.Label>
-              <Stack.Toolbar.MenuAction
-                icon={ICON_GRAPH_FORCE}
-                isOn={mode === "force"}
-                onPress={toolbarPress(() => setMode("force"))}
-              >
-                Force
-              </Stack.Toolbar.MenuAction>
-              <Stack.Toolbar.MenuAction
-                icon={ICON_GRAPH_RADIAL}
-                isOn={mode === "radial"}
-                onPress={toolbarPress(() => setMode("radial"))}
-              >
-                Radial
-              </Stack.Toolbar.MenuAction>
-            </Stack.Toolbar.Menu>,
-            /* Label-density menu (force only — radial drills in, no label modes).
-               Same rail as the layout menu: nothing docks left on Duo. */
-            mode === "force" ? (
-              <Stack.Toolbar.Menu key="labels" icon={ICON_LABELS} accessibilityLabel="Label density">
-                <Stack.Toolbar.Label>{`${labelMode} labels`}</Stack.Toolbar.Label>
-                <Stack.Toolbar.MenuAction icon={ICON_LABELS_SMART} isOn={labelMode === "smart"} onPress={toolbarPress(() => setLabelMode("smart"))}>
-                  Smart
-                </Stack.Toolbar.MenuAction>
-                <Stack.Toolbar.MenuAction icon={ICON_LABELS_ALL} isOn={labelMode === "all"} onPress={toolbarPress(() => setLabelMode("all"))}>
-                  All
-                </Stack.Toolbar.MenuAction>
-                <Stack.Toolbar.MenuAction icon={ICON_LABELS_MINIMAL} isOn={labelMode === "minimal"} onPress={toolbarPress(() => setLabelMode("minimal"))}>
-                  Minimal
-                </Stack.Toolbar.MenuAction>
-              </Stack.Toolbar.Menu>
-            ) : null,
-          )}
-        </Stack.Toolbar>
-      ) : null}
+      <ScreenChrome
+        title="Knowledge Graph"
+        right={!isEmpty && sp.showToolbar ? [
+          {
+            kind: "menu", key: "layout", label: "Graph layout", text: mode === "force" ? "Force" : "Radial",
+            icon: mode === "force" ? ICON_GRAPH_FORCE : ICON_GRAPH_RADIAL,
+            actions: [
+              { label: "Force", icon: ICON_GRAPH_FORCE, isOn: mode === "force", onPress: toolbarPress(() => setMode("force")) },
+              { label: "Radial", icon: ICON_GRAPH_RADIAL, isOn: mode === "radial", onPress: toolbarPress(() => setMode("radial")) },
+            ],
+          },
+          // Label density (force only: radial drills in, so it has no label modes).
+          ...(mode === "force" ? [{
+            kind: "menu" as const, key: "labels", label: "Label density", text: `${labelMode} labels`, icon: ICON_LABELS,
+            actions: [
+              { label: "Smart", icon: ICON_LABELS_SMART, isOn: labelMode === "smart", onPress: toolbarPress(() => setLabelMode("smart")) },
+              { label: "All", icon: ICON_LABELS_ALL, isOn: labelMode === "all", onPress: toolbarPress(() => setLabelMode("all")) },
+              { label: "Minimal", icon: ICON_LABELS_MINIMAL, isOn: labelMode === "minimal", onPress: toolbarPress(() => setLabelMode("minimal")) },
+            ],
+          }] : []),
+        ] : []}
+      />
       <SidePreviewLayout state={sp} onChanged={load} bodyStyle={{ backgroundColor: t.background }}>
       {isEmpty ? (
         <EmptyState

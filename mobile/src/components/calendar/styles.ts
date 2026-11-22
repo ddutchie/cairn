@@ -22,6 +22,8 @@ export function makeCalendarStyles(t: Theme) {
       borderBottomColor: t.border,
       backgroundColor: t.surface,
     },
+    // Wide pose: the grid and the day list are two cards on the page background.
+    bookCard: { flex: 1, borderRadius: 14, borderWidth: 1, borderColor: t.border, backgroundColor: t.surface, overflow: "hidden" },
     navGroup: { flexDirection: "row", alignItems: "center", gap: 8 },
     iconBtn: { padding: 4, borderRadius: 6 },
     todayBtn: {

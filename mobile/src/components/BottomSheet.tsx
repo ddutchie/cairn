@@ -55,7 +55,7 @@ export function BottomSheet({
   // bottom half.
   const fold = useFold();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const { right: safeRight } = useSafeAreaInsets();
+  const { left: safeLeft, right: safeRight } = useSafeAreaInsets();
   const foldStyle = useMemo<ViewStyle | null>(() => {
     if (!fold) return null;
     const half = foldHalves(fold, fold.axis === "vertical" ? windowWidth : windowHeight).after;
@@ -120,6 +120,10 @@ export function BottomSheet({
         elevation.xl,
         maxHeight != null && { maxHeight },
         foldStyle,
+        // System chrome on a side edge (the iPhone Duo's status pill and tab rail)
+        // would otherwise sit over the header's Cancel and Done. The book-pose fold
+        // style already keeps clear of the right edge.
+        { paddingLeft: safeLeft, paddingRight: fold?.axis === "vertical" ? 0 : safeRight },
         { transform: [{ translateY }] },
         contentStyle,
       ]}

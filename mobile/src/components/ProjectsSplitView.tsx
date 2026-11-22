@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
 import { Platform, useWindowDimensions, View, Text } from "react-native";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { FileText, FolderOpen } from "lucide-react-native";
 import { Host } from "@expo/ui";
 import {
@@ -32,6 +32,7 @@ import {
   bridgedItems,
   ChromeBridgeProvider,
   ChromeColumn,
+  type ChromeItem,
   routeItems,
   type BridgedChrome,
   type ChromeSlot,
@@ -40,6 +41,8 @@ import { useTheme, type as typeScale } from "@/theme";
 import { PressableScale } from "@/components/PressableScale";
 import { useHingeStatus } from "@/lib/hinge";
 import { WIDE_MIN_WIDTH } from "@/lib/layout";
+import { toolbarPress } from "@/haptics";
+import { TOOL_SYMBOL, WORKSPACE_TOOLS, usePinnedToolForRail } from "@/lib/workspace-tools";
 import { forceCompactBelow } from "@modules/swiftui-modifiers";
 
 /**
@@ -163,6 +166,19 @@ export function ProjectsSplitView({
   // wide-layout columns (the status panel in the project column) showing on the outer
   // display for a moment before JS caught up. Width still gates unfolding.
   const compact = width < WIDE_MIN_WIDTH || hingeClosed;
+  // Capture and the pinned tool sit in the detail column's bar on the Duo, which is the one
+  // that docks into the side rail; the sidebar keeps them only when it is the sole column.
+  const router = useRouter();
+  const pinnedTool = usePinnedToolForRail();
+  const actionsInDetail = !BRIDGE_HEADER && !compact;
+  const railActions: ChromeItem[] = actionsInDetail
+    ? [
+        { kind: "button", key: "capture", label: "Capture", icon: "square.and.pencil", onPress: toolbarPress(() => router.push("/capture")) },
+        ...(pinnedTool
+          ? [{ kind: "button" as const, key: "pinned-tool", label: WORKSPACE_TOOLS[pinnedTool].title, icon: TOOL_SYMBOL[pinnedTool], onPress: toolbarPress(() => router.push(WORKSPACE_TOOLS[pinnedTool].href)) }]
+          : []),
+      ]
+    : [];
   // Wide Overview: the blocks up to the health radar stay in this column; the recent
   // notes and activity move to the detail column (beside / instead of "Nothing open").
   const overviewSplit = !compact && view === "overview";
@@ -402,6 +418,7 @@ export function ProjectsSplitView({
           key={sel.cardId}
           slot={slot("secondary")}
           leading={dismiss("Close task", closeCard)}
+          extra={railActions}
         >
           <CardDetailScreen
             cardId={sel.cardId}
@@ -414,7 +431,7 @@ export function ProjectsSplitView({
           key={sel.noteId}
           slot={slot("secondary")}
           leading={dismiss("Close note", closeNote)}
-          extra={listItems}
+          extra={[...listItems, ...railActions]}
         >
           <NoteDetailScreen nested noteId={sel.noteId} onClose={closeNote} />
         </ChromeColumn>
@@ -454,20 +471,20 @@ export function ProjectsSplitView({
   // earns its space instead of sitting blank.
   const emptyDetail =
     !hasSelection ? (
-      <ChromeColumn key="no-project-detail" slot={slot("secondary")}>
+      <ChromeColumn key="no-project-detail" slot={slot("secondary")} extra={railActions}>
         <DetailActionPanel icon={FolderOpen} title="No project selected" body="Choose a project from the list to see its notes, board and calendar." />
       </ChromeColumn>
     ) : view === "board" ? (
       // Wide: the board's status blocks until a task is opened (collapsed, this column
       // only appears with an open item).
-      <ChromeColumn key={`${projectId}:board-status`} slot={slot("secondary")}>
+      <ChromeColumn key={`${projectId}:board-status`} slot={slot("secondary")} extra={railActions}>
         <>
           <ScreenChrome title="Board status" />
           <OverviewPanel key={boardVersion} projectId={projectId} show={["kpi", "flow", "priority"]} nav={overviewNav} />
         </>
       </ChromeColumn>
     ) : view === "calendar" ? (
-      <ChromeColumn key={`${projectId}:calendar-day`} slot={slot("secondary")}>
+      <ChromeColumn key={`${projectId}:calendar-day`} slot={slot("secondary")} extra={railActions}>
         <>
           <ScreenChrome title="Selected day" />
           <CalendarDayPanel key={calVersion} projectId={projectId} selectedKey={calSelected} onOpenCard={openCard} />
@@ -478,14 +495,14 @@ export function ProjectsSplitView({
       // is open; opening a note/task replaces it. Not keyed on `compact`: collapsed, this
       // column is never visible without an open item, and on unfold SwiftUI expands a beat
       // before JS learns the width, so a compact-only placeholder here flashed.
-      <ChromeColumn key={`${projectId}:overview-detail`} slot={slot("secondary")}>
+      <ChromeColumn key={`${projectId}:overview-detail`} slot={slot("secondary")} extra={railActions}>
         <>
           <ScreenChrome title="Recent" />
           <OverviewPanel key={boardVersion} projectId={projectId} show={OVERVIEW_DETAIL} nav={overviewNav} />
         </>
       </ChromeColumn>
     ) : (
-      <ChromeColumn key="empty" slot={slot("secondary")}>
+      <ChromeColumn key="empty" slot={slot("secondary")} extra={railActions}>
         <DetailActionPanel icon={FileText} title="No note selected" body="Pick a note from the list — or start a new one." actionLabel="New note" onAction={openComposer} />
       </ChromeColumn>
     );
@@ -612,7 +629,7 @@ export function ProjectsSplitView({
           modifiers={[tint(t.accent), navigationSplitViewStyle("automatic"), forceCompactBelow(WIDE_MIN_WIDTH)]}
         >
           <NavigationSplitView.Sidebar>
-            <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} onOpenNote={showNoteInSplitView} refreshKey={boardVersion} />
+            <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} onOpenNote={showNoteInSplitView} refreshKey={boardVersion} actionsInDetail={actionsInDetail} />
           </NavigationSplitView.Sidebar>
           <NavigationSplitView.Content>{contentView}</NavigationSplitView.Content>
           {/* Detail stays mounted ALWAYS — SwiftUI reserves the slot even for

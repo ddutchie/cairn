@@ -39,8 +39,9 @@ import { useRecentStones } from "@/gamification/useRecentStones";
 import { SyncRingLogo } from "@/components/SyncRingLogo";
 import { getActiveSource } from "@/db";
 import { useTightSideRail } from "@/lib/layout";
-import { useRefreshOnFocus, useSyncStatus } from "@/sync/useSyncStatus";
+import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { haptics } from "@/haptics";
+import { TOOL_SYMBOL, WORKSPACE_TOOLS, usePinnedToolForRail } from "@/lib/workspace-tools";
 import { requestSync, switchSource } from "@/sync/controller";
 import { useSyncSources } from "@/sync/useSyncSources";
 import { useTheme } from "@/theme";
@@ -62,12 +63,14 @@ const SHOW_CAIRN_STACK = false;
  * trailing icon buttons) above the list — the same Toolbar pattern the
  * `ChromeColumn` content columns use.
  */
+
 export function ProjectsTreeSidebar({
   title,
   list,
   onWorkspaceSwitched,
   onOpenNote,
   refreshKey,
+  actionsInDetail = false,
 }: {
   /** Active workspace name (doubles as the switcher label). */
   title: string;
@@ -82,9 +85,14 @@ export function ProjectsTreeSidebar({
    * on focus / sync.
    */
   refreshKey?: number;
+  /** Capture and the pinned tool live in the detail column's bar (the Duo side rail) instead. */
+  actionsInDetail?: boolean;
 }) {
   const t = useTheme();
   const router = useRouter();
+  // The pinned tool floats above the tab bar on a narrow window; on a wide one the system would
+  // reserve a band under both columns for it, so it becomes a button in the toolbar (the rail) instead.
+  const pinnedTool = usePinnedToolForRail();
   const hideTrailingActions = useTightSideRail();
   // Tight rail: trailing buttons collapse into the system "..." overflow menu
   // (secondaryAction) — one pill above the 5-tab rail. Roomy layouts keep them
@@ -94,7 +102,6 @@ export function ProjectsTreeSidebar({
     hideTrailingActions
       ? ({ placement: "secondaryAction" } as const)
       : ({ placement: "topBarTrailing", visibilityPriority: priority } as const);
-  const { state: syncState, pending: syncPending } = useSyncStatus();
   const { sources, refresh } = useSyncSources({ mergeActive: true });
   // Discover workspaces whenever the sidebar shows: sync never scans for new
   // ones, and without a scan the switcher menu only knows the active workspace.
@@ -104,8 +111,6 @@ export function ProjectsTreeSidebar({
     }, [refresh]),
   );
   const { inputs: stones, newestId } = useRecentStones(SHOW_CAIRN_STACK);
-  const syncOffline = syncState === "offline";
-  const syncStatusText = syncOffline ? "Offline" : syncState === "syncing" ? "Syncing…" : syncPending > 0 ? `${syncPending} pending` : "Synced";
 
   // Workspace-wide progress for the header card above the project list. Read
   // here (not passed in) so focus / sync / task-save refreshes stay local to
@@ -239,18 +244,18 @@ export function ProjectsTreeSidebar({
                 systemImage="person.2"
                 onPress={() => {
                   haptics.selection();
-                  router.push("/people" as Href);
+                  router.push("/workspace/people" as Href);
                 }}
               />
             </Section>
-            {/* Sync lives here now (it used to be its own toolbar button). */}
-            <Section title="Sync">
+            {/* Settings has one home, the Workspace tab (as on desktop); this is the way in from here. */}
+            <Section title="Settings">
               <Button
-                label={`Sync · ${syncStatusText}`}
-                systemImage="arrow.triangle.2.circlepath"
+                label="Settings"
+                systemImage="gearshape"
                 onPress={() => {
                   haptics.selection();
-                  router.push("/sync");
+                  router.push("/workspace/settings" as Href);
                 }}
               />
             </Section>
@@ -261,7 +266,19 @@ export function ProjectsTreeSidebar({
             single "..." button above the 5-tab pill. Roomy layouts (portrait,
             unfolded, regular iPhones) keep all three buttons inline. Only the
             placement differs — each button is written once. */}
-        <ToolbarItem {...trailingItem("high")}>
+        {pinnedTool && !actionsInDetail ? (
+          <ToolbarItem {...trailingItem("high")}>
+            <Button
+              label={WORKSPACE_TOOLS[pinnedTool].title}
+              systemImage={TOOL_SYMBOL[pinnedTool]}
+              onPress={() => {
+                haptics.selection();
+                router.push(WORKSPACE_TOOLS[pinnedTool].href);
+              }}
+            />
+          </ToolbarItem>
+        ) : null}
+        {actionsInDetail ? null : <ToolbarItem {...trailingItem("high")}>
           <Button
             label="Capture"
             systemImage="square.and.pencil"
@@ -270,17 +287,7 @@ export function ProjectsTreeSidebar({
               router.push("/capture");
             }}
           />
-        </ToolbarItem>
-        <ToolbarItem {...trailingItem("low")}>
-          <Button
-            label="Appearance settings"
-            systemImage="paintpalette"
-            onPress={() => {
-              haptics.selection();
-              router.push("/settings/appearance");
-            }}
-          />
-        </ToolbarItem>
+        </ToolbarItem>}
       </Toolbar.Content>
     </Toolbar>
   );

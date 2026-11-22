@@ -22,13 +22,12 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { OpenPersonContext } from "@/components/graph/peopleCanvasShared";
 import { useFontScale, useNow } from "@/lib/viz/hooks";
 import { findMe } from "@/lib/people/network";
-import land from "@/lib/people/land-110m.json";
+import land from "../../../shared/people/land-110m.json";
 import { cn } from "@/lib/utils";
-import "../../../shared/people/place-data";
-import { placeInfo } from "../../../shared/people/place-zone";
+import { cityOf, groupBySpot, type MapGroup as Group } from "../../../shared/people/map-spots";
 import { ZONE_COORDS } from "../../../shared/people/zone-coords";
 import { sunAt } from "../../../shared/people/sun";
-import { availabilityAt, localHourAt, sameZone, systemZone, zoneOffsetMinutes, type Availability } from "../../../shared/people/zones";
+import { availabilityAt, localHourAt, systemZone, zoneOffsetMinutes, type Availability } from "../../../shared/people/zones";
 import type { PersonSummary } from "../../../shared/types/people-view";
 
 const W = 960;
@@ -42,23 +41,6 @@ const MAX_K = 8;
 const clampK = (k: number) => Math.max(MIN_K, Math.min(MAX_K, k));
 
 const hhmm = (h: number) => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.floor((h % 1) * 60)).padStart(2, "0")}`;
-const cityOf = (tz: string) => tz.split("/").pop()!.replace(/_/g, " ");
-
-/** People who share a spot on the map: the same city when their location names one in their zone, else the zone's principal city. */
-interface Group { key: string; label: string; tz: string; lat: number; lon: number; people: PersonSummary[] }
-
-/** Where a person goes on the map: their own city when it lies in their time zone, else the zone's principal city. */
-function spotOf(p: PersonSummary): { key: string; label: string; lat: number; lon: number } | null {
-  if (!p.timezone) return null;
-  const zone = ZONE_COORDS[p.timezone];
-  const here = p.location ? placeInfo(p.location) : null;
-  // The location only counts when it agrees with the time zone: a stale city must not move someone to the wrong side of the world.
-  if (here?.coords && sameZone(p.timezone, here.zone)) {
-    const [lat, lon] = here.coords;
-    return { key: `${p.timezone}|${lat.toFixed(1)},${lon.toFixed(1)}`, label: p.location!.split(",")[0].trim(), lat, lon };
-  }
-  return zone ? { key: p.timezone, label: cityOf(p.timezone), lat: zone[0], lon: zone[1] } : null;
-}
 
 export function MapCanvas({ people, selectedId }: { people: readonly PersonSummary[]; selectedId?: string | null }) {
   const fs = useFontScale();
@@ -149,18 +131,7 @@ export function MapCanvas({ people, selectedId }: { people: readonly PersonSumma
   const onPointerUp = () => { drag.current = null; };
   // A drag that moved must not also pick the marker it ended on.
   const choose = (key: string) => { if (!drag.current?.moved) setZone(key); };
-  const { groups, unplaced } = useMemo(() => {
-    const map = new Map<string, Group>();
-    const out: PersonSummary[] = [];
-    for (const p of people) {
-      const spot = spotOf(p);
-      if (!p.timezone || !spot || zoneOffsetMinutes(p.timezone, new Date()) === null) { out.push(p); continue; }
-      const g = map.get(spot.key) ?? { ...spot, tz: p.timezone, people: [] };
-      g.people.push(p);
-      map.set(spot.key, g);
-    }
-    return { groups: [...map.values()], unplaced: out.sort((a, b) => a.name.localeCompare(b.name)) };
-  }, [people]);
+  const { groups, unplaced } = useMemo(() => groupBySpot(people), [people]);
 
   if (people.length === 0) return <EmptyState icon={Globe} title="No people yet" description="Add the people you work with and where they are shows up here." className="h-full" />;
 

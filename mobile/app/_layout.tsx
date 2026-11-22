@@ -249,15 +249,13 @@ function RootNavigator({
         name="(tabs)"
         options={{ headerShown: false, contentStyle: { backgroundColor } }}
       />
-      <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
-      <Stack.Screen name="project/calendar" options={{ title: "Calendar" }} />
-      <Stack.Screen name="people/index" options={{ title: "People" }} />
-      <Stack.Screen name="people/[id]" options={{ title: "Person" }} />
+      <Stack.Screen name="project/[id]" />
+      <Stack.Screen name="project/calendar" />
       <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal", contentStyle: cardStyle }} />
-      <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
+      <Stack.Screen name="note/[id]" />
       <Stack.Screen name="capture" options={{ title: "Capture", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal", contentStyle: cardStyle }} />
-      <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
+      <Stack.Screen name="card/[id]" />
       <Stack.Screen name="sync" options={{ title: "Sync", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
       <Stack.Screen name="settings/ai" options={{ title: "AI settings", presentation: "modal", contentStyle: cardStyle }} />

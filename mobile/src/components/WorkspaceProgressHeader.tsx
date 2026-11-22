@@ -49,18 +49,18 @@ export function WorkspaceProgressHeader({ progress }: { progress: WorkspaceProgr
             foregroundStyle(needsAttention > 0 ? t.warning : t.textTertiary),
           ]}
         >
-          {`WORKSPACE PROGRESS · ${needsAttention > 0 ? "NEEDS ATTENTION" : "ON TRACK"}`}
+          {`Workspace progress, ${needsAttention > 0 ? "needs attention" : "on track"}`}
         </Text>
         <HStack spacing={12} modifiers={[frame({ maxWidth: Infinity, alignment: "leading" })]}>
           <VStack alignment="leading" spacing={2}>
             <HStack spacing={4} alignment="lastTextBaseline">
-              <Text modifiers={[font({ textStyle: "largeTitle", weight: "bold" }), foregroundStyle(t.textPrimary)]}>
-                {`${progress.completionRate}`}
+              <Text modifiers={[font({ textStyle: "largeTitle", weight: "semibold" }), foregroundStyle(t.textPrimary)]}>
+                {`${progress.doneCards}`}
               </Text>
-              <Text modifiers={[font({ textStyle: "footnote" }), foregroundStyle(secondary)]}>%</Text>
+              <Text modifiers={[font({ textStyle: "body" }), foregroundStyle(secondary)]}>{`of ${progress.totalCards}`}</Text>
             </HStack>
             <Text modifiers={[font({ textStyle: "footnote" }), foregroundStyle(secondary)]}>
-              {`${progress.doneCards} / ${progress.totalCards} done · ${progress.openCards} open`}
+              {`done, ${progress.openCards} still open`}
             </Text>
           </VStack>
           <Spacer />
@@ -79,7 +79,7 @@ export function WorkspaceProgressHeader({ progress }: { progress: WorkspaceProgr
         <ProgressView value={progress.totalCards > 0 ? progress.doneCards / progress.totalCards : 0} modifiers={[progressViewStyle("linear"), tint(t.accent)]} />
         <HStack modifiers={[frame({ maxWidth: Infinity, alignment: "leading" })]}>
           <Text modifiers={[font({ textStyle: "footnote" }), foregroundStyle(secondary)]}>
-            {`${progress.projectCount} ${progress.projectCount === 1 ? "project" : "projects"} · ${progress.totalNotes} ${progress.totalNotes === 1 ? "note" : "notes"}`}
+            {`${progress.projectCount} ${progress.projectCount === 1 ? "project" : "projects"}, ${progress.totalNotes} ${progress.totalNotes === 1 ? "note" : "notes"}`}
           </Text>
           <Spacer />
           <Text
@@ -88,7 +88,7 @@ export function WorkspaceProgressHeader({ progress }: { progress: WorkspaceProgr
               foregroundStyle(needsAttention > 0 ? t.warning : secondary),
             ]}
           >
-            {progress.totalCards === 0 ? "No tasks yet" : needsAttention > 0 ? `${overdue} overdue · ${today} today` : "All caught up"}
+            {progress.totalCards === 0 ? "No tasks yet" : needsAttention > 0 ? `${overdue} overdue, ${today} today` : "All caught up"}
           </Text>
         </HStack>
       </VStack>

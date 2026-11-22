@@ -1,21 +1,26 @@
 import { useCallback, useMemo, useState } from "react";
 import { Alert, View, Text, ScrollView, StyleSheet, TextInput } from "react-native";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
-import { Check, Circle, Lock } from "lucide-react-native";
+import { Check, Circle, Lock, X } from "lucide-react-native";
 import { ICON_EDIT, ICON_PEOPLE } from "@/components/toolbar-icons";
 import { ScreenChrome } from "@/components/screen-chrome";
 import { PressableScale } from "@/components/PressableScale";
 import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
+import { PickerPage } from "@/components/PickerPage";
 import { NotFound } from "@/components/NotFound";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { haptics } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
-import { loadPersonPage, saveProfile, type ProfileEdit, saveRelationship, setActionItemDone, type OpenItem, type OpenItems } from "@/db/people";
+import {
+  addTeamMember, endTeamMember, loadPastTeams, type PastTeam, loadPeople, loadPersonPage, loadTeams, mergePeople, moveToTeam, saveProfile, saveRelationship,
+  setActionItemDone, setPersonStatus, type OpenItem, type OpenItems, type ProfileEdit,
+} from "@/db/people";
 import { cleanProfileField, PROFILE_FIELDS, type ProfileField } from "@cairn/shared/people/parse";
 import { CADENCE_LABELS, RELATIONSHIP_LABELS, describeRelation } from "@cairn/shared/people/model";
 import { formatDate, formatRelative } from "@cairn/shared/format/date";
-import { CADENCES, RELATIONSHIP_TYPES, type Cadence, type Relationship, type RelationshipType } from "@cairn/shared/types/people";
-import type { PersonPage, PersonTimelineItem } from "@cairn/shared/types/people-view";
+import { KIND_LABEL } from "@/lib/team-labels";
+import { CADENCES, RELATIONSHIP_TYPES, type Cadence, type Relationship, type RelationshipType, type Team } from "@cairn/shared/types/people";
+import type { PersonPage, PersonSummary, PersonTimelineItem } from "@cairn/shared/types/people-view";
 
 type Page = PersonPage & { items: OpenItems };
 
@@ -35,12 +40,17 @@ export function PersonScreen() {
   const [loaded, setLoaded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [details, setDetails] = useState(false);
+  const [pastTeams, setPastTeams] = useState<PastTeam[]>([]);
+  const [teamSheet, setTeamSheet] = useState<"add" | "move" | "same" | null>(null);
 
   const load = useCallback(() => {
     try {
-      setPage(id ? loadPersonPage(id) : null);
+      const next = id ? loadPersonPage(id) : null;
+      setPage(next);
+      setPastTeams(next ? loadPastTeams(next.person.id, next.person.teams) : []);
     } catch {
       setPage(null);
+      setPastTeams([]);
     }
     setLoaded(true);
   }, [id]);
@@ -58,6 +68,37 @@ export function PersonScreen() {
     load();
   };
 
+  const failed = (title: string, e: unknown) => Alert.alert(title, e instanceof Error ? e.message : String(e));
+  const leave = (teamId: string) => {
+    haptics.selection();
+    endTeamMember(teamId, person.id);
+    load();
+  };
+  const decide = (status: "confirmed" | "dismissed") => {
+    haptics.selection();
+    setPersonStatus(person.id, status);
+    load();
+  };
+  /** Fold `dropId` into `keepId` after a confirm; the page follows whoever stays. */
+  const merge = (keepId: string, keepName: string, dropId: string, dropName: string) =>
+    Alert.alert(`Merge ${dropName} into ${keepName}?`, "Their meetings, notes, tasks and teams move over, and the name becomes an alias.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Merge", style: "destructive",
+        onPress: () => {
+          try {
+            mergePeople(keepId, dropId);
+          } catch (e) {
+            return failed("Couldn't merge", e);
+          }
+          setDetails(false);
+          setTeamSheet(null);
+          if (keepId !== person.id) router.replace({ pathname: "/workspace/people/[id]", params: { id: keepId } } as Href);
+          else load();
+        },
+      },
+    ]);
+
   return (
     <View style={s.root}>
       <ScreenChrome
@@ -68,6 +109,30 @@ export function PersonScreen() {
         ]}
       />
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={s.content}>
+        {person.status === "suggested" || person.status === "dismissed" ? (
+          <View style={s.banner} accessibilityRole="summary">
+            <Text style={s.bannerText}>
+              {person.status === "dismissed"
+                ? "You dismissed this person, so they stay out of your list and capture won't propose them again."
+                : "Suggested from a note or by the assistant. Confirm to add them to your people."}
+            </Text>
+            <View style={s.bannerActions}>
+              <PressableScale onPress={() => decide("confirmed")} accessibilityLabel={person.status === "dismissed" ? "Add back" : "Confirm"}>
+                <Text style={[s.action, { color: t.accent }]}>{person.status === "dismissed" ? "Add back" : "Confirm"}</Text>
+              </PressableScale>
+              {person.status === "suggested" ? (
+                <>
+                  <PressableScale onPress={() => setTeamSheet("same")} accessibilityLabel="Same as someone you know">
+                    <Text style={[s.action, { color: t.accent }]}>Same as…</Text>
+                  </PressableScale>
+                  <PressableScale onPress={() => decide("dismissed")} accessibilityLabel="Dismiss">
+                    <Text style={[s.action, { color: t.textTertiary }]}>Dismiss</Text>
+                  </PressableScale>
+                </>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
         <Text style={s.name}>{person.name}</Text>
         {[person.title, person.team, person.location].filter(Boolean).length > 0 || person.timezone ? (
           <Text style={s.profile} accessibilityLabel="Profile">
@@ -98,14 +163,50 @@ export function PersonScreen() {
             {page.relations.map((r) => (
               <PressableScale
                 key={r.edge.id}
-                onPress={() => router.push({ pathname: "/people/[id]", params: { id: r.otherId } } as Href)}
+                onPress={() => router.push({ pathname: "/workspace/people/[id]", params: { id: r.otherId } } as Href)}
                 accessibilityLabel={describeRelation(r)}
               >
-                <Text style={s.line}>{describeRelation(r)}</Text>
+                <Text style={[s.line, r.edge.endedAt ? { color: t.textTertiary } : null]}>{describeRelation(r)}</Text>
               </PressableScale>
             ))}
           </Section>
         ) : null}
+
+        <Section title="Teams" s={s}>
+          {person.teams.length > 0 ? (
+            <View style={[s.chips, { marginTop: 0 }]} accessibilityLabel="Their teams">
+              {person.teams.map((tm) => (
+                <View key={tm.teamId} style={[s.chip, s.teamChip]}>
+                  <PressableScale
+                    onPress={() => router.push({ pathname: "/workspace/people/team/[id]", params: { id: tm.teamId } } as Href)}
+                    accessibilityLabel={`Open ${tm.name}`}
+                  >
+                    <Text style={s.chipText}>
+                      {tm.name}
+                      {tm.role || tm.kind !== "team" ? <Text style={s.chipNote}>{` · ${tm.role ?? KIND_LABEL[tm.kind].toLowerCase()}`}</Text> : null}
+                    </Text>
+                  </PressableScale>
+                  <PressableScale hitSlop={10} onPress={() => leave(tm.teamId)} accessibilityLabel={`Take them off ${tm.name}`}>
+                    <X size={13} color={t.textTertiary} />
+                  </PressableScale>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={s.empty}>Not on a team.</Text>
+          )}
+          <View style={s.teamActions}>
+            <PressableScale onPress={() => setTeamSheet("add")} accessibilityLabel="Add to a team">
+              <Text style={[s.action, { color: t.accent }]}>Add to a team</Text>
+            </PressableScale>
+            <PressableScale onPress={() => setTeamSheet("move")} accessibilityLabel="Move to a new team">
+              <Text style={[s.action, { color: t.accent }]}>Move to a new team</Text>
+            </PressableScale>
+          </View>
+          {pastTeams.length > 0 ? (
+            <Text style={s.itemNote}>Before: {pastTeams.map((p) => `${p.team.name} (until ${formatDate(p.endedAt)})`).join(", ")}</Text>
+          ) : null}
+        </Section>
 
         <ItemsSection title={`${person.name.split(" ")[0]} owes`} items={page.items.theyOwe} onTick={tick} onOpen={openNote} s={s} t={t} />
         <ItemsSection title="You owe" items={page.items.iOwe} onTick={tick} onOpen={openNote} s={s} t={t} />
@@ -124,9 +225,35 @@ export function PersonScreen() {
         </Section>
       </ScrollView>
 
+      <TeamSheets
+        mode={teamSheet}
+        person={person}
+        onClose={() => setTeamSheet(null)}
+        onAdd={(teamId) => {
+          try {
+            addTeamMember({ teamId, personId: person.id });
+          } catch (e) {
+            return failed("Couldn't add", e);
+          }
+          setTeamSheet(null);
+          load();
+        }}
+        onMove={(name) => {
+          // A guild or project name is refused (a home team is a team): say so and keep the sheet open.
+          try {
+            moveToTeam(person.id, name);
+          } catch (e) {
+            return failed("Couldn't move", e);
+          }
+          setTeamSheet(null);
+          load();
+        }}
+        onSame={(other) => merge(other.id, other.name, person.id, person.name)}
+      />
       <DetailsSheet
         visible={details}
         person={person}
+        onMerge={(other) => merge(person.id, person.name, other.id, other.name)}
         onClose={() => setDetails(false)}
         onSave={(edit) => {
           // A team name that is a guild or project is refused (a home team is a team): say so and keep the sheet open.
@@ -281,8 +408,9 @@ function RelationshipSheet({ visible, relationship, cadence, onClose, onSave }: 
 const FIELD_LABEL: Record<ProfileField, string> = { title: "Role", team: "Team", location: "Location", timezone: "Time zone" };
 
 /** Role, team, location, time zone and Slack id. A time zone is checked before saving. */
-function DetailsSheet({ visible, person, onClose, onSave }: {
+function DetailsSheet({ visible, person, onClose, onSave, onMerge }: {
   visible: boolean; person: PersonPage["person"]; onClose: () => void; onSave: (edit: Partial<ProfileEdit>) => void;
+  onMerge: (other: PersonSummary) => void;
 }) {
   const t = useTheme();
   const s = useMemo(() => makeStyles(t), [t]);
@@ -290,10 +418,19 @@ function DetailsSheet({ visible, person, onClose, onSave }: {
   // What the sheet opened with: save sends only what the user changed, so a sync that landed meanwhile isn't overwritten.
   const [opened, setOpened] = useState<ProfileEdit>({ title: "", team: "", location: "", timezone: "", slackId: "" });
   const [error, setError] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [others, setOthers] = useState<PersonSummary[]>([]);
   // Re-seed from the person each time the sheet opens.
   const [wasVisible, setWasVisible] = useState(false);
   if (visible && !wasVisible) {
     setWasVisible(true);
+    setPicking(false);
+    // Whoever this could be a duplicate of: anyone else but you (merging drops them, and "you" must stay).
+    try {
+      setOthers(loadPeople(["confirmed", "suggested"]).filter((p) => p.id !== person.id && !p.isMe));
+    } catch {
+      setOthers([]);
+    }
     const seed = { title: person.title ?? "", team: person.team ?? "", location: person.location ?? "", timezone: person.timezone ?? "", slackId: person.slackId ?? "" };
     setVals(seed);
     setOpened(seed);
@@ -331,7 +468,19 @@ function DetailsSheet({ visible, person, onClose, onSave }: {
     </View>
   );
   return (
-    <BottomSheet visible={visible} onClose={onClose} maxHeight="80%">
+    <BottomSheet visible={visible} onClose={onClose} maxHeight="80%" avoidKeyboard>
+      {picking ? (
+        <PickerPage
+          title="Same person as"
+          options={others.map((p) => ({ value: p.id, label: p.name, note: p.status === "suggested" ? "Suggested" : p.title }))}
+          onBack={() => setPicking(false)}
+          onPick={(id) => {
+            const other = others.find((p) => p.id === id);
+            if (other) onMerge(other);
+          }}
+        />
+      ) : (
+      <>
       <BottomSheetHeader title="Details" onCancel={onClose} onDone={save} />
       <ScrollView contentContainerStyle={s.sheet} keyboardShouldPersistTaps="handled">
         {input("title", FIELD_LABEL.title, "Senior software engineer")}
@@ -340,7 +489,92 @@ function DetailsSheet({ visible, person, onClose, onSave }: {
         {input("timezone", FIELD_LABEL.timezone, "Europe/Berlin")}
         {input("slackId", "Slack id", "U01ABCDEF")}
         {error ? <Text style={[s.empty, { color: t.danger, marginTop: 12 }]} accessibilityRole="alert">{error}</Text> : null}
+        {others.length > 0 ? (
+          <View style={{ marginTop: 22 }}>
+            <Text style={s.sectionTitle}>Duplicate</Text>
+            <PressableScale style={s.pick} onPress={() => setPicking(true)} accessibilityLabel="Same person as…">
+              <Text style={s.line}>Same person as…</Text>
+              <Text style={s.chevron}>›</Text>
+            </PressableScale>
+            <Text style={[s.itemNote, { marginTop: 6 }]}>Their meetings, notes, tasks and teams move here; their name becomes an alias.</Text>
+          </View>
+        ) : null}
       </ScrollView>
+      </>
+      )}
+    </BottomSheet>
+  );
+}
+
+/** The team sheets: add to a team, move to a new one, or (for a suggestion) pick who they are. */
+function TeamSheets({ mode, person, onClose, onAdd, onMove, onSame }: {
+  mode: "add" | "move" | "same" | null; person: PersonPage["person"]; onClose: () => void;
+  onAdd: (teamId: string) => void; onMove: (name: string) => void; onSame: (other: PersonSummary) => void;
+}) {
+  const t = useTheme();
+  const s = useMemo(() => makeStyles(t), [t]);
+  const [name, setName] = useState("");
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [people, setPeople] = useState<PersonSummary[]>([]);
+  const [last, setLast] = useState<typeof mode>(null);
+  // Re-seed each time a sheet opens.
+  if (mode !== last) {
+    setLast(mode);
+    if (mode) {
+      setName("");
+      try {
+        setTeams(loadTeams().filter((tm) => !person.teams.some((x) => x.teamId === tm.id)));
+        setPeople(loadPeople(["confirmed"]).filter((p) => p.id !== person.id));
+      } catch {
+        setTeams([]);
+        setPeople([]);
+      }
+    }
+  }
+  return (
+    <BottomSheet visible={mode !== null} onClose={onClose} maxHeight="80%" avoidKeyboard>
+      {mode === "add" ? (
+        <PickerPage
+          title="Add to a team"
+          options={teams.map((tm) => ({ value: tm.id, label: tm.name, note: tm.kind !== "team" ? KIND_LABEL[tm.kind] : undefined }))}
+          empty="They are on every team."
+          onBack={onClose}
+          onPick={onAdd}
+        />
+      ) : mode === "same" ? (
+        <PickerPage
+          title="Same person as"
+          options={people.map((p) => ({ value: p.id, label: p.name, note: p.title }))}
+          empty="Nobody to pick yet."
+          onBack={onClose}
+          // The person you already have stays; this suggestion folds into them.
+          onPick={(id) => {
+            const other = people.find((p) => p.id === id);
+            if (other) onSame(other);
+          }}
+        />
+      ) : mode === "move" ? (
+        <>
+          <BottomSheetHeader title="Move to a new team" onCancel={onClose} onDone={name.trim() ? () => onMove(name) : undefined} />
+          <View style={s.sheet}>
+            <Text style={s.sectionTitle}>Team</Text>
+            <TextInput
+              style={s.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="Sync"
+              placeholderTextColor={t.textTertiary}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={name.trim() ? () => onMove(name) : undefined}
+              accessibilityLabel="Team name"
+            />
+            <Text style={[s.itemNote, { marginTop: 8 }]}>
+              Takes them off their other teams (guilds, projects and committees stay). A name that is not a team yet makes one.
+            </Text>
+          </View>
+        </>
+      ) : null}
     </BottomSheet>
   );
 }
@@ -373,5 +607,20 @@ function makeStyles(t: Theme) {
     itemNote: { ...typeScale.caption, color: t.textTertiary },
     tl: { paddingVertical: 4 },
     sheet: { padding: 18, paddingBottom: 32 },
+    teamChip: { paddingRight: 8 },
+    chipNote: { ...typeScale.caption, color: t.textTertiary, fontWeight: "400" },
+    teamActions: { flexDirection: "row", gap: 18 },
+    action: { ...typeScale.caption, fontWeight: "600" },
+    pick: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 6, paddingVertical: 12, paddingHorizontal: 12,
+      borderRadius: 10, backgroundColor: t.surface2, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border,
+    },
+    chevron: { ...typeScale.title, fontWeight: "400", color: t.textTertiary },
+    banner: {
+      marginBottom: 14, padding: 12, gap: 8, borderRadius: 10, backgroundColor: t.surface2,
+      borderWidth: StyleSheet.hairlineWidth, borderColor: t.border,
+    },
+    bannerText: { ...typeScale.caption, color: t.textSecondary },
+    bannerActions: { flexDirection: "row", gap: 18 },
   });
 }

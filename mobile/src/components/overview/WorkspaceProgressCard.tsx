@@ -30,24 +30,21 @@ export function WorkspaceProgressCard({ progress }: { progress: WorkspaceProgres
   }, [progress.openDueDates]);
 
   const needsAttention = overdue + today;
-  const label = needsAttention > 0 ? "Workspace progress · needs attention" : "Workspace progress · on track";
+  const label = needsAttention > 0 ? "Workspace progress, needs attention" : "Workspace progress, on track";
   const labelColor = needsAttention > 0 ? t.warning : t.textTertiary;
 
   return (
     <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.border }]}>
-      <Text style={[typeScale.micro, { color: labelColor, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase" }]}>
+      <Text style={[typeScale.micro, { color: labelColor, fontWeight: "600" }]}>
         {label}
       </Text>
       <View style={styles.main}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4 }}>
-            <RollingText text={String(progress.completionRate)} style={{ ...typeScale.display, color: t.textPrimary }} />
-            <Text style={[typeScale.caption, { color: t.textTertiary }]}>%</Text>
+          <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 4 }}>
+            <RollingText text={String(progress.doneCards)} style={{ ...typeScale.display, color: t.textPrimary }} />
+            <Text style={[typeScale.body, { color: t.textTertiary, marginBottom: 4 }]}>of {progress.totalCards}</Text>
           </View>
-          <View style={styles.countLine}>
-            <RollingText text={`${progress.doneCards} / ${progress.totalCards}`} style={{ ...typeScale.caption, color: t.textPrimary, fontWeight: "600", fontFamily: "Menlo" }} />
-            <Text style={[typeScale.caption, { color: t.textTertiary }]}> done · {progress.openCards} open</Text>
-          </View>
+          <Text style={[typeScale.caption, styles.countLine, { color: t.textSecondary }]}>done, {progress.openCards} still open</Text>
         </View>
         <ProgressRing percent={progress.completionRate} size={64} stroke={5} variant="instrument" />
       </View>
@@ -56,11 +53,11 @@ export function WorkspaceProgressCard({ progress }: { progress: WorkspaceProgres
       </View>
       <View style={styles.footer}>
         <Text style={[typeScale.micro, { color: t.textTertiary }]} numberOfLines={1}>
-          {progress.projectCount} {progress.projectCount === 1 ? "project" : "projects"} · {progress.totalNotes}{" "}
+          {progress.projectCount} {progress.projectCount === 1 ? "project" : "projects"}, {progress.totalNotes}{" "}
           {progress.totalNotes === 1 ? "note" : "notes"}
         </Text>
         <Text style={[typeScale.micro, { color: needsAttention > 0 ? t.warning : t.textTertiary, fontWeight: needsAttention > 0 ? "600" : "400" }]} numberOfLines={1}>
-          {progress.totalCards === 0 ? "No tasks yet" : needsAttention > 0 ? `${overdue} overdue · ${today} today` : "All caught up"}
+          {progress.totalCards === 0 ? "No tasks yet" : needsAttention > 0 ? `${overdue} overdue, ${today} today` : "All caught up"}
         </Text>
       </View>
     </View>
@@ -69,7 +66,7 @@ export function WorkspaceProgressCard({ progress }: { progress: WorkspaceProgres
 
 const styles = StyleSheet.create({
   card: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 10 },
-  countLine: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", marginTop: 2 },
+  countLine: { marginTop: 2 },
   main: { flexDirection: "row", alignItems: "center", gap: 12 },
   meterTrack: { height: 6, borderRadius: 3, overflow: "hidden", flexDirection: "row", alignItems: "center" },
   meterFill: { height: "100%", borderRadius: 3 },

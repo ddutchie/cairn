@@ -11,7 +11,9 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
+import { toolbarPress } from "@/haptics";
+import { TOOL_SYMBOL, WORKSPACE_TOOLS, usePinnedToolForRail } from "@/lib/workspace-tools";
 import { navigationBarHidden } from "@modules/swiftui-modifiers";
 import { Button, Menu, RNHostView, Toolbar, ToolbarItem, type ToolbarItemPlacement } from "@expo/ui/swift-ui";
 import { background, navigationBarTitleDisplayMode, navigationTitle, type ViewModifier } from "@expo/ui/swift-ui/modifiers";
@@ -102,8 +104,22 @@ export function ScreenChrome(spec: ChromeSpec) {
   return <RouteChrome {...spec} />;
 }
 
-function RouteChrome({ title, back, left, right }: ChromeSpec) {
+function RouteChrome({ title, back, left, right: own }: ChromeSpec) {
   const tightRail = useTightSideRail();
+  const router = useRouter();
+  const pinned = usePinnedToolForRail();
+  const right: ChromeItem[] | undefined = pinned
+    ? [
+        ...(own ?? []),
+        {
+          kind: "button",
+          key: "pinned-tool",
+          label: WORKSPACE_TOOLS[pinned].title,
+          icon: TOOL_SYMBOL[pinned],
+          onPress: toolbarPress(() => router.push(WORKSPACE_TOOLS[pinned].href)),
+        },
+      ]
+    : own;
   return (
     <>
       <Stack.Screen options={{ title, ...(back ? { headerBackTitle: back } : {}) }} />
