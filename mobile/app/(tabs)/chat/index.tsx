@@ -16,6 +16,7 @@ import { useHeaderHeight } from "expo-router/react-navigation";
 import { useSyncStatus } from "@/sync/useSyncStatus";
 import { Settings, Settings2, Sparkles, Trash2, Wrench } from "lucide-react-native";
 import { TabScreen } from "@/components/TabScreen";
+import { ICON_DELETE } from "@/components/toolbar-icons";
 import { EmptyState } from "@/components/EmptyState";
 import { railToolbar, useTightSideRail } from "@/components/screen-chrome";
 import { useTheme, withAlpha, type as typeScale, type Theme, KEYBOARD_OPEN_GAP } from "@/theme";
@@ -613,18 +614,13 @@ export default function ChatScreen() {
   // the keyboard is up, and return when it goes.
   const laptop = fold?.axis === "horizontal";
   const showHeaderTools = !laptop && (sp.showToolbar || typingCollapsed);
-  // iOS: the header is transparent glass and the transcript (with its chat theme) runs behind it,
-  // like the composer below. Fold layouts that reserve the top half for a stacked preview and the
-  // preview-filled window keep the opaque header. Where a side rail is present the system blur would
-  // span the full window width into the rail, so the header paints its own background inset by the
-  // rail instead.
+  // iOS: no header bar. The context ring and the actions float as Liquid Glass buttons over the
+  // transcript (with its chat theme), which runs to the top of the window. Fold layouts that reserve
+  // the top half for a stacked preview and the preview-filled window keep the opaque header.
   const sideRail = insets.left > 0 || insets.right > 0;
   const glassHeader = Platform.OS === "ios" && !laptop && !sp.fills && !sp.stacked;
-  // Landscape: keep the floating title and toolbar but drop the blur entirely so the
-  // transcript uses the full height; the Liquid Glass buttons stand on their own.
-  const headerBlur = glassHeader && width <= height;
-  // The transcript runs behind the header in every glass layout (blurred or not), so its content
-  // starts below it; the scroll viewport itself stays full-height. While the conflict banner shows,
+  // The transcript runs behind the floating buttons, so its content starts below them; the scroll
+  // viewport itself stays full-height. While the conflict banner shows,
   // TabScreen pushes the whole body below the header (the banner takes the header-height margin),
   // so the content must not add that inset a second time.
   const headerInset = glassHeader && conflicts === 0 ? headerHeight : 0;
@@ -635,7 +631,7 @@ export default function ChatScreen() {
   const modelChip =
     Platform.OS === "ios" && modelMenu ? <ModelChip model={modelMenu} maxWidth={Math.max(120, composerWidth - 140)} /> : undefined;
 
-  // The `+` panel's rows under the attach group: session settings, then the chat itself.
+  // The `+` panel's rows under the attach group: session settings, then AI settings.
   const personalities = getCachedPersonalitiesManifest()?.personalities ?? [];
   const personalityName = personalities.find((p) => p.id === personalityId)?.definition.name;
   const menuGroups: MenuGroup[] = [
@@ -667,7 +663,6 @@ export default function ChatScreen() {
       key: "chat",
       rows: [
         { key: "ai-settings", label: "AI settings", Icon: Settings, more: true, onPress: () => router.push("/settings/ai") },
-        { key: "clear", label: "Clear chat", Icon: Trash2, destructive: true, disabled: messages.length === 0 || busy, onPress: onClear },
       ],
     },
   ];
@@ -735,36 +730,13 @@ export default function ChatScreen() {
           // the pane's ✕ sits exactly where the ring would, which then swallows taps.
           headerLeft: contextRing && showHeaderTools ? () => contextRing : undefined,
           ...(glassHeader
-            ? !headerBlur
-              ? {
-                  // Landscape: fully transparent floating header — title and toolbar only.
-                  headerTransparent: true,
-                  headerStyle: { backgroundColor: "transparent" },
-                  scrollEdgeEffects: { top: "hidden", bottom: "automatic", left: "automatic", right: "automatic" },
-                }
-              : sideRail
-              ? {
-                  headerTransparent: true,
-                  headerStyle: { backgroundColor: "transparent" },
-                  // The system blur spans the full window width, rail included — so no
-                  // headerBlurEffect here. The background paints its own glass (same treatment
-                  // as the composer); the system lays it out inside the safe area, so no manual
-                  // margins — those inset it a second time and leave a gap.
-                  headerBlurEffect: undefined,
-                  headerBackground: () => (
-                    <Glass radius={0} interactive={false} fallbackTint={withAlpha(t.chatBg, 0.6)} style={{ flex: 1 }} />
-                  ),
-                  scrollEdgeEffects: { top: "hidden", bottom: "automatic", left: "automatic", right: "automatic" },
-                }
-              : {
-                  headerTransparent: true,
-                  headerStyle: { backgroundColor: "transparent" },
-                  // Full-width frosted bar so messages stay legible behind it. systemChromeMaterial
-                  // adapts light/dark automatically; the top scroll-edge is hidden to avoid
-                  // double-blur with headerBlurEffect (Expo docs warn they overlap).
-                  headerBlurEffect: "systemChromeMaterial",
-                  scrollEdgeEffects: { top: "hidden", bottom: "automatic", left: "automatic", right: "automatic" },
-                }
+            ? {
+                // No title and no bar: only the ring and the actions, floating.
+                title: "",
+                headerTransparent: true,
+                headerStyle: { backgroundColor: "transparent" },
+                scrollEdgeEffects: { top: "hidden", bottom: "automatic", left: "automatic", right: "automatic" },
+              }
             : sp.screenOptions.headerStyle
               ? null
               : // Opaque header again (TabStack's colour); it was transparent in the glass layouts.
@@ -774,12 +746,27 @@ export default function ChatScreen() {
       {/* While a preview is open its own bar is the rail's: the chat's items
           would stack a second column of buttons beside it (and, folded, keep
           the chat's header up over a chat that isn't showing). */}
-      {/* Clear chat and AI settings live in the composer's `+` panel, and on iOS the model
-          is the composer's chip, so the header carries only the context ring. Android has
-          no SwiftUI menu for the chip: its model menu stays here. */}
-      {showHeaderTools && androidModelMenu ? (
+      {/* Clear chat stays here (and in the Duo's side rail); AI settings lives in the
+          composer's `+` panel, and on iOS the model is the composer's chip. Android has no
+          SwiftUI menu for the chip: its model menu stays here too. */}
+      {showHeaderTools ? (
       <Stack.Toolbar placement="right">
-        {railToolbar(tightRail, androidModelMenu)}
+        {railToolbar(
+          tightRail,
+          <Stack.Toolbar.Button
+            key="clear"
+            icon={ICON_DELETE}
+            hidden={messages.length === 0}
+            disabled={busy}
+            accessibilityLabel="Clear chat"
+            // Inline arrow (not a bare toolbarPress(onClear)) so the react-hooks
+            // ref lint doesn't flag onClear's transitive ref access during render.
+            onPress={() => toolbarPress(onClear)()}
+          >
+            Clear chat
+          </Stack.Toolbar.Button>,
+          androidModelMenu,
+        )}
       </Stack.Toolbar>
       ) : null}
       {/* Every width previews in the pane (not a pushed route): folded it fills
