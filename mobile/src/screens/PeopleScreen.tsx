@@ -105,7 +105,9 @@ export function PeopleScreen() {
             actions: LIST_GROUPINGS.map((g) => ({ label: g.label, isOn: g.value === grouping, onPress: toolbarPress(() => setGrouping(g.value)) })),
           }]}
       />
-      {mode === "map" ? <PeopleMap people={people.filter((p) => p.status === "confirmed")} header={switcher} /> : mode === "teams" ? <TeamsList header={switcher} /> : (
+      {/* One switcher above every segment, outside the scroll views, so toggling never moves it. */}
+      <View style={s.bar}>{switcher}</View>
+      {mode === "map" ? <PeopleMap people={people.filter((p) => p.status === "confirmed")} /> : mode === "teams" ? <TeamsList /> : (
       <SectionList
         sections={sections}
         keyExtractor={(p, i) => `${p.id}-${i}`}
@@ -114,7 +116,6 @@ export function PeopleScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.textTertiary} />}
         ListHeaderComponent={
           <View>
-            {switcher}
             {people.length > 0 ? <SearchField value={query} onChangeText={setQuery} placeholder="Search people" containerStyle={s.search} /> : null}
           </View>
         }
@@ -178,8 +179,9 @@ export function PeopleScreen() {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: t.background },
-    list: { padding: 12, paddingBottom: 48 },
-    switcher: { height: 36, marginBottom: 8 },
+    list: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 48 },
+    bar: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8 },
+    switcher: { height: 36 },
     search: { marginBottom: 8 },
     header: { ...typeScale.overline, color: t.textTertiary, marginTop: 16, marginBottom: 6, marginLeft: 4 },
     headerNote: { ...typeScale.caption, color: t.textTertiary },

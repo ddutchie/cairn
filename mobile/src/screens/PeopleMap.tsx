@@ -38,7 +38,7 @@ const toPath = (d: string | null) => (d ? Skia.Path.MakeFromSVGString(d) : null)
 
 interface View2 { k: number; x: number; y: number }
 
-export function PeopleMap({ people, header }: { people: readonly PersonSummary[]; header: React.ReactNode }) {
+export function PeopleMap({ people }: { people: readonly PersonSummary[] }) {
   const t = useTheme();
   const s = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
@@ -111,12 +111,11 @@ export function PeopleMap({ people, header }: { people: readonly PersonSummary[]
   const selHour = sel ? localHourAt(sel.tz, at) ?? 0 : 0;
 
   if (people.length === 0) {
-    return <View style={s.root}>{header}<EmptyState title="No people yet" subtitle="Add the people you work with and where they are shows up here." /></View>;
+    return <View style={s.root}><EmptyState title="No people yet" subtitle="Add the people you work with and where they are shows up here." /></View>;
   }
 
   return (
     <ScrollView style={s.root} contentContainerStyle={s.scroll} contentInsetAdjustmentBehavior="automatic">
-      {header}
       <Text style={s.sectionTitle}>Around the world</Text>
       <Text style={s.note}>{`${offset === 0 ? "Now" : `${offset > 0 ? "+" : ""}${offset}h`}, ${when} in ${cityOf(myZone)}`}</Text>
 
@@ -326,7 +325,7 @@ function mapGesture(input: MapInput) {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: t.background },
-    scroll: { padding: 12, paddingBottom: 48 },
+    scroll: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 48 },
     sectionTitle: { ...typeScale.overline, color: t.textTertiary, marginTop: 16, marginBottom: 4, marginLeft: 4 },
     note: { ...typeScale.caption, color: t.textTertiary, marginLeft: 4, marginBottom: 6 },
     hint: { ...typeScale.caption, color: t.textTertiary, marginTop: 6 },

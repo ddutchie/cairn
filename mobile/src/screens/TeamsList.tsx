@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { View, Text, FlatList, RefreshControl, StyleSheet } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { PressableScale } from "@/components/PressableScale";
@@ -19,7 +19,7 @@ type Row = { kind: "team"; key: string; name: string; depth: number; teamKind: s
  * team, who leads it and how many are on it, then everyone without a team.
  * A row opens the team's page.
  */
-export function TeamsList({ header }: { header: ReactElement }) {
+export function TeamsList() {
   const t = useTheme();
   const s = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
@@ -75,7 +75,6 @@ export function TeamsList({ header }: { header: ReactElement }) {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.textTertiary} />}
       ListHeaderComponent={
         <View>
-          {header}
           {view && view.nodes.length > 0 ? <SearchField value={query} onChangeText={setQuery} placeholder="Search teams" containerStyle={s.search} /> : null}
         </View>
       }
@@ -116,7 +115,7 @@ export function TeamsList({ header }: { header: ReactElement }) {
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    list: { padding: 12, paddingBottom: 48 },
+    list: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 48 },
     search: { marginTop: 8, marginBottom: 8 },
     row: {
       flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 14,
