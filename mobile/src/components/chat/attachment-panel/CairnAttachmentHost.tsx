@@ -81,8 +81,9 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
   const [flights, setFlights] = useState<Flight[]>([]);
   const [closing, setClosing] = useState(false);
   const [settledKeyboard, setSettledKeyboard] = useState(0);
-  // Ask for photo access when the panel first opens, not when chat mounts.
-  const { photos, status } = usePhotoLibrary(mode !== "closed");
+  // Ask for photo access when the panel first opens, not when chat mounts, and only when it
+  // shows photos: the model panel and a text-only model have no photo actions.
+  const { photos, status } = usePhotoLibrary(allowImages && kind === "attach" && mode !== "closed");
 
   const open = useSharedValue(0);
   const morph = useSharedValue(0);
