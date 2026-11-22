@@ -3,12 +3,10 @@ import { AiSettingsForm } from "@/components/AiSettingsForm";
 import { useModalOpenHaptic } from "@/haptics";
 
 /**
- * AI settings presented as a native form-sheet modal. Uses the native
- * navigation header + a Stack.Toolbar checkmark to save — the same pattern as
- * the new-note / new-task modals — so it looks consistent. The form (which
- * owns save/loading state) renders those via expo-router's Stack. Saving (the
- * checkmark) or swipe-down dismisses back to the caller (the chat screen),
- * which re-checks provider availability on focus.
+ * AI settings hub, a screen of the settings modal: live tuning (temperature, max
+ * steps, personality, renderer, chat theme) and rows into Provider & model
+ * (`settings/model`) and Tools. Done (or swipe-down) dismisses back to the
+ * caller (e.g. Chat), which re-checks provider availability on focus.
  */
 export default function AiSettingsScreen() {
   useModalOpenHaptic();

@@ -58,7 +58,7 @@ export function WorkspaceScreen() {
     href: WORKSPACE_TOOLS[id].href, icon: ICONS[id], tool: id,
   }));
   const usage: Row = { key: "usage", title: "Usage", line: lines.usage ?? WORKSPACE_TOOLS.usage.blurb, href: WORKSPACE_TOOLS.usage.href, icon: ICONS.usage, tool: "usage" };
-  const settings: Row = { key: "settings", title: "Settings", line: "Appearance, AI, tools and sync", href: "/workspace/settings" as Href, icon: Settings };
+  const settings: Row = { key: "settings", title: "Settings", line: "Appearance, AI, tools and sync", href: "/settings" as Href, icon: Settings };
 
   const renderRow = (r: Row): ReactNode => {
     const isPinned = r.tool != null && r.tool === pinned;

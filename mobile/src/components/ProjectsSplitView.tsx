@@ -175,7 +175,7 @@ export function ProjectsSplitView({
     ? [
         { kind: "button", key: "capture", label: "Capture", icon: "square.and.pencil", onPress: toolbarPress(() => router.push("/capture")) },
         ...(pinnedTool
-          ? [{ kind: "button" as const, key: "pinned-tool", label: WORKSPACE_TOOLS[pinnedTool].title, icon: TOOL_SYMBOL[pinnedTool], onPress: toolbarPress(() => router.push(WORKSPACE_TOOLS[pinnedTool].href)) }]
+          ? [{ kind: "button" as const, key: "pinned-tool", label: WORKSPACE_TOOLS[pinnedTool].title, icon: TOOL_SYMBOL[pinnedTool], onPress: toolbarPress(() => router.push(WORKSPACE_TOOLS[pinnedTool].href, { withAnchor: true })) }]
           : []),
       ]
     : [];
@@ -327,7 +327,6 @@ export function ProjectsSplitView({
     view === "board" ? (
       <ProjectScreen
         key={`${projectId}:board:${boardVersion}`}
-        nested
         projectId={projectId}
         view="board"
         hasSwitcher
@@ -340,7 +339,6 @@ export function ProjectsSplitView({
     ) : view === "calendar" ? (
       <ProjectCalendarScreen
         key={`${projectId}:calendar`}
-        nested
         projectId={projectId}
         hasSwitcher
         selectedKey={calSelected}
@@ -352,7 +350,6 @@ export function ProjectsSplitView({
     ) : view === "overview" ? (
       <ProjectScreen
         key={`${projectId}:overview`}
-        nested
         projectId={projectId}
         view="overview"
         hasSwitcher
@@ -364,7 +361,6 @@ export function ProjectsSplitView({
     ) : (
       <ProjectScreen
         key={`${projectId}:${view}:${boardVersion}`}
-        nested
         projectId={projectId}
         view={view as ProjectTab}
         hasSwitcher
@@ -433,7 +429,7 @@ export function ProjectsSplitView({
           leading={dismiss("Close note", closeNote)}
           extra={[...listItems, ...railActions]}
         >
-          <NoteDetailScreen nested noteId={sel.noteId} onClose={closeNote} />
+          <NoteDetailScreen noteId={sel.noteId} onClose={closeNote} />
         </ChromeColumn>
       ) : sel.composing && sel.composing !== "note" ? (
         // Inline task composer — same reasoning as the note composer below.

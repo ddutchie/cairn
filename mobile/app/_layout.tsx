@@ -245,22 +245,19 @@ function RootNavigator({
       {/* Tabs own their side-inset padding themselves (TabStack /
           useTabContentStyle, incl. the split view's overrides) — the root
           safe-zone padding must not inset the whole tab navigator twice. */}
+      {/* The entry redirect to /projects: without this it gets the default header and flashes "index" at launch. */}
+      <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen
         name="(tabs)"
         options={{ headerShown: false, contentStyle: { backgroundColor } }}
       />
-      <Stack.Screen name="project/[id]" />
-      <Stack.Screen name="project/calendar" />
       <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal", contentStyle: cardStyle }} />
-      <Stack.Screen name="note/[id]" />
       <Stack.Screen name="capture" options={{ title: "Capture", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal", contentStyle: cardStyle }} />
-      <Stack.Screen name="card/[id]" />
-      <Stack.Screen name="sync" options={{ title: "Sync", presentation: "modal", contentStyle: cardStyle }} />
+      {/* Settings is one modal with its own stack (app/settings/_layout.tsx): hub, AI, tools, appearance, sync. */}
+      <Stack.Screen name="settings" options={{ headerShown: false, presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
-      <Stack.Screen name="settings/ai" options={{ title: "AI settings", presentation: "modal", contentStyle: cardStyle }} />
-      <Stack.Screen name="settings/tools" options={{ title: "Tools & Services", presentation: "modal", contentStyle: cardStyle }} />
-      <Stack.Screen name="settings/appearance" options={{ title: "Appearance", presentation: "modal", contentStyle: cardStyle }} />
+      <Stack.Screen name="restore" options={{ title: "Deleted Notes" }} />
       {/* Native iOS sheets for the contextual pickers (tags, move,
           wikilink, due date) — UISheetPresentationController gives
           blur, drag-to-dismiss and detents for free. Expansion is

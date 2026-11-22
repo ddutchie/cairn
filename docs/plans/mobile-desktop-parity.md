@@ -1,7 +1,7 @@
 # Mobile vs desktop parity matrix
 
-Status: audit, 2026-11-21. Source: the desktop view list (`scripts/export-site-data.js`), `settings-index.ts`, `PeopleView.tsx`, `TOOL_SCHEMAS`, and the mobile `app/` routes, `src/screens`, `src/chat/tools.ts`.
-Legend: **Yes** = same job done; **Partial** = some of it; **No** = not on mobile; **n/a** = does not belong on a phone. Rows marked *(unchecked)* were judged from file names, not from running the app.
+Status: audit, 2026-11-21; re-checked against the code 2026-11-22 (unchecked rows resolved, settings and chat rows updated for PR 335). Source: the desktop view list (`scripts/export-site-data.js`), `settings-index.ts`, `PeopleView.tsx`, `TOOL_SCHEMAS`, and the mobile `app/` routes, `src/screens`, `src/chat/tools.ts`.
+Legend: **Yes** = same job done; **Partial** = some of it; **No** = not on mobile; **n/a** = does not belong on a phone. Rows were judged from the code and the desktop inventories, not from running the app; the 2026-11-22 pass resolved every row that was marked unchecked.
 
 ## Views
 
@@ -17,10 +17,10 @@ Legend: **Yes** = same job done; **Partial** = some of it; **No** = not on mobil
 | Knowledge Graph | Yes | Skia force and radial | done |
 | Insights (8 canvases) | No | | Low: one or two that read well on a phone (for example the bullet or ridgeline chart) |
 | Automations | No | Run in the desktop app | Maybe: a read-only list of runs plus the notification feed |
-| Usage | Yes | Under Workspace | done |
-| Today | No | `get_today` tool also missing on mobile | **Yes, high**: the natural phone home screen, and the data already syncs |
+| Usage | Yes | Workspace tab (a tool, with the tab bar) | done |
+| Today | **No** | Still no screen, route or tab; `get_today` is also missing on mobile (confirmed 2026-11-22). Desktop has it as a view; the desktop sidebar lists it above Automations | **Yes, high**: the natural phone home screen, and the data already syncs. Candidate home for it: the first tab or the top of Projects, with the Workspace tab keeping the tools |
 | Search | Yes | Own tab | done |
-| Chat | Partial | See Chat | see Chat |
+| Chat | Partial | See Chat. The model chip panel now covers provider, model, temperature and max steps in the chat box | see Chat |
 
 ## People (desktop has 8 modes, mobile 3)
 
@@ -35,55 +35,78 @@ Legend: **Yes** = same job done; **Partial** = some of it; **No** = not on mobil
 | Rhythm (cadence over time) | Yes: Rhythm segment as an overdue / due soon / on track list | done |
 | Bridges (people who connect teams) | No | Low |
 | Find people in notes (migration panel) | No | Low: desktop job |
-| Add person | *(unchecked)* people appear from notes or the assistant; no add button on the list | Medium |
-| Person page: profile, one-on-one, open items, timeline | Yes, except one-on-one view *(unchecked)* | Check |
+| Add person | No: no add button (confirmed); people appear from notes or the assistant | Medium |
+| Person page: profile, one-on-one, open items, timeline | Partial: profile, open items, timeline, teams, relationships. No one-on-one view (confirmed) | Low |
 
 ## Chat and assistant
 
 | Desktop | Mobile | Migrate? |
 |---|---|---|
 | Streaming chat, tools, approvals for deletes | Yes | done |
-| Tools (24 on desktop) | 12 of 24 | See tool gaps |
-| Slash commands (Settings → Commands) | *(unchecked)* | Check |
-| Personalities, chat themes, writing style | Yes (registries present) | done |
-| Model providers, keys | Yes | done |
+| Tools (24 on desktop) | 13 of 24 (diffed against `TOOL_SCHEMAS`, 2026-11-22; `people` counts as one) | See tool gaps |
+| Slash commands (Settings → Commands) | No: no command list or `/` picker on mobile (confirmed) | Medium: the chat box is now the main surface, so a `/` picker would fit |
+| Personalities, chat themes | Yes: personality in the `+` panel and AI settings, chat theme in AI settings | done |
+| Writing style | Partial: the `get/update_user_writing_style` tools work and Sync shows the style's status; no screen to view or edit it | Medium: a read-only page first |
+| Model providers, keys | Yes: Provider & model, Providers | done |
 | Subagents, goals, jobs, terminals, LSP | n/a | no |
 
 Tool gaps (desktop tool, absent on mobile): `get_today`, `task_progress`, `upsert_project`, `get_idea_flow`, `edit_idea_flow`, `get_graph`, `codebase_query`, `codebase_reindex`, `ask_questions`, `suggest_connections`, `spawn_tasks_from_note`. Codebase tools are n/a. `get_today`, `task_progress` and `upsert_project` are worth adding; `get_graph` follows if the phone gets a graph summary.
 
 ## Settings (desktop groups: App, AI, Extensions, Data)
 
+Mobile: one Settings modal (`/settings`) with the same four group names; the hub lists Appearance, AI settings, Tools and services and Sync.
+
 | Desktop page | Mobile | Migrate? |
 |---|---|---|
-| General (theme, accent, font size, note font) | Partial: Appearance | Check note font and accent |
+| General (theme, accent, font size, note font) | Partial: Appearance has accent colour and note font. Theme follows the system and text size follows the OS setting, with no in-app control | Low |
 | Sidebar & views | No | Low: mobile tabs are fixed; useful only if Today or Automations arrive |
 | Tags (rename, recolour, delete) | No | Medium: tag management |
 | Shortcuts | n/a | no |
-| Models / Chat | Yes: AI settings, Providers | done |
+| Models / Chat | Yes: AI settings hub (tuning, personality, renderer, chat theme), Provider & model, Providers. Missing vs desktop: context window and output-token limits are per provider only, no inline AI or prompt preview | done |
 | Coding agent | n/a | no |
-| Writing style | *(unchecked)* tool exists, no screen confirmed | Check |
+| Writing style | Partial: status line in Sync only; no screen | Medium |
 | Embeddings | No | Low |
 | Tools (MCP, HTTP services) | Yes: Tools and services | done |
-| Commands | *(unchecked)* | Check |
+| Commands | No (confirmed) | Medium, with slash commands |
 | Connect other agents | n/a | no |
 | Device sync | Yes: Sync | done |
 | Data (storage, export, reset) | No | Medium: at least storage and reset |
-| About (version, tour, what's new) | No | Low: a version row |
+| About (version, tour, what's new) | Partial: the version shows at the bottom of Appearance; no tour or what's new | Low |
 
 ## Cross-cutting
 
 | Desktop | Mobile |
 |---|---|
-| Workspace switcher | Yes, at the top of the Workspace tab |
+| Workspace switcher | Yes, at the top of the Workspace tab and in the Projects menu |
 | Command palette, global shortcuts | n/a (Search tab, quick actions) |
-| Capture | Mobile-first: capture sheet, widgets, share extension |
+| Capture | Mobile-first: capture sheet, widgets, quick actions. A share extension is planned, not built (`mobile-capture-and-widgets.md`, section E) |
 | Sync | Shared engine; phone can delete a workspace from the sync folder |
+
+## Mobile only (the phone is ahead, or the job does not exist on desktop)
+
+Checked against `mobile/src`, `mobile/modules` and `app.json`, 2026-11-22.
+
+| Mobile feature | What it is | Desktop |
+|---|---|---|
+| AI capture | The capture sheet files a thought, to-do or link into the right project (ranked, with confirm card and Undo). Entry points: Projects toolbar, home-screen quick action, `cairn://capture` | No equivalent; desktop has the editor and chat |
+| Voice dictation | Hold-to-talk mic in the chat box and capture, on-device where supported, project and note titles as vocabulary | No |
+| Home-screen widgets | Workspace progress and what is due today, one-tap Capture, per-project progress | No |
+| Quick actions | Long-press the app icon: Quick capture, Search | n/a |
+| On-device AI | Apple Intelligence as a chat provider (on-device and Private Cloud Compute) and Apple on-device embeddings for semantic search, so search works with no desktop | Desktop embeds with its own model |
+| Background sync | A periodic catch-up while the app is closed, over the iCloud sync folder | Desktop syncs while open |
+| Camera, photos, files in chat | Recent photos strip, Camera, Photos and Add files from the `+` panel | Files only |
+| Fold and tablet layouts | iPhone Duo postures (side rail, crease-aware split), iPad split view and sidebar-adaptable tabs | n/a |
+| Touch drag and drop | Board cards, with edge auto-scroll | Mouse drag |
+| Stones and milestones | A Skia cairn that stacks as notes are written, with milestone celebrations and haptics | No |
+| Haptics | Selection, success and settle feedback across the app | n/a |
+
+Planned, not built: share extension and a lock-screen capture control (`mobile-capture-and-widgets.md`, section E); a "stone to revisit" daily pick (section D).
 
 ## Suggested order
 
 1. Today screen and the `get_today` tool: biggest gap, best fit for a phone.
 2. People: a reporting-line Org chart (needs `network.ts` moved to `shared/`).
-3. Settings: Tags, Data (storage and reset), About.
+3. Settings: Tags, Data (storage and reset), Writing style page, Commands and a `/` picker in Chat, About.
 4. Tools: `task_progress`, `upsert_project`.
 5. Read-only Idea Flow and one or two Insights charts, if there is demand.
 

@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState, type ReactElement } from "react";
-import { PixelRatio, View, useWindowDimensions } from "react-native";
+import { useCallback, useRef, useState, type ComponentRef, type ReactElement } from "react";
+import { Pressable, StyleSheet, Text } from "react-native";
+import { ChevronDown } from "lucide-react-native";
 import { Stack, useFocusEffect } from "expo-router";
 import {
   getActiveProvider,
@@ -15,28 +16,17 @@ import {
 } from "@/chat/ai-config";
 import { listModels } from "@/chat/providers/openai";
 import { ICON_MODEL } from "@/components/toolbar-icons";
-import { type as typeScale, useTheme } from "@/theme";
-import {
-  Button as SUIButton,
-  HStack,
-  Host,
-  Image as SUIImage,
-  Menu,
-  Section,
-  Text as SUIText,
-  VStack,
-} from "@expo/ui/swift-ui";
-import { font, foregroundStyle, frame, lineLimit, padding } from "@expo/ui/swift-ui/modifiers";
+import { type as typeScale, useTheme, withAlpha } from "@/theme";
 
 /** Menus get unwieldy past this; favorites + the current model are always kept. */
 const MAX_MODELS = 40;
 
 /**
- * Model/provider switching for the Chat header, shared by two renderers:
- *  - iOS header TITLE: the model name + chevron as a native menu (the
- *    chat-template's picker) — `ModelTitleMenu`.
- *  - `Stack.Toolbar.Menu` in the right toolbar — `modelToolbarMenu`, used on
- *    Android and wherever the title is hidden (wide windows).
+ * Model/provider switching for Chat, shared by two renderers:
+ *  - iOS: a chip in the composer's second row (shown while typing), opening the
+ *    chat panel's model view — `ModelChip` (the rows are built by the screen).
+ *  - Android: a `Stack.Toolbar.Menu` in the header's right toolbar —
+ *    `modelToolbarMenu`.
  * Hidden unless the OpenAI-compatible path is the one the chat actually uses
  * (Apple On-device has no user-selectable model list).
  *
@@ -131,7 +121,7 @@ export function useModelMenuState({ disabled = false, onChanged }: { disabled?: 
   return { current, providerName: active.name, providers, activeId: active.id, favorites: favs, models: shown, disabled, pickModel, pickProvider };
 }
 
-/** Right-toolbar variant (Android, and iOS when the header title is hidden). */
+/** Right-toolbar variant (Android, which has no SwiftUI menu for the chip). */
 export function modelToolbarMenu(m: ModelMenuState | null): ReactElement | null {
   if (!m) return null;
   return (
@@ -172,94 +162,43 @@ export function modelToolbarMenu(m: ModelMenuState | null): ReactElement | null 
 }
 
 /**
- * iOS header title: the model name with a chevron, opening a native menu of
- * providers and models (checkmark on the active ones) — the chat-template's
- * `HeaderTitleMenu`. While a reply is running the label renders without the
- * menu, so it can't be switched mid-turn.
+ * iOS composer chip: the model id (and, with more than one provider saved, the
+ * provider's name, dimmer) in a capsule. It sits in the composer's second row,
+ * which only shows while typing. Tapping it opens the chat panel's model view
+ * (provider, model and tuning) growing out of the chip; `onOpen` gets the chip's
+ * centre x in the window. While a reply is running it can't be tapped, so the
+ * model can't change mid-turn.
  */
-export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
+export function ModelChip({ model: m, onOpen }: { model: ModelMenuState; onOpen: (centerX: number) => void }) {
   const t = useTheme();
-  const { width } = useWindowDimensions();
-  // SwiftUI font sizes are fixed points, so apply the OS text-size setting ourselves
-  // (RN text does this implicitly) to the theme type-scale tokens.
-  const fontScale = PixelRatio.getFontScale();
-  // The native header centers the title on the screen only while it fits
-  // symmetrically around the screen centre; wider than that it is pushed into
-  // the slot left of the right-hand items and ends up flush-left. The Clear +
-  // AI settings pill is ~120pt wide plus its gap (measured on iPhone 17), so
-  // reserve ~140pt on BOTH sides (slack beyond the measured edge: a box right
-  // at the limit still went flush-left). A long model id
-  // ("muse-spark-1.3-contributor") then truncates (tail) inside a centred box
-  // instead of shifting left or painting over the context ring. Floor matches
-  // the Host minWidth below.
-  const maxW = Math.min(240, Math.max(80, width - 280));
-  const label = (
-    // frame(maxWidth) truncates the SwiftUI text at the cap even if the
-    // RN-side maxWidth only clamps measurement and the native view paints
-    // wider (the overlay seen on device).
-    <HStack spacing={4} alignment="center" modifiers={[padding({ vertical: 4 }), frame({ maxWidth: maxW })]}>
-      <VStack spacing={0} alignment="center">
-        <SUIText modifiers={[font({ weight: "semibold", size: Math.round(typeScale.subtitle.fontSize * fontScale) }), foregroundStyle(t.textPrimary), lineLimit(1)]}>
-          {m.providerName}
-        </SUIText>
-        <SUIText modifiers={[font({ size: Math.round(typeScale.micro.fontSize * fontScale) }), foregroundStyle(t.textSecondary), lineLimit(1)]}>
-          {m.current}
-        </SUIText>
-      </VStack>
-      <SUIImage systemName="chevron.down" size={10} color={t.textSecondary} />
-    </HStack>
-  );
+  const ref = useRef<ComponentRef<typeof Pressable>>(null);
   return (
-    // Fixed-height wrapper centers the title in the header; the vertical padding
-    // on the label (not a Host minHeight, which top-aligns the content) keeps the
-    // tap target at ~40pt.
-    // Explicit width (not content-sized): the header centers a title on screen only
-    // when its box fits symmetrically, and a content-sized box reports the label's
-    // natural width, so a long model id got pushed flush-left. The box is a fixed
-    // maxW wide and centers its content.
-    <View style={{ height: 44, width: maxW, alignSelf: "center", flexDirection: "row", justifyContent: "center", alignItems: "center" }}>
-    <Host matchContents style={{ minWidth: 80, maxWidth: maxW }}>
-      {m.disabled ? (
-        label
-      ) : (
-        <Menu label={label}>
-          {m.providers.length > 1 ? (
-            <Section title="Provider">
-              {m.providers.map((p) => (
-                <SUIButton
-                  key={p.id}
-                  label={p.name}
-                  systemImage={p.id === m.activeId ? "checkmark" : undefined}
-                  onPress={() => m.pickProvider(p.id)}
-                />
-              ))}
-            </Section>
-          ) : null}
-          {m.favorites.length > 0 ? (
-            <Section title="Favorites">
-              {m.favorites.map((name) => (
-                <SUIButton
-                  key={name}
-                  label={name}
-                  systemImage={name === m.current ? "checkmark" : "star.fill"}
-                  onPress={() => m.pickModel(name)}
-                />
-              ))}
-            </Section>
-          ) : null}
-          <Section title="Model">
-            {m.models.map((name) => (
-              <SUIButton
-                key={name}
-                label={name}
-                systemImage={name === m.current ? "checkmark" : undefined}
-                onPress={() => m.pickModel(name)}
-              />
-            ))}
-          </Section>
-        </Menu>
-      )}
-    </Host>
-    </View>
+    <Pressable
+      ref={ref}
+      accessibilityRole="button"
+      accessibilityLabel={`Model: ${m.current}${m.providers.length > 1 ? `, ${m.providerName}` : ""}. Model and settings`}
+      accessibilityState={{ disabled: m.disabled }}
+      disabled={m.disabled}
+      hitSlop={6}
+      onPress={() => ref.current?.measureInWindow((x, _y, w) => onOpen(x + w / 2))}
+      style={[chipStyles.chip, { backgroundColor: withAlpha(t.textPrimary, 0.08) }]}
+    >
+      <Text style={[typeScale.caption, chipStyles.model, { color: t.textPrimary }]} numberOfLines={1} ellipsizeMode="middle">
+        {m.current}
+      </Text>
+      {m.providers.length > 1 ? (
+        <Text style={[typeScale.caption, chipStyles.provider, { color: t.textTertiary }]} numberOfLines={1}>
+          {m.providerName}
+        </Text>
+      ) : null}
+      <ChevronDown size={12} color={t.textSecondary} strokeWidth={2.25} />
+    </Pressable>
   );
 }
+
+const chipStyles = StyleSheet.create({
+  // Shrinks within the composer's chip slot (flex: 1), so a long id truncates before the mic and send buttons.
+  chip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, minWidth: 0, flexShrink: 1 },
+  model: { fontWeight: "500", flexShrink: 1 },
+  provider: { flexShrink: 2 },
+});

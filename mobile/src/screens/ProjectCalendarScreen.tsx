@@ -25,13 +25,9 @@ import { useTheme } from "@/theme";
  * the Calendar tab) rather than the in-body toolbar, so the calendar reads the
  * same however it's reached. This screen owns `layout` + a `todayNonce`.
  *
- * Shared by two routes: the root `app/project/calendar` and the Projects-tab
- * `app/(tabs)/projects/project/calendar` (`nested`). `nested` only routes the
- * onward "open card" push to the in-tab card detail so the tab bar stays
- * visible through the whole Projects drill-down.
+ * One route, shared by every tab stack (`app/(tabs)/(…)/project/calendar`).
  */
 export function ProjectCalendarScreen({
-  nested = false,
   projectId,
   hasSwitcher,
   selectedKey,
@@ -40,7 +36,6 @@ export function ProjectCalendarScreen({
   onChanged,
   onOpenCard,
 }: {
-  nested?: boolean;
   /** Split-view column: the project to show (instead of the route param). */
   projectId?: string;
   /** Split-view column: its project-view switcher floats over the top; reserve its height. */
@@ -85,11 +80,7 @@ export function ProjectCalendarScreen({
     [load, onChanged],
   );
 
-  const cardHref = useCallback(
-    (id: string): Href =>
-      nested ? { pathname: "/projects/card/[id]", params: { id } } : { pathname: "/card/[id]", params: { id } },
-    [nested],
-  );
+  const cardHref = useCallback((id: string): Href => ({ pathname: "/card/[id]", params: { id } }), []);
 
   return (
     <View style={[styles.root, hasSwitcher && styles.underSwitcher, { backgroundColor: t.background }]}>

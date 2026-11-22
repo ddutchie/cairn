@@ -52,21 +52,44 @@ export const COMPOSER_COLLAPSED_HEIGHT = COMPOSER.rowHeight;
 
 export const COMPOSER_STRIP_HEIGHT = COMPOSER.stripPaddingTop + COMPOSER.thumbSize + COMPOSER.stripGap;
 
+/**
+ * The `+` panel's menu: an optional strip of recent photos, then groups of rows
+ * (attach; session; chat) split by hairlines. Its height depends on what it holds,
+ * so it is measured with `menuHeightFor`, not a constant.
+ */
 export const MENU = {
-  width: 280,
-  itemHeight: 56,
-  paddingVertical: 10,
+  width: 300,
+  itemHeight: 48,
+  paddingVertical: 8,
   radius: 32,
-  iconWell: 36,
-  iconSize: 18,
-  iconInset: 20,
+  iconSize: 19,
+  iconInset: 18,
   labelGap: 14,
-  labelSize: 15,
+  labelSize: 16,
+  /** Space between two groups; a hairline runs through its middle. */
+  groupGap: 13,
   centerOffset: 7,
+  /** Recent-photo strip: inset from the panel's edges, gap between thumbnails. */
+  stripInset: 12,
+  stripGap: 6,
+  stripCount: 4,
+  stripRadius: 14,
+  /** Space under the strip, before the first group. */
+  stripBelow: 6,
 } as const;
 
-export const MENU_ITEMS = 3;
-export const MENU_HEIGHT = MENU.itemHeight * MENU_ITEMS + MENU.paddingVertical * 2;
+/** Side of one recent-photo thumbnail for a menu `width` wide. */
+export function menuThumbSize(width: number) {
+  return (width - MENU.stripInset * 2 - MENU.stripGap * (MENU.stripCount - 1)) / MENU.stripCount;
+}
+
+/** Natural height of a menu `width` wide with these group sizes (rows per group), with or without the strip. */
+export function menuHeightFor(width: number, rowsPerGroup: number[], strip: boolean) {
+  const groups = rowsPerGroup.filter((n) => n > 0);
+  const rows = groups.reduce((sum, n) => sum + n, 0);
+  const stripBlock = strip ? MENU.stripInset - MENU.paddingVertical + menuThumbSize(width) + MENU.stripBelow : 0;
+  return MENU.paddingVertical * 2 + stripBlock + rows * MENU.itemHeight + Math.max(0, groups.length - 1) * MENU.groupGap;
+}
 
 export const GRID = {
   columns: 3,

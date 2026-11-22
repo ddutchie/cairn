@@ -15,6 +15,7 @@ import {
 import { Stack, useRouter } from "expo-router";
 import { RefreshCw, Plus, ExternalLink, Server, Check, ArrowUpCircle } from "lucide-react-native";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
+import { ModalSafeView } from "@/components/ModalSafeView";
 import { haptics } from "@/haptics";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { fetchProvidersManifest, getCachedProvidersManifest } from "@/chat/providers-registry";
@@ -162,7 +163,7 @@ export default function ProvidersSettingsScreen() {
   );
 
   return (
-    <View style={styles.flex}>
+    <ModalSafeView backgroundColor={t.surface}>
       <Stack.Screen options={{ title: "AI Providers" }} />
       <Stack.Toolbar>
         <Stack.Toolbar.Button
@@ -361,7 +362,7 @@ export default function ProvidersSettingsScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </ModalSafeView>
   );
 }
 

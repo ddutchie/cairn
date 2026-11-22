@@ -56,21 +56,11 @@ const PROJECT_TABS: Tab[] = ["overview", "notes", "board"];
 const SEGMENT_BAR_H = 50;
 
 /**
- * Project detail (notes tree + board). Shared by two routes:
- *
- *   • `app/project/[id].tsx` (root stack) — reached from Graph, so the detail
- *     pushes over the tab bar as before.
- *   • `app/(tabs)/projects/project/[id].tsx` (Projects tab stack, `nested`) — the
- *     Projects-tab drill-down, which keeps the native tab bar visible and pops
- *     back to the project list when the Projects tab is re-tapped.
- *
- * `nested` only changes the onward navigation targets: nested pushes stay inside
- * the Projects tab (`/projects/...`) so the whole flow keeps the tab bar; the root
- * copy pushes plain `/...` routes. Typed routes require the two path families to
- * be spelled out explicitly, hence the `Href` helpers below.
+ * Project detail (notes tree + board). One route, shared by every tab stack
+ * (`app/(tabs)/(…)/project/[id]`), so it keeps the tab bar wherever it was opened
+ * from; onward note/task/calendar pushes stay in that same stack.
  */
 export function ProjectScreen({
-  nested = false,
   projectId,
   view,
   hasSwitcher,
@@ -82,7 +72,6 @@ export function ProjectScreen({
   onComposeTask,
   selectedId = null,
 }: {
-  nested?: boolean;
   /**
    * Split-view column: render for this project instead of the route param. The
    * column brings its own navigation bar (see ScreenChrome).
@@ -110,10 +99,9 @@ export function ProjectScreen({
   /** Split-view column: the note / task open beside this list, marked in it. */
   selectedId?: string | null;
 }) {
-  const params = useLocalSearchParams<{ id: string; back?: string }>();
+  const params = useLocalSearchParams<{ id: string }>();
   const embedded = projectId != null;
   const id = projectId ?? params.id;
-  const back = embedded ? undefined : params.back;
   const router = useRouter();
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -142,18 +130,9 @@ export function ProjectScreen({
   // Brief spinner state for the Overview pull-to-refresh gesture.
   const [refreshing, setRefreshing] = useState(false);
 
-  // Onward-navigation targets. Kept as typed Href builders so the nested vs.
-  // root path families both satisfy typed routes.
-  const noteHref = useCallback(
-    (nid: string): Href =>
-      nested ? { pathname: "/projects/note/[id]", params: { id: nid } } : { pathname: "/note/[id]", params: { id: nid } },
-    [nested],
-  );
-  const cardHref = useCallback(
-    (cid: string): Href =>
-      nested ? { pathname: "/projects/card/[id]", params: { id: cid } } : { pathname: "/card/[id]", params: { id: cid } },
-    [nested],
-  );
+  // Onward-navigation targets (shared routes: they open in the stack we are in).
+  const noteHref = useCallback((nid: string): Href => ({ pathname: "/note/[id]", params: { id: nid } }), []);
+  const cardHref = useCallback((cid: string): Href => ({ pathname: "/card/[id]", params: { id: cid } }), []);
 
   const load = useCallback(() => {
     if (!id) return;
@@ -385,10 +364,6 @@ export function ProjectScreen({
     <View style={styles.container}>
 <ScreenChrome
         title={project?.name || "Project"}
-        // From Graph (root stack) the back target is the `(tabs)` group, so an
-        // explicit `back` label is passed; the nested Projects-list flow omits
-        // it and gets iOS's default "Projects" previous-title.
-        back={back}
         right={[
           // In a split view Calendar is a sidebar section, not a push.
           ...(embedded
@@ -401,11 +376,7 @@ export function ProjectScreen({
                   icon: ICON_CALENDAR,
                   onPress: toolbarPress(() =>
                     id &&
-                    router.push(
-                      nested
-                        ? { pathname: "/projects/project/calendar", params: { project: id } }
-                        : { pathname: "/project/calendar", params: { project: id } },
-                    )
+                    router.push({ pathname: "/project/calendar", params: { project: id } })
                   ),
                 },
               ]),

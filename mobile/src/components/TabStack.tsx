@@ -74,6 +74,11 @@ export function TabStack({
         }}
       >
         {children}
+        {/* The shared detail routes (app/(tabs)/(…)/note, card, project) exist in every tab. */}
+        <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
+        <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
+        <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
+        <Stack.Screen name="project/calendar" options={{ title: "Calendar" }} />
       </Stack>
     </ThemeProvider>
   );

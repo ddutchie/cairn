@@ -3,7 +3,7 @@ import { forwardRef, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Pressable, ScrollView, StyleSheet, TextInput, View, type TextInputInstance } from "react-native";
 import { Image } from "expo-image";
 import { Send, X, Plus } from "lucide-react-native";
-import Animated, { Extrapolation, FadeOut, interpolate, LinearTransition, useAnimatedReaction, useAnimatedStyle, type SharedValue } from "react-native-reanimated";
+import Animated, { Extrapolation, FadeIn, FadeOut, interpolate, LinearTransition, useAnimatedReaction, useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { RestingStickyView } from "./RestingStickyView";
 import { useTheme, withAlpha, useIsDark, KEYBOARD_OPEN_GAP } from "@/theme";
@@ -60,7 +60,6 @@ export interface CairnMorphComposerProps {
   leftInset?: number;
   closedLift: number;
   onLayoutHeight: (h: number) => void;
-  allowImages?: boolean;
   queuedCount?: number;
   /**
    * Dictation button. It takes the send button's place while the field is empty (like
@@ -71,10 +70,22 @@ export interface CairnMorphComposerProps {
   orb?: ReactNode;
   /** True while dictating: the placeholder says so and the field is read-only. */
   micActive?: boolean;
+  /**
+   * The model picker. With one, the composer opens into two rows while the field is
+   * focused: the field on its own full-width row, then `+`, this chip, and mic/send.
+   * At rest it stays a single row and the chip is hidden. Without one (Apple, Android)
+   * the composer is always the single row.
+   */
+  modelChip?: ReactNode;
+  /**
+   * Height of the composer below the attachment strip (one row, or two while open).
+   * The attachment flight reads it to land on the strip, wherever the strip sits.
+   */
+  rowsHeight?: SharedValue<number>;
 }
 
 export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphComposerProps>(function CairnMorphComposer(
-  { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, phase = null, canSend, onSend, onInputFocus, onInputBlur, hidden = false, leftInset = 0, closedLift, onLayoutHeight, allowImages = true, queuedCount = 0, mic, orb, micActive = false },
+  { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, phase = null, canSend, onSend, onInputFocus, onInputBlur, hidden = false, leftInset = 0, closedLift, onLayoutHeight, queuedCount = 0, mic, orb, micActive = false, modelChip, rowsHeight },
   ref,
 ) {
   const t = useTheme();
@@ -87,6 +98,12 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
   const showMic = !!mic && (micActive || (!canSend && !busy));
   const [focused, setFocused] = useState(false);
   const cycle = useHintCycle(COMPOSER_HINTS, !input && !focused && !micActive && !busy);
+  // Open while focused. A dictation holds the current shape: the mic moves between the
+  // rows when the composer opens or closes, and remounting it would drop the press.
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!micActive) setOpen(focused && !!modelChip);
+  }, [focused, micActive, modelChip]);
 
   const plusStyle = useAnimatedStyle(() => ({
     opacity: interpolate(plusOut.get(), [0, 0.75], [1, 0], Extrapolation.CLAMP),
@@ -110,6 +127,35 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
   // Theme-aware glass fallback — solid when liquid glass unavailable
   const fallbackBg = withAlpha(t.surface2, 0.92);
   const isLight = !useIsDark();
+  const plusButton = (
+    <Pressable accessibilityRole="button" accessibilityLabel="Add photos, files and options" hitSlop={12} onPress={onPlusPress} style={styles.plus}>
+      <Animated.View style={plusStyle}>
+        <Plus size={COMPOSER.plusSize} color={isLight ? t.textSecondary : t.textTertiary} />
+      </Animated.View>
+    </Pressable>
+  );
+  const trailing = (
+    <>
+      {micActive ? orb : null}
+      {showMic ? (
+        mic
+      ) : (
+        <Pressable
+          style={[styles.sendBtn, { backgroundColor: t.accent }, !canSend && styles.sendBtnDisabled]}
+          onPress={onSend}
+          disabled={!canSend}
+          accessibilityRole="button"
+          accessibilityLabel={busy ? "Queue message" : "Send message"}
+        >
+          <View>
+            <Send size={14} color={t.accentFg} />
+            {busy && queuedCount > 0 ? <Animated.Text style={styles.sendBadge}>{String(queuedCount)}</Animated.Text> : null}
+          </View>
+        </Pressable>
+      )}
+    </>
+  );
+
   return (
     <RestingStickyView
       offset={{ closed: -closedLift, opened: -KEYBOARD_OPEN_GAP }}
@@ -130,12 +176,9 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
                 ))}
               </ScrollView>
             </Animated.View>
-            <View style={styles.row}>
-              <Pressable accessibilityRole="button" accessibilityLabel="Add attachment" hitSlop={12} onPress={onPlusPress} style={styles.plus} disabled={!allowImages}>
-                <Animated.View style={plusStyle}>
-                  <Plus size={COMPOSER.plusSize} color={busy || !allowImages ? withAlpha(t.textTertiary, 0.5) : isLight ? t.textSecondary : t.textTertiary} />
-                </Animated.View>
-              </Pressable>
+            <View onLayout={(e) => rowsHeight?.set(e.nativeEvent.layout.height)}>
+            <View style={open ? styles.fieldRow : styles.row}>
+              {open ? null : plusButton}
               <TextInput
                 ref={ref}
                 value={input}
@@ -154,7 +197,7 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
                 placeholderTextColor={isLight ? t.textSecondary : t.textTertiary}
                 multiline
                 textAlignVertical="center"
-                style={[styles.field, { color: t.textPrimary }]}
+                style={[styles.field, open && styles.fieldOpen, { color: t.textPrimary }]}
               />
               {cycle.visible ? (
                 <HintOverlay
@@ -165,23 +208,15 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
                   style={{ left: COMPOSER.rowPaddingLeft + COMPOSER.plusHit + 10 + 2, right: 9 + 32 + 10 }}
                 />
               ) : null}
-              {micActive ? orb : null}
-              {showMic ? (
-                mic
-              ) : (
-                <Pressable
-                  style={[styles.sendBtn, { backgroundColor: t.accent }, !canSend && styles.sendBtnDisabled]}
-                  onPress={onSend}
-                  disabled={!canSend}
-                  accessibilityRole="button"
-                  accessibilityLabel={busy ? "Queue message" : "Send message"}
-                >
-                  <View>
-                    <Send size={14} color={t.accentFg} />
-                    {busy && queuedCount > 0 ? <Animated.Text style={styles.sendBadge}>{String(queuedCount)}</Animated.Text> : null}
-                  </View>
-                </Pressable>
-              )}
+              {open ? null : trailing}
+            </View>
+            {open ? (
+              <Animated.View entering={FadeIn.duration(DURATION.crossfade)} style={styles.toolRow}>
+                {plusButton}
+                <View style={styles.chipSlot}>{modelChip}</View>
+                {trailing}
+              </Animated.View>
+            ) : null}
             </View>
             {/* Inside the glass: behind it, the glass would cover all but a sliver of the halo. */}
             <ComposerGlow phase={phase} radius={COMPOSER.radius} />
@@ -203,6 +238,14 @@ const styles = StyleSheet.create({
   thumb: { width: COMPOSER.thumbSize, height: COMPOSER.thumbSize, borderRadius: COMPOSER.thumbRadius, overflow: "hidden", backgroundColor: "#141414", borderCurve: "continuous" as const },
   thumbHidden: { opacity: 0 },
   row: { minHeight: COMPOSER.rowHeight, flexDirection: "row", alignItems: "center", paddingLeft: COMPOSER.rowPaddingLeft, paddingRight: 9, paddingVertical: 6, gap: 10 },
+  // Open (two rows): the field spans the composer, the controls sit under it. The
+  // control row keeps the single row's height so the `+` stays where the attachment
+  // panel expects it (centred rowHeight / 2 above the composer's bottom edge).
+  // +3 lines the text up with the `+` glyph (centred in its 30pt hit box) below it.
+  fieldRow: { paddingLeft: COMPOSER.rowPaddingLeft + 3, paddingRight: 14, paddingTop: 12 },
+  fieldOpen: { flex: 0, marginVertical: 0, minHeight: 24, maxHeight: 160 },
+  toolRow: { height: COMPOSER.rowHeight, flexDirection: "row", alignItems: "center", paddingLeft: COMPOSER.rowPaddingLeft, paddingRight: 9, gap: 10 },
+  chipSlot: { flex: 1, flexDirection: "row", alignItems: "center", minWidth: 0 },
   plus: { width: COMPOSER.plusHit, height: 32, alignItems: "center", justifyContent: "center", alignSelf: "center" },
   field: { flex: 1, fontSize: COMPOSER.fieldSize, paddingVertical: 0, paddingHorizontal: 2, marginVertical: 6, minHeight: 20, maxHeight: 120, lineHeight: 20, textAlignVertical: "center" as const, includeFontPadding: false } as const,
   remove: { position: "absolute", top: COMPOSER.removeBadgeInset, right: COMPOSER.removeBadgeInset, width: COMPOSER.removeBadge, height: COMPOSER.removeBadge, borderRadius: COMPOSER.removeBadge / 2, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.45)" },

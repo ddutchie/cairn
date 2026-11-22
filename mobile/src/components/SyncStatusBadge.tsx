@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import { useTheme } from "@/theme";
 import { useSyncStatus } from "@/sync/useSyncStatus";
 import { ICON_ICLOUD, ICON_ICLOUD_OFF, ICON_ICLOUD_SYNC, type ToolbarIcon } from "@/components/toolbar-icons";
@@ -42,6 +42,6 @@ export function useSyncBadge(): {
     accessibilityHint: "Opens sync details",
     statusText: offline ? "Offline" : state === "syncing" ? "Syncing…" : pending > 0 ? `${pending} pending` : "Synced",
     attention: offline || pending > 0,
-    onPress: () => router.push("/sync"),
+    onPress: () => router.push("/settings/sync" as Href),
   };
 }

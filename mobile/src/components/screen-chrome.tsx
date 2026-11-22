@@ -116,7 +116,7 @@ function RouteChrome({ title, back, left, right: own }: ChromeSpec) {
           key: "pinned-tool",
           label: WORKSPACE_TOOLS[pinned].title,
           icon: TOOL_SYMBOL[pinned],
-          onPress: toolbarPress(() => router.push(WORKSPACE_TOOLS[pinned].href)),
+          onPress: toolbarPress(() => router.push(WORKSPACE_TOOLS[pinned].href, { withAnchor: true })),
         },
       ]
     : own;

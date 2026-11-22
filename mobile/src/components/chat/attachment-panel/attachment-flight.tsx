@@ -17,16 +17,18 @@ function FlyingPhoto({
   attach,
   strip,
   composerBottom,
+  rowsHeight,
 }: {
   flight: Flight;
   screenWidth: number;
   attach: SharedValue<number>;
   strip: SharedValue<number>;
   composerBottom: SharedValue<number>;
+  rowsHeight: SharedValue<number>;
 }) {
   const style = useAnimatedStyle(() => {
     const a = attach.get();
-    const composerTop = composerBottom.get() - COMPOSER.rowHeight - strip.get() * COMPOSER_STRIP_HEIGHT;
+    const composerTop = composerBottom.get() - rowsHeight.get() - strip.get() * COMPOSER_STRIP_HEIGHT;
     const step = COMPOSER.thumbSize + COMPOSER.thumbGap;
     const lastVisible = screenWidth - GUTTER - COMPOSER.stripPaddingTop - COMPOSER.thumbSize;
     const toX = Math.min(GUTTER + COMPOSER.stripPaddingTop + flight.slot * step, lastVisible);
@@ -53,18 +55,21 @@ export function AttachmentFlight({
   attach,
   strip,
   composerBottom,
+  rowsHeight,
 }: {
   flights: Flight[];
   screenWidth: number;
   attach: SharedValue<number>;
   strip: SharedValue<number>;
   composerBottom: SharedValue<number>;
+  /** Composer height below its strip, so the photo lands on the strip in either composer shape. */
+  rowsHeight: SharedValue<number>;
 }) {
   if (!flights.length) return null;
   return (
     <>
       {flights.map((flight) => (
-        <FlyingPhoto key={flight.photo.id} flight={flight} screenWidth={screenWidth} attach={attach} strip={strip} composerBottom={composerBottom} />
+        <FlyingPhoto key={flight.photo.id} flight={flight} screenWidth={screenWidth} attach={attach} strip={strip} composerBottom={composerBottom} rowsHeight={rowsHeight} />
       ))}
     </>
   );

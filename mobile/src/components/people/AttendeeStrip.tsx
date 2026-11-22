@@ -71,7 +71,7 @@ export function AttendeeStrip({ noteId, addRequest }: { noteId: string; addReque
     refreshCandidates();
   };
 
-  const open = (a: StripAttendee) => router.push({ pathname: "/workspace/people/[id]", params: { id: a.personId } } as Href);
+  const open = (a: StripAttendee) => router.push({ pathname: "/workspace/people/[id]", params: { id: a.personId } } as Href, { withAnchor: true });
 
   if (!strip.meetingId && !pickerOpen) return null;
 

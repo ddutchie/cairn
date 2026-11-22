@@ -2,7 +2,7 @@ import { BlurView } from "expo-blur";
 import type { ReactNode } from "react";
 import { StyleSheet } from "react-native";
 import Animated, { Extrapolation, interpolate, useAnimatedStyle, useDerivedValue, type SharedValue } from "react-native-reanimated";
-import { COMPOSER, GRID, GUTTER, MENU, MENU_HEIGHT, mix, PLUS_CENTER_X } from "./constants";
+import { COMPOSER, GRID, GUTTER, MENU, mix, PLUS_CENTER_X } from "./constants";
 import { PanelMaterial } from "./glass";
 
 export interface PanelDrivers {
@@ -16,7 +16,11 @@ export interface PanelDrivers {
 
 export function AttachmentPanel({
   screenHeight,
+  menuWidth,
+  menuHeight,
+  menuTopMin,
   menuTopMax,
+  originX = PLUS_CENTER_X,
   gridWidth,
   gridHeight,
   interactive,
@@ -32,8 +36,15 @@ export function AttachmentPanel({
   composerBottom,
 }: PanelDrivers & {
   screenHeight: number;
+  /** The menu's size, measured from what it holds (see `menuHeightFor`). */
+  menuWidth: number;
+  menuHeight: number;
+  /** Highest the menu's top may sit (below the status bar), however tall it is. */
+  menuTopMin: number;
   /** Lowest the menu's top may sit, so a composer low on the screen (keyboard down) doesn't push the menu off it. */
   menuTopMax: number;
+  /** Centre x the panel grows from and shrinks back to: the `+` (default) or the model chip. */
+  originX?: number;
   gridWidth: number;
   gridHeight: number;
   interactive: "menu" | "grid" | "none";
@@ -45,16 +56,16 @@ export function AttachmentPanel({
   const rect = useDerivedValue(() => {
     const bottom = composerBottom.get();
     const plusCenter = bottom - COMPOSER.rowHeight / 2;
-    const top = Math.min(plusCenter + MENU.centerOffset - MENU_HEIGHT / 2, menuTopMax);
+    const top = Math.max(menuTopMin, Math.min(plusCenter + MENU.centerOffset - menuHeight / 2, menuTopMax));
     const m = morph.get();
     let x = GUTTER;
     let y = top;
-    let w = mix(m, MENU.width, gridWidth);
-    let h = mix(m, MENU_HEIGHT, screenHeight - top - GUTTER);
+    let w = mix(m, menuWidth, gridWidth);
+    let h = mix(m, menuHeight, screenHeight - top - GUTTER);
     let r = mix(m, MENU.radius, GRID.panelRadius);
     const o = open.get();
     const well = COMPOSER.plusWell;
-    x = mix(o, PLUS_CENTER_X - well / 2, x);
+    x = mix(o, originX - well / 2, x);
     y = mix(o, plusCenter - well / 2, y);
     w = mix(o, well, w);
     h = mix(o, well, h);
@@ -73,7 +84,7 @@ export function AttachmentPanel({
 
   const menuStyle = useAnimatedStyle(() => ({
     opacity: menuOpacity.get() * openFade.get(),
-    transform: [{ scale: rect.get().w / MENU.width }],
+    transform: [{ scale: rect.get().w / menuWidth }],
   }));
 
   const gridStyle = useAnimatedStyle(() => ({
@@ -90,7 +101,7 @@ export function AttachmentPanel({
         <Animated.View pointerEvents={interactive === "grid" ? "auto" : "none"} style={[styles.content, { width: gridWidth, height: gridHeight }, gridStyle]}>
           {grid}
         </Animated.View>
-        <Animated.View pointerEvents={interactive === "menu" ? "auto" : "none"} style={[styles.content, { width: MENU.width, height: MENU_HEIGHT }, menuStyle]}>
+        <Animated.View pointerEvents={interactive === "menu" ? "auto" : "none"} style={[styles.content, { width: menuWidth, height: menuHeight }, menuStyle]}>
           {menu}
         </Animated.View>
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, blurStyle]}>

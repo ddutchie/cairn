@@ -7,10 +7,11 @@ import {
   ScrollView,
   ActivityIndicator,
   StyleSheet,
+  Platform,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SegmentedControl } from "@/components/SegmentedControl";
-import { Stack, useRouter, useFocusEffect, usePathname, type Href } from "expo-router";
+import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, ChevronDown, ChevronUp, Pencil, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines, Star } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
@@ -127,10 +128,9 @@ function formatCredits(n: number): string {
 }
 
 /**
- * AI settings form body. Presented as a native `formSheet` route
- * (`app/settings/ai.tsx`) rather than a hand-rolled modal, so it gets the
- * system modal transition + swipe-to-dismiss instead of a backdrop that slides
- * in with the card. Lets the user pick the chat backend:
+ * AI settings form body, shared by two screens of the settings modal:
+ * `app/settings/ai.tsx` (the hub: live tuning plus rows into the rest) and
+ * `app/settings/model.tsx` (provider and model, saved on Save). Lets the user pick the chat backend:
  *   - "Apple Intelligence (on-device)" — shown when the device supports it
  *     (iOS 26+, Apple Intelligence enabled). Runs fully offline, no key.
  *   - "OpenAI-compatible" — always available; the user supplies endpoint + key.
@@ -140,7 +140,7 @@ function formatCredits(n: number): string {
  * fields (base URL, model) persist to local SQLite; the API key goes to the
  * device keychain (expo-secure-store). Saved on Done.
  */
-export function AiSettingsForm({ onClose }: { onClose: () => void }) {
+export function AiSettingsForm({ onClose, section = "hub" }: { onClose: () => void; section?: "hub" | "model" }) {
   const t = useTheme();
   const isDark = useIsDark();
   const styles = useAiSettingsStyles();
@@ -166,8 +166,6 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     return () => { cancelled = true; };
   }, []);
   const router = useRouter();
-  // Opened from the Workspace tab, its sub-screens stay in that tab; from Chat they are root modals.
-  const settingsBase = usePathname().startsWith("/workspace") ? "/workspace" : "/settings";
   const appleAvailable = isAppleProviderAvailable();
   // Which Apple model backs the "Apple Intelligence" option: PCC (user-facing)
   // or the dev-only on-device model.
@@ -243,9 +241,10 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [personalityId, setPersonalityId] = useState(() => getChatPersonalityId());
   const [personalityManifest, setPersonalityManifest] = useState(() => getCachedPersonalitiesManifest());
   const [personalityRefreshing, setPersonalityRefreshing] = useState(false);
-  // 2-tab layout: setup (provider + model) / tuning (settings + theme).
-  // "setup" persists on Save (Done); "tuning" is live. Usage lives in the Workspace tab.
-  const [tab, setTab] = useState(0);
+  // Two screens share this form. "model" (Provider & model) persists on Save; the
+  // "hub" (AI settings) is live tuning plus the way into the model, providers and
+  // tools screens. Usage lives in the Workspace tab.
+  const tab = section === "model" ? 0 : 1;
   // Model-behavior knobs (live-apply, desktop parity) — temperature "Auto" =
   // undefined (omit the field); max steps default 30.
   const [temperature, setTemperature] = useState<number | undefined>(() => getChatTemperature());
@@ -326,12 +325,21 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
       let cancelled = false;
       void (async () => {
         const list = await listSavedProviders();
-        if (!cancelled) setProviders(list);
+        if (cancelled) return;
+        setProviders(list);
+        // The hub stays mounted under Provider & model: re-read what was saved there for its summary
+        // row. The model screen keeps its own drafts, so it does not re-read.
+        if (section === "hub") {
+          setPref(getProviderPref());
+          setModel(getOpenAIModel());
+          const active = list.find((p) => p.id === getActiveProviderId());
+          if (active) setName(active.name);
+        }
       })();
       return () => {
         cancelled = true;
       };
-    }, []),
+    }, [section]),
   );
   // Switch the active provider: persist any pending edits to the current one,
   // then load the target provider's values into the fields. Guarded against
@@ -589,6 +597,8 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   // OpenAI fields show when OpenAI is the effective selection: no chooser (only
   // OpenAI available) or the user picked it explicitly.
   const usingOpenAI = !showChooser || pref === "openai";
+  // Temperature and max steps live in the chat's model panel when it has a model chip (iOS, OpenAI-compatible).
+  const tuningInHub = Platform.OS !== "ios" || !usingOpenAI;
 
   // Case-insensitive filter over the fetched model ids. The selected model is
   // always kept in view (pinned first) even if it doesn't match the query.
@@ -705,7 +715,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
 
   return (
     <ModalSafeView backgroundColor={t.surface}>
-      <Stack.Screen options={{ headerShown: true, title: "AI settings", headerBackTitle: "Back" }} />
+      <Stack.Screen options={{ headerShown: true, title: section === "model" ? "Provider & model" : "AI settings", headerBackTitle: "Back" }} />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
           icon={ICON_CHECK}
@@ -717,6 +727,9 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
         >
           Save
         </Stack.Toolbar.Button>
+        <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" hidden={tab !== 1} accessibilityLabel="Done" onPress={toolbarPress(onClose)}>
+          Done
+        </Stack.Toolbar.Button>
       </Stack.Toolbar>
 
         {loading ? (
@@ -725,19 +738,6 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
           </View>
         ) : (
           <>
-          {/* 2-tab layout (native segmented control, iOS/Android). "Setup" holds
-              provider + model and saves on Done; "Tuning" (settings + theme) is live. */}
-          <View style={[styles.tabBar, edgePad]}>
-            <SegmentedControl
-              style={{ height: 36 }}
-              tintColor={t.accent}
-              fontStyle={{ color: t.textSecondary, fontSize: 14, fontWeight: "600" }}
-              activeFontStyle={{ color: t.accentFg, fontSize: 14, fontWeight: "600" }}
-              values={["Setup", "Tuning"]}
-              selectedIndex={tab}
-              onChange={(e) => setTab(e.nativeEvent.selectedSegmentIndex)}
-            />
-          </View>
           <KeyboardAwareScrollView
             style={styles.body}
             contentContainerStyle={[styles.bodyContent, edgePad]}
@@ -1113,7 +1113,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
               style={styles.navRow}
               onPress={() => {
                 haptics.selection();
-                router.push(`${settingsBase}/providers` as Href);
+                router.push("/settings/providers" as Href);
               }}
               accessibilityRole="button"
               accessibilityLabel="Browse community AI providers"
@@ -1130,9 +1130,31 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
           )}
           {tab === 1 && (
             <>
-              {/* Model behavior knobs — live-apply (desktop quick-settings parity). */}
-              <Text style={styles.sectionLabel}>Model settings</Text>
-              <PresetStepperRow
+              {/* Provider and model change rarely and save on their own screen. */}
+              <Pressable
+                style={styles.navRow}
+                onPress={() => {
+                  haptics.selection();
+                  router.push("/settings/model" as Href);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Provider and model"
+              >
+                <Cpu size={16} color={t.textSecondary} />
+                <View style={styles.navRowMain}>
+                  <Text style={styles.navRowTitle}>Provider &amp; model</Text>
+                  <Text style={styles.navRowSub} numberOfLines={1}>
+                    {showChooser && pref === "apple" ? "Apple Intelligence" : [name.trim(), model.trim()].filter(Boolean).join(" · ") || "Not set up yet"}
+                  </Text>
+                </View>
+                <ChevronRight size={18} color={t.textTertiary} />
+              </Pressable>
+
+              {/* Model behavior knobs — live-apply (desktop quick-settings parity). On iOS with an
+                  OpenAI-compatible provider the chat's model chip panel has them, so they show here
+                  only where it does not exist (Android, Apple Intelligence). */}
+              {tuningInHub ? <Text style={styles.sectionLabel}>Model settings</Text> : null}
+              {tuningInHub ? <PresetStepperRow
                 label="Temperature"
                 description={temperature == null
                   ? "Auto: no temperature is sent — the model uses its own default."
@@ -1142,15 +1164,15 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                 presets={[0.1, 0.3, 0.5, 0.7, 1.0]}
                 autoActive={temperature == null}
                 onAuto={() => chooseTemperature(undefined)}
-              />
-              <PresetStepperRow
+              /> : null}
+              {tuningInHub ? <PresetStepperRow
                 label="Max steps"
                 description="Tool-call rounds the chat can take per message. Increase for complex multi-tool tasks."
                 value={maxSteps}
                 onChange={chooseMaxSteps}
                 presets={[10, 20, 30, 50, 1000]}
                 formatPreset={(n) => (n === 1000 ? "∞" : String(n))}
-              />
+              /> : null}
 
               <Pressable
                 style={styles.navRow}
@@ -1177,7 +1199,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                 style={styles.navRow}
                 onPress={() => {
                   haptics.selection();
-                  router.push(`${settingsBase}/tools` as Href);
+                  router.push("/settings/tools" as Href);
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="Open Tools & Services"

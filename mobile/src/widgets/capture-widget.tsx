@@ -23,9 +23,11 @@ function CaptureWidget(props: CaptureWidgetProps, env: WidgetEnvironment) {
   "widget";
   const c = env.colorScheme === "dark" ? props.dark : props.light;
   const k = props.fontScale ?? 1;
+  // Every widget view needs a container background, or iOS shows its "adopt containerBackground"
+  // error in place of the widget. The lock screen draws its own circle and hides this fill; a fully transparent colour was not enough to satisfy it.
   if (env.widgetFamily === "accessoryCircular") {
     return (
-      <ZStack modifiers={[widgetURL("cairn://capture")]}>
+      <ZStack modifiers={[containerBackground(c.accent, "widget"), widgetURL("cairn://capture")]}>
         <Image systemName="square.and.pencil" size={22} />
       </ZStack>
     );
