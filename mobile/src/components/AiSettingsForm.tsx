@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SegmentedControl } from "@/components/SegmentedControl";
-import { Stack, useRouter, useFocusEffect, usePathname, type Href } from "expo-router";
+import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, ChevronDown, ChevronUp, Pencil, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines, Star } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
@@ -166,8 +166,6 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     return () => { cancelled = true; };
   }, []);
   const router = useRouter();
-  // Opened from the Workspace tab, its sub-screens stay in that tab; from Chat they are root modals.
-  const settingsBase = usePathname().startsWith("/workspace") ? "/workspace" : "/settings";
   const appleAvailable = isAppleProviderAvailable();
   // Which Apple model backs the "Apple Intelligence" option: PCC (user-facing)
   // or the dev-only on-device model.
@@ -1113,7 +1111,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
               style={styles.navRow}
               onPress={() => {
                 haptics.selection();
-                router.push(`${settingsBase}/providers` as Href);
+                router.push("/settings/providers" as Href);
               }}
               accessibilityRole="button"
               accessibilityLabel="Browse community AI providers"
@@ -1177,7 +1175,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                 style={styles.navRow}
                 onPress={() => {
                   haptics.selection();
-                  router.push(`${settingsBase}/tools` as Href);
+                  router.push("/settings/tools" as Href);
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="Open Tools & Services"

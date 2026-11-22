@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Platform, View, Text, FlatList, StyleSheet, RefreshControl, useWindowDimensions } from "react-native";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useRouter, type Href } from "expo-router";
 import { listProjectSummaries, getWorkspaceProgress, type ProjectSummary, type WorkspaceProgress } from "@/db/queries";
 import { getActiveSourceName } from "@/db";
 import { PressableScale } from "@/components/PressableScale";
@@ -107,7 +107,7 @@ export default function ProjectsScreen() {
             key="settings"
             icon={ICON_SETTINGS}
             accessibilityLabel="Settings"
-            onPress={toolbarPress(() => router.push("/workspace/settings"))}
+            onPress={toolbarPress(() => router.push("/settings" as Href))}
           >
             Settings
           </Stack.Toolbar.Button>,

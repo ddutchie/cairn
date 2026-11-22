@@ -248,14 +248,14 @@ export function ProjectsTreeSidebar({
                 }}
               />
             </Section>
-            {/* Settings has one home, the Workspace tab (as on desktop); this is the way in from here. */}
+            {/* Settings is one modal (app/settings); this is the way in from here. */}
             <Section title="Settings">
               <Button
                 label="Settings"
                 systemImage="gearshape"
                 onPress={() => {
                   haptics.selection();
-                  router.push("/workspace/settings" as Href);
+                  router.push("/settings" as Href);
                 }}
               />
             </Section>

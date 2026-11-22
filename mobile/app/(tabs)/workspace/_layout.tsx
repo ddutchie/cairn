@@ -14,15 +14,7 @@ export default function WorkspaceLayout() {
       <Stack.Screen name="people/[id]" options={{ title: "Person" }} />
       <Stack.Screen name="people/team/[id]" options={{ title: "Team" }} />
       <Stack.Screen name="graph" options={{ title: "Knowledge Graph" }} />
-      {/* The same screens the root stack presents as modals from Chat and Projects,
-          pushed here so opening them from Workspace keeps the tab bar and its header. */}
-      <Stack.Screen name="settings" options={{ title: "Settings" }} />
       <Stack.Screen name="usage" options={{ title: "Usage" }} />
-      <Stack.Screen name="sync" options={{ title: "Sync" }} />
-      <Stack.Screen name="ai" options={{ title: "AI settings" }} />
-      <Stack.Screen name="providers" options={{ title: "AI Providers" }} />
-      <Stack.Screen name="tools" options={{ title: "Tools & Services" }} />
-      <Stack.Screen name="appearance" options={{ title: "Appearance" }} />
     </TabStack>
   );
 }

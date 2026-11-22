@@ -11,13 +11,13 @@ type Group = { title: string; rows: Row[] };
 
 /** Same groups, same names and same order as the desktop Settings rail (App, AI, Extensions, Data). */
 const GROUPS: Group[] = [
-  { title: "App", rows: [{ key: "appearance", title: "Appearance", line: "Theme and text size", href: "/workspace/appearance" as Href, icon: Palette }] },
-  { title: "AI", rows: [{ key: "ai", title: "AI settings", line: "Provider, model and keys", href: "/workspace/ai" as Href, icon: Sparkles }] },
-  { title: "Extensions", rows: [{ key: "tools", title: "Tools and services", line: "Connectors the assistant can use", href: "/workspace/tools" as Href, icon: Wrench }] },
-  { title: "Data", rows: [{ key: "sync", title: "Sync", line: "Devices and the shared folder", href: "/workspace/sync" as Href, icon: RefreshCw }] },
+  { title: "App", rows: [{ key: "appearance", title: "Appearance", line: "Theme and text size", href: "/settings/appearance" as Href, icon: Palette }] },
+  { title: "AI", rows: [{ key: "ai", title: "AI settings", line: "Provider, model and keys", href: "/settings/ai" as Href, icon: Sparkles }] },
+  { title: "Extensions", rows: [{ key: "tools", title: "Tools and services", line: "Connectors the assistant can use", href: "/settings/tools" as Href, icon: Wrench }] },
+  { title: "Data", rows: [{ key: "sync", title: "Sync", line: "Devices and the shared folder", href: "/settings/sync" as Href, icon: RefreshCw }] },
 ];
 
-/** The one home for settings on mobile, reached from the Workspace tab (and the Projects menu). */
+/** The one home for settings on mobile: the first screen of the settings modal (`app/settings`). */
 export function SettingsScreen() {
   const t = useTheme();
   const s = useMemo(() => makeStyles(t), [t]);
