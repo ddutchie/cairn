@@ -53,6 +53,7 @@ export function ZonesList({ people, now }: { people: readonly PersonSummary[]; n
         <PressableScale
           style={s.row}
           onPress={() => open(item.person.id)}
+          accessibilityRole="button"
           accessibilityLabel={`${item.person.name}, ${item.localTime} in ${cityOf(item.timezone)}, ${formatDiff(item.diffMinutes)}`}
         >
           <View style={[s.dot, { backgroundColor: tone(bucketOf(item)) }]} />

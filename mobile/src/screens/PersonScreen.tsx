@@ -553,7 +553,7 @@ function TeamSheets({ mode, person, onClose, onAdd, onMove, onSame }: {
             if (other) onSame(other);
           }}
         />
-      ) : (
+      ) : mode === "move" ? (
         <>
           <BottomSheetHeader title="Move to a new team" onCancel={onClose} onDone={name.trim() ? () => onMove(name) : undefined} />
           <View style={s.sheet}>
@@ -574,7 +574,7 @@ function TeamSheets({ mode, person, onClose, onAdd, onMove, onSame }: {
             </Text>
           </View>
         </>
-      )}
+      ) : null}
     </BottomSheet>
   );
 }
@@ -615,7 +615,7 @@ function makeStyles(t: Theme) {
       flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 6, paddingVertical: 12, paddingHorizontal: 12,
       borderRadius: 10, backgroundColor: t.surface2, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border,
     },
-    chevron: { fontSize: 20, color: t.textTertiary },
+    chevron: { ...typeScale.title, fontWeight: "400", color: t.textTertiary },
     banner: {
       marginBottom: 14, padding: 12, gap: 8, borderRadius: 10, backgroundColor: t.surface2,
       borderWidth: StyleSheet.hairlineWidth, borderColor: t.border,

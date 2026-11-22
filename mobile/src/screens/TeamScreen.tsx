@@ -306,6 +306,6 @@ function makeStyles(t: Theme) {
     sub: { ...typeScale.caption, color: t.textTertiary },
     lead: { ...typeScale.caption, color: t.textTertiary },
     count: { ...typeScale.caption, color: t.textTertiary },
-    chevron: { fontSize: 20, color: t.textTertiary },
+    chevron: { ...typeScale.title, fontWeight: "400", color: t.textTertiary },
   });
 }

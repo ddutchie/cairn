@@ -85,7 +85,7 @@ function makeStyles(t: Theme) {
     body: { flex: 1, gap: 2 },
     name: { ...typeScale.control, color: t.textPrimary },
     meta: { ...typeScale.caption, color: t.textTertiary },
-    chevron: { fontSize: 20, color: t.textTertiary },
+    chevron: { ...typeScale.title, fontWeight: "400", color: t.textTertiary },
     foot: { ...typeScale.caption, color: t.textTertiary, marginTop: 14, marginLeft: 4 },
   });
 }

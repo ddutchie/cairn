@@ -49,7 +49,13 @@ export function PeopleMap({ people }: { people: readonly PersonSummary[] }) {
   const H = kind === "globe" ? Math.round(W * 0.9) : Math.round(W * 0.52);
   const [offset, setOffset] = useState(0);
   const [zoneKey, setZoneKey] = useState<string | null>(null);
-  const [view, setView] = useState<View2>({ k: 1, x: 0, y: 0 });
+  const [rawView, setView] = useState<View2>({ k: 1, x: 0, y: 0 });
+  // A resize (fold, unfold, rotate) changes the valid pan range; keep the zoom and pull the pan back inside it.
+  const view = useMemo<View2>(() => {
+    const x = clamp(rawView.x, W - W * rawView.k, 0);
+    const y = clamp(rawView.y, H - H * rawView.k, 0);
+    return x === rawView.x && y === rawView.y ? rawView : { ...rawView, x, y };
+  }, [rawView, W, H]);
   const [rotate, setRotate] = useState<[number, number] | null>(null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -136,8 +142,8 @@ export function PeopleMap({ people }: { people: readonly PersonSummary[] }) {
         <SegmentedControl
           style={s.kindSwitch}
           tintColor={t.accent}
-          fontStyle={{ color: t.textSecondary, fontSize: 13, fontWeight: "600" }}
-          activeFontStyle={{ color: t.accentFg, fontSize: 13, fontWeight: "600" }}
+          fontStyle={{ color: t.textSecondary, fontSize: typeScale.label.fontSize, fontWeight: "600" }}
+          activeFontStyle={{ color: t.accentFg, fontSize: typeScale.label.fontSize, fontWeight: "600" }}
           values={["Map", "Globe"]}
           selectedIndex={kind === "flat" ? 0 : 1}
           onChange={(e) => switchKind(e.nativeEvent.selectedSegmentIndex === 1 ? "globe" : "flat")}
@@ -184,6 +190,23 @@ export function PeopleMap({ people }: { people: readonly PersonSummary[] }) {
         <Text style={s.hint}>
           {`Shaded area is night; the sun marks where it is overhead. ${kind === "globe" ? "Drag to turn the globe." : "Pinch to zoom, drag to move."}`}
         </Text>
+      </View>
+
+      {/* The markers are drawn on a canvas, so the same choice is offered as buttons (also handy when markers overlap). */}
+      <View style={s.chips}>
+        {groups.map((g) => (
+          <PressableScale
+            key={g.key}
+            style={[s.chip, g.key === zoneKey && { borderColor: t.accent }]}
+            onPress={() => { haptics.selection(); setZoneKey(g.key); }}
+            accessibilityRole="button"
+            accessibilityState={{ selected: g.key === zoneKey }}
+            accessibilityLabel={`${g.label}, ${g.people.length} ${g.people.length === 1 ? "person" : "people"}, ${WORDS[availOf(g)]}`}
+          >
+            <View style={[s.dot, { backgroundColor: color(availOf(g)) }]} />
+            <Text style={s.chipText} numberOfLines={1}>{`${g.label} ${g.people.length}`}</Text>
+          </PressableScale>
+        ))}
       </View>
 
       <Text style={s.sectionTitle}>Who is there</Text>
@@ -248,7 +271,12 @@ function TimeSlider({ value, onChange, t }: { value: number; onChange: (v: numbe
   const frac = (value + 24) / 48;
   return (
     <GestureDetector gesture={gesture}>
-      <View style={{ flex: 1, height: 36, justifyContent: "center" }} onLayout={(e) => setW(e.nativeEvent.layout.width)} accessibilityRole="adjustable" accessibilityLabel="Hours from now" accessibilityValue={{ text: `${value} hours` }}>
+      <View style={{ flex: 1, height: 36, justifyContent: "center" }} onLayout={(e) => setW(e.nativeEvent.layout.width)} accessibilityRole="adjustable"
+        accessibilityLabel="Hours from now"
+        accessibilityValue={{ text: `${value} hours` }}
+        accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
+        onAccessibilityAction={(e) => onChange(clamp(value + (e.nativeEvent.actionName === "increment" ? 0.5 : -0.5), -24, 24))}
+      >
         <View style={{ height: 4, borderRadius: 2, backgroundColor: t.border }} />
         <View style={{ position: "absolute", left: Math.min(frac, 0.5) * w, width: Math.abs(frac - 0.5) * w, height: 4, borderRadius: 2, backgroundColor: t.accent }} />
         <View style={{ position: "absolute", left: frac * w - 12, width: 24, height: 24, borderRadius: 12, backgroundColor: t.surface, borderWidth: 2, borderColor: t.accent }} />
@@ -340,10 +368,13 @@ function makeStyles(t: Theme) {
     legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
     legendText: { ...typeScale.caption, color: t.textSecondary },
     dot: { width: 8, height: 8, borderRadius: 4 },
+    chips: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+    chip: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 16, borderWidth: 1, borderColor: t.border, backgroundColor: t.surface },
+    chipText: { ...typeScale.caption, color: t.textPrimary },
     statusRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
     status: { ...typeScale.label },
     person: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.borderSubtle },
     personName: { ...typeScale.control, color: t.textPrimary, flex: 1 },
-    chevron: { fontSize: 20, color: t.textTertiary },
+    chevron: { ...typeScale.title, fontWeight: "400", color: t.textTertiary },
   });
 }

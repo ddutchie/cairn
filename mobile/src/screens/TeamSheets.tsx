@@ -238,9 +238,12 @@ export function TeamMembersSheet({ visible, node, people, onClose, onSaved }: {
     setWasVisible(false);
   }
 
+  // A person can be in both lists (added here, then synced onto the team): show them once.
+  const base = new Set(node.group.people.map((p) => p.id));
+  const draft = added.filter((p) => !base.has(p.id));
   const members = [
     ...[...node.group.people].sort((a, b) => Number(b.id === leadId) - Number(a.id === leadId)),
-    ...added,
+    ...draft,
   ].filter((p) => !removed.has(p.id));
   const taken = new Set(members.map((p) => p.id));
   const options: Option[] = people.filter((p) => !taken.has(p.id)).map((p) => ({ value: p.id, label: p.name, note: p.team ? `On ${p.team}` : p.title }));
@@ -251,7 +254,7 @@ export function TeamMembersSheet({ visible, node, people, onClose, onSaved }: {
         if (removed.has(p.id)) endTeamMember(team.id, p.id);
         else if ((roles[p.id] ?? "").trim() !== (opened[p.id] ?? "").trim()) addTeamMember({ teamId: team.id, personId: p.id, role: (roles[p.id] ?? "").trim() || null });
       }
-      for (const p of added) if (!removed.has(p.id)) addTeamMember({ teamId: team.id, personId: p.id, role: (roles[p.id] ?? "").trim() || undefined });
+      for (const p of draft) if (!removed.has(p.id)) addTeamMember({ teamId: team.id, personId: p.id, role: (roles[p.id] ?? "").trim() || undefined });
     } catch (e) {
       Alert.alert("Couldn't save", e instanceof Error ? e.message : String(e));
       return;
@@ -267,7 +270,11 @@ export function TeamMembersSheet({ visible, node, people, onClose, onSaved }: {
           onBack={() => setAdding(false)}
           onPick={(id) => {
             const p = people.find((x) => x.id === id);
-            if (p) setAdded((a) => [...a, p]);
+            if (p) {
+              // Adding back someone just taken off undoes the removal instead of hiding the row.
+              setRemoved((r) => { const n = new Set(r); n.delete(p.id); return n; });
+              if (!base.has(p.id)) setAdded((a) => (a.some((x) => x.id === p.id) ? a : [...a, p]));
+            }
             setAdding(false);
           }}
         />
@@ -331,7 +338,7 @@ function makeStyles(t: Theme) {
     line: { ...typeScale.body, color: t.textPrimary },
     note: { ...typeScale.caption, color: t.textTertiary },
     empty: { ...typeScale.body, color: t.textTertiary },
-    chevron: { fontSize: 20, color: t.textTertiary },
+    chevron: { ...typeScale.title, fontWeight: "400", color: t.textTertiary },
     linkRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 },
     linkAdd: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8 },
     memberRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8 },

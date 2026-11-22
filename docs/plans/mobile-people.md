@@ -23,29 +23,29 @@ a phone.
 - Missing in the UI: teams, the grouping picker, "You" pinned first, team
   chips on a person, merging duplicates, former relationships.
 
-## Tab bar
+## Tab bar and routes (as built)
 
-Today: Projects, Calendar, Graph, Chat, Search (`role="search"`). iOS shows
-five tabs and folds the rest into "More". Plan: add **People** after Calendar
-(`sf="person.2.fill"`, `md="group"`), then check on the simulator whether the
-search-role tab counts toward the five.
+The six-tab proposal (a People tab beside Projects, Calendar, Chat, Search) is
+**superseded**: People lives in the **Workspace** tab, with Knowledge graph and
+Usage, and the pinned tool can float above the tab bar (or sit in the side rail
+on a wide window).
 
-- If Search is drawn apart from the bar (iOS 26 style) and doesn't count: five
-  tabs, done.
-- If it counts: Graph is the least-used and drops into "More", or moves into
-  Projects as a view. Decide after seeing it, not before.
+Routes live under `app/(tabs)/workspace/`, with their own stack `_layout.tsx`:
 
-Routes: move `app/people/{index,[id]}.tsx` into `app/(tabs)/people/` with its
-own `_layout.tsx` stack (like the other tabs) and add `team/[id].tsx`. Route
-groups don't change URLs, so every existing `router.push("/people/[id]")` (chat
-mentions, Today, notes) keeps working. Remove the two `Stack.Screen` entries in
-`app/_layout.tsx`.
+- `people/index.tsx` (list, Teams, Map, Rhythm, Zones)
+- `people/[id].tsx` (person page)
+- `people/team/[id].tsx` (team page)
+
+Callers use the Workspace URLs: `router.push("/workspace/people/[id]")` and
+`"/workspace/people/team/[id]"` (chat mentions, Today, notes, the map, lists).
+The old root `app/people` routes and their two `Stack.Screen` entries in
+`app/_layout.tsx` are gone.
 
 ## PR 1: tab, list, Teams, team editing
 
 Order of work, one commit per step:
 
-1. **Tab and routes** (above).
+1. **Workspace tab and routes** (above).
 2. **List parity.** Top switcher People | Teams (the shared `SegmentedControl`;
    more entries join it in PR 2). A grouping menu (relationship, team,
    location with local time, last met, name) on `groupPeopleBy`, remembered per

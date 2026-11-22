@@ -128,8 +128,8 @@ function makeStyles(t: Theme) {
     nameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
     name: { ...typeScale.control, color: t.textPrimary, flexShrink: 1 },
     badge: { paddingHorizontal: 7, paddingVertical: 1, borderRadius: 8, backgroundColor: t.surface2, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border },
-    badgeText: { ...typeScale.caption, fontSize: 11, color: t.textSecondary },
+    badgeText: { ...typeScale.micro, color: t.textSecondary },
     meta: { ...typeScale.caption, color: t.textTertiary },
-    chevron: { fontSize: 20, color: t.textTertiary },
+    chevron: { ...typeScale.title, fontWeight: "400", color: t.textTertiary },
   });
 }

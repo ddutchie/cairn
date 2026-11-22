@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, SectionList, RefreshControl, StyleSheet } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { ScreenChrome } from "@/components/screen-chrome";
@@ -49,6 +49,12 @@ export function PeopleScreen() {
   const [now, setNow] = useState(() => new Date());
   const [mode, setMode] = useState<"people" | "teams" | "map" | "rhythm" | "zones">("people");
   const [newTeam, setNewTeam] = useState(false);
+  // Zones reads the clock, so it ticks while that view is open (the others only reload on focus or sync).
+  useEffect(() => {
+    if (mode !== "zones") return;
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, [mode]);
   const setGrouping = (g: ListGrouping) => {
     setGroupingState(g);
     saveGrouping(g);
@@ -93,8 +99,8 @@ export function PeopleScreen() {
       // Fixed height only (a flex:1 basis collapses the native view); see ProjectViewSwitcher.
       style={s.switcher}
       tintColor={t.accent}
-      fontStyle={{ color: t.textSecondary, fontSize: 14, fontWeight: "600" }}
-      activeFontStyle={{ color: t.accentFg, fontSize: 14, fontWeight: "600" }}
+      fontStyle={{ color: t.textSecondary, fontSize: typeScale.control.fontSize, fontWeight: "600" }}
+      activeFontStyle={{ color: t.accentFg, fontSize: typeScale.control.fontSize, fontWeight: "600" }}
       values={SEGMENTS.map((x) => x.label)}
       selectedIndex={SEGMENTS.findIndex((x) => x.mode === mode)}
       onChange={(e) => setMode(SEGMENTS[e.nativeEvent.selectedSegmentIndex]?.mode ?? "people")}
@@ -204,6 +210,6 @@ function makeStyles(t: Theme) {
     meta: { ...typeScale.caption, color: t.textTertiary },
     actions: { flexDirection: "row", gap: 14 },
     action: { ...typeScale.caption, fontWeight: "600" },
-    chevron: { fontSize: 20, color: t.textTertiary },
+    chevron: { ...typeScale.title, fontWeight: "400", color: t.textTertiary },
   });
 }
