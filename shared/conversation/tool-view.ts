@@ -209,12 +209,12 @@ const updateNotes: View = (args, out) => {
   ];
 };
 
-const editNote: View = (args) => {
+const editNote: View = (args, _out, ctx) => {
   // Same test as the executor: any non-empty oldString (even whitespace) is a patch.
   const removed = typeof args.oldString === "string" && args.oldString.length > 0 ? args.oldString : undefined;
   const added = typeof args.newString === "string" && args.newString.length > 0 ? args.newString : undefined;
   if (!added && !removed) return null;
-  return [panel(removed ? "Edit" : "Appended", [diffBlock(removed, added)])];
+  return [panel(removed ? (ctx.pending ? "Will edit" : "Edit") : (ctx.pending ? "Will append" : "Appended"), [diffBlock(removed, added)])];
 };
 
 const upsertish: View = (args, out) => {
@@ -232,27 +232,32 @@ const upsertish: View = (args, out) => {
   return [panel("Details", [rowsBlock(rows)])];
 };
 
-const ideaFlow: View = (args, out) => {
+const ideaFlow: View = (args, out, ctx) => {
   const ops = Array.isArray(args.ops) ? args.ops.filter((o): o is Rec => !!asRec(o)) : [];
   if (ops.length === 0) return null;
-  const count = (op: string) => ops.filter((o) => o.op === op).length;
-  const parts = [
-    [count("add_node"), "node added"], [count("update_node"), "node updated"], [count("delete_node"), "node removed"],
-    [count("add_edge"), "connection added"], [count("delete_edge"), "connection removed"],
-  ].filter(([n]) => (n as number) > 0).map(([n, label]) => `${n} ${label}`.replace(/(\d+) (\w+) (\w+)/, (_m, c, a, b) => `${c} ${Number(c) === 1 ? a : `${a}s`} ${b}`));
+  // Once it has run, count what the executor applied (a rejected op carries an `error`); before that, what was asked for.
+  const outcomes = Array.isArray(out?.results) && out.results.length > 0 ? (out.results as unknown[]).map(asRec) : undefined;
+  const count = (op: string) => outcomes
+    ? outcomes.filter((r) => r?.op === op && !r?.error).length
+    : ops.filter((o) => o.op === op).length;
+  const done = [
+    [count("add_node"), "node", "added", "add"], [count("update_node"), "node", "updated", "update"], [count("delete_node"), "node", "removed", "remove"],
+    [count("add_edge"), "connection", "added", "add"], [count("delete_edge"), "connection", "removed", "remove"],
+  ] as const;
+  const parts = done.filter(([n]) => n > 0).map(([n, noun, past, future]) => `${n} ${n === 1 ? noun : `${noun}s`} ${ctx.pending ? `to ${future}` : past}`);
   const labels = ops.flatMap((o) => {
     const data = asRec(o.data);
     const l = str(data?.label) ?? str(data?.title) ?? str(data?.text);
     return o.op === "add_node" && l ? [l] : [];
   });
-  const failed = Array.isArray(out?.results) ? (out!.results as unknown[]).filter((r) => asRec(r)?.error).length : 0;
-  return [panel("Idea flow", [
-    { type: "text", text: `${parts.join(" · ")}${failed > 0 ? ` · ${failed} failed` : ""}` },
+  const failed = outcomes ? outcomes.filter((r) => r?.error).length : 0;
+  return [panel(ctx.pending ? "Will change idea flow" : "Idea flow", [
+    { type: "text", text: `${parts.join(" · ")}${failed > 0 ? `${parts.length > 0 ? " · " : ""}${failed} failed` : ""}` },
     ...(labels.length > 0 ? [{ type: "chips" as const, items: labels.slice(0, 8) }] : []),
   ])];
 };
 
-const progress: View = (args) => {
+const progress: View = (args, _out, ctx) => {
   const rows: Array<[string, string]> = [];
   if (args.action === "claim") {
     // A claim ignores message and moveTo, so they are not shown as if they happened.
@@ -264,7 +269,7 @@ const progress: View = (args) => {
     if (moveTo) rows.push(["moved to", moveTo.replace("_", " ")]);
   }
   if (rows.length === 0) return null;
-  return [panel("Progress", [rowsBlock(rows)])];
+  return [panel(ctx.pending ? "Will log progress" : "Progress", [rowsBlock(rows)])];
 };
 
 function listOf(out: Rec | undefined): unknown[] | undefined {
@@ -472,7 +477,7 @@ export function cairnToolView(tc: ToolCallInput, opts: { pending?: boolean } = {
   try {
     // Same redaction as the Raw call panel, so a secret in an argument is masked here too.
     const args = (redactValue(tc.args ?? {}) as Rec | undefined) ?? {};
-    const panels = view(args, out, { pending: opts.pending === true });
+    const panels = view(args, out && (redactValue(out) as Rec), { pending: opts.pending === true });
     return panels && panels.length > 0 ? panels : null;
   } catch {
     return null;

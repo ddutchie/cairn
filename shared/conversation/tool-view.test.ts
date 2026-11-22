@@ -80,6 +80,21 @@ describe("cairnToolView", () => {
     expect(panels?.[0].blocks[0]).toMatchObject({ text: "2 nodes added · 1 connection removed" });
     expect(panels?.[0].blocks[1]).toEqual({ type: "chips", items: ["A", "B"] });
   });
+  it("counts applied idea-flow ops, not requested ones", () => {
+    const ops = [{ op: "delete_node" }, { op: "add_node", data: { label: "A" } }];
+    const panels = cairnToolView(call("edit_idea_flow", { ops }, { results: [{ op: "delete_node", error: "nope" }, { op: "add_node", id: "x" }] }));
+    expect(panels?.[0].blocks[0]).toMatchObject({ text: "1 node added · 1 failed" });
+  });
+  it("uses future wording while a mutation is pending", () => {
+    expect(cairnToolView({ name: "edit_note", args: { noteId: "n", newString: "b" }, ok: true }, { pending: true })?.[0].label).toBe("Will append");
+    expect(cairnToolView({ name: "task_progress", args: { action: "log", message: "m" }, ok: true }, { pending: true })?.[0].label).toBe("Will log progress");
+    const flow = cairnToolView({ name: "edit_idea_flow", args: { ops: [{ op: "add_node" }, { op: "delete_edge" }] }, ok: true }, { pending: true });
+    expect(flow?.[0]).toMatchObject({ label: "Will change idea flow", blocks: [{ text: "1 node to add · 1 connection to remove" }] });
+  });
+  it("masks secrets in the result too", () => {
+    const panels = cairnToolView(call("update_tasks", { cardIds: ["1"] }, { changes: [{ id: "1", title: "A", field: "note", to: "password=hunter2secret" }] }));
+    expect(JSON.stringify(panels)).not.toContain("hunter2secret");
+  });
   it("hides a failed call unless it reports what applied", () => {
     expect(cairnToolView(call("update_tasks", { cardIds: ["1"] }, { error: "boom" }, false))).toBeNull();
     expect(cairnToolView(call("update_tasks", { cardIds: ["1"] }, { error: "x", changes: [{ id: "1", title: "A", field: "due", to: "d" }] }, false))).not.toBeNull();
