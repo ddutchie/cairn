@@ -8,7 +8,6 @@ import {
   AppState,
   useWindowDimensions,
   Platform,
-  ActionSheetIOS,
 } from "react-native";
 import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useKeyboardState, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
@@ -653,32 +652,20 @@ export default function ChatScreen() {
           Icon: Sparkles,
           value: personalityName ?? "None",
           more: true,
-          // iOS: the system's action sheet lists them (the panel has closed by then). No
-          // catalogue yet, or Android: AI settings lists and fetches them.
-          onPress: () => {
-            if (Platform.OS !== "ios" || personalities.length === 0) {
-              router.push("/settings/ai");
-              return;
-            }
-            const options = [...personalities.map((p) => p.definition.name), "None", "Cancel"];
-            const current = personalities.findIndex((p) => p.id === personalityId);
-            ActionSheetIOS.showActionSheetWithOptions(
-              {
-                title: "Personality",
-                options,
-                cancelButtonIndex: options.length - 1,
-                // Shows which one is on; "None" when no personality is picked.
-                disabledButtonIndices: [current >= 0 ? current : options.length - 2],
-              },
-              (i) => {
-                if (i === options.length - 1) return;
-                const id = i === options.length - 2 ? "" : personalities[i].id;
-                haptics.selection();
-                setChatPersonalityId(id);
-                setPersonalityId(id);
-              },
-            );
-          },
+          // Picked inside the `+` panel. No catalogue yet: AI settings fetches and lists them.
+          ...(personalities.length > 0
+            ? {
+                choices: [
+                  ...personalities.map((p) => ({ key: p.id, label: p.definition.name, selected: p.id === personalityId })),
+                  { key: "", label: "None", selected: !personalityName },
+                ],
+                onChoose: (id: string) => {
+                  haptics.selection();
+                  setChatPersonalityId(id);
+                  setPersonalityId(id);
+                },
+              }
+            : { onPress: () => router.push("/settings/ai") }),
         },
         { key: "tools", label: "Tools & services", Icon: Wrench, more: true, onPress: () => router.push("/settings/tools") },
       ],

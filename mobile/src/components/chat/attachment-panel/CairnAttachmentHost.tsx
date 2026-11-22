@@ -281,6 +281,12 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
               row.onPress?.();
             }
           : undefined,
+        onChoose: row.onChoose
+          ? (key: string) => {
+              dismiss();
+              row.onChoose?.(key);
+            }
+          : undefined,
       })),
     }));
     return [attach, ...wrapped];

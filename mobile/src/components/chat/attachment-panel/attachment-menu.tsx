@@ -1,7 +1,8 @@
 import { Image } from "expo-image";
-import { Fragment, useRef } from "react";
+import { Fragment, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { ChevronRight, type LucideIcon } from "lucide-react-native";
+import Animated, { FadeIn } from "react-native-reanimated";
+import { Check, ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react-native";
 import { MENU, menuThumbSize, type Frame } from "./constants";
 import { useTheme, withAlpha, useIsDark } from "@/theme";
 import { LIQUID_GLASS } from "./glass";
@@ -20,12 +21,22 @@ export interface MenuRow {
   more?: boolean;
   destructive?: boolean;
   disabled?: boolean;
-  /**
-   * Tap. The panel closes first. Native SwiftUI views (menus) don't draw inside the
-   * panel, which sits in its own window over the keyboard, so a row offering choices
-   * opens its picker from here, after the panel has gone.
-   */
+  /** Tap. The panel closes first. Ignored when the row has `choices`. */
   onPress?: () => void;
+  /**
+   * Options picked inside the panel: tapping the row swaps the panel's rows for this
+   * list, with a back row on top. (Native SwiftUI menus don't draw in the panel, which
+   * sits in its own window over the keyboard.)
+   */
+  choices?: MenuChoice[];
+  /** A choice was picked. The panel closes first. */
+  onChoose?: (key: string) => void;
+}
+
+export interface MenuChoice {
+  key: string;
+  label: string;
+  selected?: boolean;
 }
 
 export interface MenuGroup {
@@ -65,6 +76,9 @@ export function AttachmentMenu({
   const thumb = menuThumbSize(width);
   const scrollY = useRef(0);
   const shown = groups.filter((g) => g.rows.length > 0);
+  // The row whose choices are showing in place of the groups (null: the groups).
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const sub = openKey ? shown.flatMap((g) => g.rows).find((r) => r.key === openKey && r.choices) : undefined;
 
   const rowBody = (row: MenuRow) => {
     const color = row.destructive ? t.danger : fg;
@@ -92,14 +106,52 @@ export function AttachmentMenu({
         accessibilityLabel={row.value ? `${row.label}: ${row.value}` : row.label}
         accessibilityState={{ disabled: !!row.disabled }}
         disabled={row.disabled}
-        onPress={row.onPress}
+        onPress={row.choices ? () => setOpenKey(row.key) : row.onPress}
       >
         {rowBody(row)}
       </Pressable>
     );
   };
 
-  const content = (
+  const separator = (key: string) => (
+    <View key={key} style={styles.gap}>
+      <View style={[styles.hairline, { backgroundColor: hairline }]} />
+    </View>
+  );
+
+  // A row's choices: back row (the row's own name), then one row per choice, the
+  // current one ticked where the icon sits.
+  const subContent = sub ? (
+    <Animated.View key={`sub-${sub.key}`} entering={FadeIn.duration(160)}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Back from ${sub.label}`} onPress={() => setOpenKey(null)}>
+        <View style={[styles.row, { width }]}>
+          <ChevronLeft size={MENU.iconSize} color={fg} strokeWidth={1.75} />
+          <Text style={[styles.label, styles.subTitle, { color: fg }]} numberOfLines={1}>
+            {sub.label}
+          </Text>
+        </View>
+      </Pressable>
+      {separator("sub-sep")}
+      {(sub.choices ?? []).map((c) => (
+        <Pressable
+          key={c.key}
+          accessibilityRole="button"
+          accessibilityLabel={c.label}
+          accessibilityState={{ selected: !!c.selected }}
+          onPress={() => sub.onChoose?.(c.key)}
+        >
+          <View style={[styles.row, { width }]}>
+            {c.selected ? <Check size={MENU.iconSize} color={fg} strokeWidth={2} /> : <View style={styles.iconSpace} />}
+            <Text style={[styles.label, { color: fg }]} numberOfLines={1}>
+              {c.label}
+            </Text>
+          </View>
+        </Pressable>
+      ))}
+    </Animated.View>
+  ) : null;
+
+  const content = subContent ?? (
     <>
       {recent ? (
         <View style={[styles.strip, { height: thumb, marginTop: MENU.stripInset - MENU.paddingVertical, marginBottom: MENU.stripBelow }]}>
@@ -130,11 +182,7 @@ export function AttachmentMenu({
       ) : null}
       {shown.map((group, gi) => (
         <Fragment key={group.key}>
-          {gi > 0 ? (
-            <View style={styles.gap}>
-              <View style={[styles.hairline, { backgroundColor: hairline }]} />
-            </View>
-          ) : null}
+          {gi > 0 ? separator(`sep-${group.key}`) : null}
           {group.rows.map(renderRow)}
         </Fragment>
       ))}
@@ -143,7 +191,7 @@ export function AttachmentMenu({
 
   return (
     <View style={[styles.root, { width, height }]}>
-      {scrolls ? (
+      {scrolls || sub ? (
         <ScrollView
           style={StyleSheet.absoluteFill}
           contentContainerStyle={styles.scrollContent}
@@ -176,6 +224,8 @@ const styles = StyleSheet.create({
     paddingRight: MENU.iconInset - 4,
   },
   disabled: { opacity: 0.4 },
+  iconSpace: { width: MENU.iconSize, height: MENU.iconSize },
+  subTitle: { fontWeight: "600" },
   label: {
     flex: 1,
     marginLeft: MENU.labelGap,
