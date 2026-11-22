@@ -1,6 +1,6 @@
 import { CardDetailScreen } from "@/screens/CardDetailScreen";
 
-// Projects-tab task detail — nested so the tab bar stays visible.
+// One task detail, mounted in every tab's stack (array group), like note/[id].
 export default function Screen() {
   return <CardDetailScreen />;
 }

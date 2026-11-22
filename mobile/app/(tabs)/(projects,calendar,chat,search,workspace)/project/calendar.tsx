@@ -1,6 +1,6 @@
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 
-// Projects-tab per-project calendar — nested so the tab bar stays visible.
+// One per-project calendar, mounted in every tab's stack (array group).
 export default function Screen() {
   return <ProjectCalendarScreen />;
 }

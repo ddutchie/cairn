@@ -1,6 +1,6 @@
 # Mobile routing analysis
 
-Status: analysis only, no code changed. Written to drive the cleanup in PR 335 once the Workspace tab landed (it removed the reasons several routes exist).
+Status: **built** (PR 335). Sections 1 to 5 describe the routing as it was and the reasoning; section 8 records what shipped and what is left to check. Written to drive the cleanup once the Workspace tab landed (it removed the reasons several routes exist).
 
 Scope: `mobile/app/` (expo-router file routes), the three navigators that host them (root `Stack`, `NativeTabs`, per-tab `TabStack`), and every `router.push/replace/navigate` call in `mobile/src` and `mobile/app`.
 
@@ -263,3 +263,20 @@ The open questions are settled (also captured in the Cairn note "Mobile routing 
 3. Settings consolidation plus the AI hub (largest user-visible change).
 4. Shared detail routes (largest structural change; do last, behind its own checks on iPhone, Duo, iPad).
 5. Remove dead params, stubs and the `nested` flag.
+
+## 8. What shipped
+
+| Step | Result | Commit |
+|---|---|---|
+| 1. Startup flash | The `index` redirect route is declared with `headerShown: false` | `a9faca0e` |
+| 2. Undeclared routes | `restore` declared (settings ones later folded into the modal) | `e5f83cb7` |
+| 3. Settings | `/settings` is one modal with its own nested stack: hub, AI, Provider & model, Providers, Tools, Appearance, Sync. Workspace, the Projects menu and gear, Chat and the sync badge open it; the `workspace/*` stubs, the `settingsBase` check and the root `sync` route are gone. Usage is a Workspace-stack screen | `5dc34ee9` |
+| 3b. AI hub | No Setup/Tuning segment. `/settings/ai` is live tuning plus a Provider & model row and a Tools row; `/settings/model` holds provider, key and model and saves on Save. The Usage row was dropped (Usage lives in Workspace) | `92d4b1f0` |
+| 3c. Duo safe zone | Hub and Providers wrapped in `ModalSafeView` | `ff50cfb0` |
+| 4. Detail routes | Tabs are route groups (`(projects)`, `(calendar)`, `(chat)`, `(search)`, `(workspace)`); `note/[id]`, `card/[id]`, `project/[id]`, `project/calendar` exist once under `(tabs)/(projects,calendar,chat,search,workspace)/`. A push stays in the current tab, so the tab bar stays. Root copies, `nested` flags and most `back` params are gone (the new-task composer keeps `back` as its modal back label) | `1e1f63ec` |
+
+The spike in step 4 answered the open question: `router.push` of a shared href stays inside the current tab's stack with `NativeTabs`, so the per-tab-stub fallback was not needed.
+
+Not yet checked on a device: opening a note from Search, link taps from Graph, People and Chat, the Duo (including the settings modal against the side rail), the iPad Projects tab bar, and back-button titles.
+
+Follow-ups: Chat's "Configure" button (no provider) opens the AI hub and probably wants `/settings/model`; temperature and max steps now appear in both the chat chip panel and the AI hub (same stored values).

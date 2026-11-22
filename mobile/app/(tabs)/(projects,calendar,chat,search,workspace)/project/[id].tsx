@@ -1,7 +1,7 @@
 import { ProjectScreen } from "@/screens/ProjectScreen";
 
-// Projects-tab project detail — nested in the tab stack so the native tab bar
-// stays visible and re-tapping the Projects tab pops back to the project list.
+// One project detail, mounted in every tab's stack (array group), so the native
+// tab bar stays visible; re-tapping the Projects tab pops back to its list.
 export default function Screen() {
   return <ProjectScreen />;
 }
