@@ -29,10 +29,10 @@ Legend: **Yes** = same job done; **Partial** = some of it; **No** = not on mobil
 | List (grouping, filter, search) | Yes: five groupings, search. No "Everyone / only this group" filter | Low: add the filter |
 | Teams | Yes: nested list, team page, edit | done |
 | Map (map and globe, time slider) | Yes | done |
-| Time zones | Partial: the map shows local time per marker; no zone ruler | Medium: a "who is online now" strip fits a phone well |
-| Org chart | No | Medium: a vertical, collapsible tree of teams works on a phone (the Teams list already nests) |
+| Time zones | Yes: Zones segment, grouped working / early or late / asleep, with shared hours | done |
+| Org chart | Partial: the Teams list is the nested team tree. The reporting line of people (`manager_of` edges) is not shown; `src/lib/people/network.ts` has to move to `shared/` and the edge query to the phone first | Medium |
 | Relationships | No | Low: dense graph; the person page already lists relationships |
-| Rhythm (cadence over time) | No | Medium: "who am I overdue to meet" as a list view, not a chart. `shared/people/rhythm` already runs on the phone |
+| Rhythm (cadence over time) | Yes: Rhythm segment as an overdue / due soon / on track list | done |
 | Bridges (people who connect teams) | No | Low |
 | Find people in notes (migration panel) | No | Low: desktop job |
 | Add person | *(unchecked)* people appear from notes or the assistant; no add button on the list | Medium |
@@ -82,7 +82,7 @@ Tool gaps (desktop tool, absent on mobile): `get_today`, `task_progress`, `upser
 ## Suggested order
 
 1. Today screen and the `get_today` tool: biggest gap, best fit for a phone.
-2. People: Rhythm as an "overdue" list, an Org chart tree, and a time-zone strip.
+2. People: a reporting-line Org chart (needs `network.ts` moved to `shared/`).
 3. Settings: Tags, Data (storage and reset), About.
 4. Tools: `task_progress`, `upsert_project`.
 5. Read-only Idea Flow and one or two Insights charts, if there is demand.

@@ -5,6 +5,8 @@ import { ScreenChrome } from "@/components/screen-chrome";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { NewTeamSheet } from "@/screens/NewTeamSheet";
 import { TeamsList } from "@/screens/TeamsList";
+import { RhythmList } from "./RhythmList";
+import { ZonesList } from "./ZonesList";
 import { PeopleMap } from "@/screens/PeopleMap";
 import { PressableScale } from "@/components/PressableScale";
 import { SearchField } from "@/components/SearchField";
@@ -27,6 +29,14 @@ import type { PersonSummary } from "@cairn/shared/types/people-view";
  * a confirm or a dismiss. Dismissed people are remembered so they don't come
  * back. A row opens the person page.
  */
+const SEGMENTS = [
+  { mode: "people", label: "People" },
+  { mode: "teams", label: "Teams" },
+  { mode: "map", label: "Map" },
+  { mode: "rhythm", label: "Rhythm" },
+  { mode: "zones", label: "Zones" },
+] as const;
+
 export function PeopleScreen() {
   const t = useTheme();
   const s = useMemo(() => makeStyles(t), [t]);
@@ -37,7 +47,7 @@ export function PeopleScreen() {
   const [grouping, setGroupingState] = useState<ListGrouping>(loadGrouping);
   // Location and Last met read the clock, so the grouping is redone when the screen reloads.
   const [now, setNow] = useState(() => new Date());
-  const [mode, setMode] = useState<"people" | "teams" | "map">("people");
+  const [mode, setMode] = useState<"people" | "teams" | "map" | "rhythm" | "zones">("people");
   const [newTeam, setNewTeam] = useState(false);
   const setGrouping = (g: ListGrouping) => {
     setGroupingState(g);
@@ -85,9 +95,9 @@ export function PeopleScreen() {
       tintColor={t.accent}
       fontStyle={{ color: t.textSecondary, fontSize: 14, fontWeight: "600" }}
       activeFontStyle={{ color: t.accentFg, fontSize: 14, fontWeight: "600" }}
-      values={["People", "Teams", "Map"]}
-      selectedIndex={mode === "people" ? 0 : mode === "teams" ? 1 : 2}
-      onChange={(e) => { const i = e.nativeEvent.selectedSegmentIndex; setMode(i === 1 ? "teams" : i === 2 ? "map" : "people"); }}
+      values={SEGMENTS.map((x) => x.label)}
+      selectedIndex={SEGMENTS.findIndex((x) => x.mode === mode)}
+      onChange={(e) => setMode(SEGMENTS[e.nativeEvent.selectedSegmentIndex]?.mode ?? "people")}
     />
   );
 
@@ -95,7 +105,7 @@ export function PeopleScreen() {
     <View style={s.root}>
       <ScreenChrome
         title="People"
-        right={mode === "map" ? [] : mode === "teams"
+        right={mode === "map" || mode === "rhythm" || mode === "zones" ? [] : mode === "teams"
           ? [{ kind: "button", key: "new-team", label: "New team", icon: ICON_ADD, onPress: toolbarPress(() => setNewTeam(true)) }]
           : [{
             kind: "menu",
@@ -107,7 +117,7 @@ export function PeopleScreen() {
       />
       {/* One switcher above every segment, outside the scroll views, so toggling never moves it. */}
       <View style={s.bar}>{switcher}</View>
-      {mode === "map" ? <PeopleMap people={people.filter((p) => p.status === "confirmed")} /> : mode === "teams" ? <TeamsList /> : (
+      {mode === "map" ? <PeopleMap people={people.filter((p) => p.status === "confirmed")} /> : mode === "rhythm" ? <RhythmList people={people.filter((p) => p.status === "confirmed")} now={now} /> : mode === "zones" ? <ZonesList people={people.filter((p) => p.status === "confirmed")} now={now} /> : mode === "teams" ? <TeamsList /> : (
       <SectionList
         sections={sections}
         keyExtractor={(p, i) => `${p.id}-${i}`}

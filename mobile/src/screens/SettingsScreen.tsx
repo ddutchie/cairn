@@ -1,9 +1,10 @@
 import { useMemo, type ReactNode } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { Palette, RefreshCw, Sparkles, Wrench } from "lucide-react-native";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
+import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 type Row = { key: string; title: string; line: string; href: Href; icon: typeof Palette };
@@ -22,10 +23,11 @@ export function SettingsScreen() {
   const t = useTheme();
   const s = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
+  const wide = useWindowDimensions().width >= WIDE_MIN_WIDTH;
   const renderRow = (r: Row): ReactNode => {
     const Icon = r.icon;
     return (
-      <PressableScale key={r.key} style={s.row} onPress={() => router.push(r.href)} accessibilityLabel={`${r.title}, ${r.line}`}>
+      <PressableScale key={r.key} style={[s.row, wide && s.rowWide]} onPress={() => router.push(r.href)} accessibilityLabel={`${r.title}, ${r.line}`}>
         <View style={s.iconWrap}><Icon size={18} color={t.accent} /></View>
         <View style={s.body}>
           <Text style={s.title} numberOfLines={1}>{r.title}</Text>
@@ -41,7 +43,7 @@ export function SettingsScreen() {
         {GROUPS.map((g) => (
           <View key={g.title}>
             <Text style={s.section}>{g.title}</Text>
-            {g.rows.map(renderRow)}
+            <View style={wide ? s.grid : undefined}>{g.rows.map(renderRow)}</View>
           </View>
         ))}
       </ScrollView>
@@ -52,6 +54,8 @@ export function SettingsScreen() {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     list: { padding: 12, paddingBottom: 120 },
+    grid: { flexDirection: "row", flexWrap: "wrap", columnGap: 6 },
+    rowWide: { width: "49.5%" },
     section: { ...typeScale.label, color: t.textTertiary, marginTop: 14, marginBottom: 8, marginLeft: 4 },
     row: {
       flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 14,
