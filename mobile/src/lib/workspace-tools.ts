@@ -1,4 +1,6 @@
 import { useSyncExternalStore } from "react";
+import { useWindowDimensions } from "react-native";
+import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { usePathname, type Href } from "expo-router";
 import { getMeta, setMeta } from "@/db";
 import { loadPeople, loadTeams } from "@/db/people";
@@ -86,7 +88,11 @@ export function useAccessoryVisible(): boolean {
   const inWorkspace = pathname === "/workspace" || pathname.startsWith("/workspace/");
   // Chat has its own composer at the bottom, so the accessory stays out of it.
   const inChat = pathname === "/chat" || pathname.startsWith("/chat/");
-  return !inWorkspace && !inChat;
+  // The system reserves the accessory's strip across the whole window, so on a wide window
+  // (the unfolded Duo, two columns) it would leave an empty band under both. The tool is still
+  // one tap away in the Workspace tab there.
+  const wide = useWindowDimensions().width >= WIDE_MIN_WIDTH;
+  return !inWorkspace && !inChat && !wide;
 }
 
 export function useAccessoryInset(): number {
