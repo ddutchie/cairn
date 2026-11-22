@@ -70,6 +70,7 @@ export function ProjectsTreeSidebar({
   onWorkspaceSwitched,
   onOpenNote,
   refreshKey,
+  actionsInDetail = false,
 }: {
   /** Active workspace name (doubles as the switcher label). */
   title: string;
@@ -84,6 +85,8 @@ export function ProjectsTreeSidebar({
    * on focus / sync.
    */
   refreshKey?: number;
+  /** Capture and the pinned tool live in the detail column's bar (the Duo side rail) instead. */
+  actionsInDetail?: boolean;
 }) {
   const t = useTheme();
   const router = useRouter();
@@ -263,7 +266,7 @@ export function ProjectsTreeSidebar({
             single "..." button above the 5-tab pill. Roomy layouts (portrait,
             unfolded, regular iPhones) keep all three buttons inline. Only the
             placement differs — each button is written once. */}
-        {pinnedTool ? (
+        {pinnedTool && !actionsInDetail ? (
           <ToolbarItem {...trailingItem("high")}>
             <Button
               label={WORKSPACE_TOOLS[pinnedTool].title}
@@ -275,7 +278,7 @@ export function ProjectsTreeSidebar({
             />
           </ToolbarItem>
         ) : null}
-        <ToolbarItem {...trailingItem("high")}>
+        {actionsInDetail ? null : <ToolbarItem {...trailingItem("high")}>
           <Button
             label="Capture"
             systemImage="square.and.pencil"
@@ -284,7 +287,7 @@ export function ProjectsTreeSidebar({
               router.push("/capture");
             }}
           />
-        </ToolbarItem>
+        </ToolbarItem>}
       </Toolbar.Content>
     </Toolbar>
   );
