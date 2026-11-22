@@ -15,7 +15,6 @@ export function makeAiSettingsStyles(t: Theme) {
     body: { flex: 1 },
     bodyContent: { padding: 18, gap: 8 },
     // Native segmented-control tab bar (3-tab AI settings).
-    tabBar: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 2 },
     // Chat-theme rows (Tuning tab) — reuse the nav-row card look.
     list: { gap: 8 },
     themeRowActive: { borderColor: t.accent, backgroundColor: t.accentDim },

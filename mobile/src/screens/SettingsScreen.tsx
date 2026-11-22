@@ -1,7 +1,8 @@
 import { useMemo, type ReactNode } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
-import { Palette, RefreshCw, Sparkles, Wrench } from "lucide-react-native";
+import Constants from "expo-constants";
+import { Info, Palette, RefreshCw, Sparkles, Wrench } from "lucide-react-native";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
@@ -22,6 +23,7 @@ export function SettingsScreen() {
   const t = useTheme();
   const s = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
+  const version = Constants.expoConfig?.version ?? "";
   const renderRow = (r: Row): ReactNode => {
     const Icon = r.icon;
     return (
@@ -44,6 +46,15 @@ export function SettingsScreen() {
             {g.rows.map(renderRow)}
           </View>
         ))}
+        {/* About: the version, as on desktop's About page (no tour or what's new on the phone yet). */}
+        <Text style={s.section}>About</Text>
+        <View style={s.row} accessible accessibilityLabel={`Cairn, version ${version}`}>
+          <View style={s.iconWrap}><Info size={18} color={t.accent} /></View>
+          <View style={s.body}>
+            <Text style={s.title} numberOfLines={1}>Cairn</Text>
+            <Text style={s.line} numberOfLines={1}>Version {version}</Text>
+          </View>
+        </View>
       </ScrollView>
     </TabScreen>
   );

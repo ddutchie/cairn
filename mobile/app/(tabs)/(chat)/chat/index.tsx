@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useKeyboardState, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
-import { Stack, useRouter, useFocusEffect } from "expo-router";
+import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useSyncStatus } from "@/sync/useSyncStatus";
 import { Check, Cpu, Repeat, Server, Settings, Settings2, Sparkles, Star, Thermometer, Trash2, Wrench } from "lucide-react-native";
@@ -1030,7 +1030,7 @@ export default function ChatScreen() {
               pinned
             >
               {!configured ? (
-                <Pressable style={styles.configureBtn} onPress={() => router.push("/settings/ai")}>
+                <Pressable style={styles.configureBtn} onPress={() => router.push("/settings/model" as Href)}>
                   <Settings2 size={14} color={t.accentFg} />
                   <Text style={styles.configureBtnText}>Set up AI</Text>
                 </Pressable>

@@ -7,6 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
   StyleSheet,
+  Platform,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SegmentedControl } from "@/components/SegmentedControl";
@@ -596,6 +597,8 @@ export function AiSettingsForm({ onClose, section = "hub" }: { onClose: () => vo
   // OpenAI fields show when OpenAI is the effective selection: no chooser (only
   // OpenAI available) or the user picked it explicitly.
   const usingOpenAI = !showChooser || pref === "openai";
+  // Temperature and max steps live in the chat's model panel when it has a model chip (iOS, OpenAI-compatible).
+  const tuningInHub = Platform.OS !== "ios" || !usingOpenAI;
 
   // Case-insensitive filter over the fetched model ids. The selected model is
   // always kept in view (pinned first) even if it doesn't match the query.
@@ -1147,9 +1150,11 @@ export function AiSettingsForm({ onClose, section = "hub" }: { onClose: () => vo
                 <ChevronRight size={18} color={t.textTertiary} />
               </Pressable>
 
-              {/* Model behavior knobs — live-apply (desktop quick-settings parity). */}
-              <Text style={styles.sectionLabel}>Model settings</Text>
-              <PresetStepperRow
+              {/* Model behavior knobs — live-apply (desktop quick-settings parity). On iOS with an
+                  OpenAI-compatible provider the chat's model chip panel has them, so they show here
+                  only where it does not exist (Android, Apple Intelligence). */}
+              {tuningInHub ? <Text style={styles.sectionLabel}>Model settings</Text> : null}
+              {tuningInHub ? <PresetStepperRow
                 label="Temperature"
                 description={temperature == null
                   ? "Auto: no temperature is sent — the model uses its own default."
@@ -1159,15 +1164,15 @@ export function AiSettingsForm({ onClose, section = "hub" }: { onClose: () => vo
                 presets={[0.1, 0.3, 0.5, 0.7, 1.0]}
                 autoActive={temperature == null}
                 onAuto={() => chooseTemperature(undefined)}
-              />
-              <PresetStepperRow
+              /> : null}
+              {tuningInHub ? <PresetStepperRow
                 label="Max steps"
                 description="Tool-call rounds the chat can take per message. Increase for complex multi-tool tasks."
                 value={maxSteps}
                 onChange={chooseMaxSteps}
                 presets={[10, 20, 30, 50, 1000]}
                 formatPreset={(n) => (n === 1000 ? "∞" : String(n))}
-              />
+              /> : null}
 
               <Pressable
                 style={styles.navRow}
