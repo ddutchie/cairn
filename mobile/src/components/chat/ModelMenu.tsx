@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ReactElement } from "react";
-import { PixelRatio, View, useWindowDimensions } from "react-native";
+import { PixelRatio } from "react-native";
 import { Stack, useFocusEffect } from "expo-router";
 import {
   getActiveProvider,
@@ -15,7 +15,7 @@ import {
 } from "@/chat/ai-config";
 import { listModels } from "@/chat/providers/openai";
 import { ICON_MODEL } from "@/components/toolbar-icons";
-import { type as typeScale, useTheme } from "@/theme";
+import { type as typeScale, useTheme, withAlpha } from "@/theme";
 import {
   Button as SUIButton,
   HStack,
@@ -24,19 +24,18 @@ import {
   Menu,
   Section,
   Text as SUIText,
-  VStack,
 } from "@expo/ui/swift-ui";
-import { font, foregroundStyle, frame, lineLimit, padding } from "@expo/ui/swift-ui/modifiers";
+import { backgroundOverlay, clipShape, font, foregroundStyle, frame, lineLimit, padding, truncationMode } from "@expo/ui/swift-ui/modifiers";
 
 /** Menus get unwieldy past this; favorites + the current model are always kept. */
 const MAX_MODELS = 40;
 
 /**
- * Model/provider switching for the Chat header, shared by two renderers:
- *  - iOS header TITLE: the model name + chevron as a native menu (the
- *    chat-template's picker) — `ModelTitleMenu`.
- *  - `Stack.Toolbar.Menu` in the right toolbar — `modelToolbarMenu`, used on
- *    Android and wherever the title is hidden (wide windows).
+ * Model/provider switching for Chat, shared by two renderers:
+ *  - iOS: a chip in the composer's second row (shown while typing), opening a
+ *    native menu — `ModelChip`.
+ *  - Android: a `Stack.Toolbar.Menu` in the header's right toolbar —
+ *    `modelToolbarMenu`.
  * Hidden unless the OpenAI-compatible path is the one the chat actually uses
  * (Apple On-device has no user-selectable model list).
  *
@@ -131,7 +130,7 @@ export function useModelMenuState({ disabled = false, onChanged }: { disabled?: 
   return { current, providerName: active.name, providers, activeId: active.id, favorites: favs, models: shown, disabled, pickModel, pickProvider };
 }
 
-/** Right-toolbar variant (Android, and iOS when the header title is hidden). */
+/** Right-toolbar variant (Android, which has no SwiftUI menu for the chip). */
 export function modelToolbarMenu(m: ModelMenuState | null): ReactElement | null {
   if (!m) return null;
   return (
@@ -171,95 +170,92 @@ export function modelToolbarMenu(m: ModelMenuState | null): ReactElement | null 
   );
 }
 
+/** The provider / favorites / model sections of the SwiftUI model menu. */
+function ModelMenuSections({ model: m }: { model: ModelMenuState }) {
+  return (
+    <>
+      {m.providers.length > 1 ? (
+        <Section title="Provider">
+          {m.providers.map((p) => (
+            <SUIButton
+              key={p.id}
+              label={p.name}
+              systemImage={p.id === m.activeId ? "checkmark" : undefined}
+              onPress={() => m.pickProvider(p.id)}
+            />
+          ))}
+        </Section>
+      ) : null}
+      {m.favorites.length > 0 ? (
+        <Section title="Favorites">
+          {m.favorites.map((name) => (
+            <SUIButton
+              key={name}
+              label={name}
+              systemImage={name === m.current ? "checkmark" : "star.fill"}
+              onPress={() => m.pickModel(name)}
+            />
+          ))}
+        </Section>
+      ) : null}
+      <Section title="Model">
+        {m.models.map((name) => (
+          <SUIButton
+            key={name}
+            label={name}
+            systemImage={name === m.current ? "checkmark" : undefined}
+            onPress={() => m.pickModel(name)}
+          />
+        ))}
+      </Section>
+    </>
+  );
+}
+
 /**
- * iOS header title: the model name with a chevron, opening a native menu of
- * providers and models (checkmark on the active ones) — the chat-template's
- * `HeaderTitleMenu`. While a reply is running the label renders without the
- * menu, so it can't be switched mid-turn.
+ * iOS composer chip: the model id (and, with more than one provider saved, the
+ * provider's name, dimmer) in a capsule, opening a native menu of providers and
+ * models with a checkmark on the active ones. It sits in the composer's second
+ * row, which only shows while typing, so the header no longer spends its title on
+ * the model. While a reply is running the chip renders without the menu, so the
+ * model can't change mid-turn.
  */
-export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
+export function ModelChip({ model: m, maxWidth }: { model: ModelMenuState; maxWidth: number }) {
   const t = useTheme();
-  const { width } = useWindowDimensions();
   // SwiftUI font sizes are fixed points, so apply the OS text-size setting ourselves
   // (RN text does this implicitly) to the theme type-scale tokens.
-  const fontScale = PixelRatio.getFontScale();
-  // The native header centers the title on the screen only while it fits
-  // symmetrically around the screen centre; wider than that it is pushed into
-  // the slot left of the right-hand items and ends up flush-left. The Clear +
-  // AI settings pill is ~120pt wide plus its gap (measured on iPhone 17), so
-  // reserve ~140pt on BOTH sides (slack beyond the measured edge: a box right
-  // at the limit still went flush-left). A long model id
-  // ("muse-spark-1.3-contributor") then truncates (tail) inside a centred box
-  // instead of shifting left or painting over the context ring. Floor matches
-  // the Host minWidth below.
-  const maxW = Math.min(240, Math.max(80, width - 280));
+  const size = Math.round(typeScale.caption.fontSize * PixelRatio.getFontScale());
   const label = (
-    // frame(maxWidth) truncates the SwiftUI text at the cap even if the
-    // RN-side maxWidth only clamps measurement and the native view paints
-    // wider (the overlay seen on device).
-    <HStack spacing={4} alignment="center" modifiers={[padding({ vertical: 4 }), frame({ maxWidth: maxW })]}>
-      <VStack spacing={0} alignment="center">
-        <SUIText modifiers={[font({ weight: "semibold", size: Math.round(typeScale.subtitle.fontSize * fontScale) }), foregroundStyle(t.textPrimary), lineLimit(1)]}>
-          {m.providerName}
-        </SUIText>
-        <SUIText modifiers={[font({ size: Math.round(typeScale.micro.fontSize * fontScale) }), foregroundStyle(t.textSecondary), lineLimit(1)]}>
-          {m.current}
-        </SUIText>
-      </VStack>
-      <SUIImage systemName="chevron.down" size={10} color={t.textSecondary} />
+    // frame(maxWidth) truncates inside the capsule: a long model id
+    // ("muse-spark-1.3-contributor") must not push the mic and send buttons off.
+    <HStack
+      spacing={5}
+      alignment="center"
+      modifiers={[
+        padding({ horizontal: 12, vertical: 7 }),
+        backgroundOverlay({ color: withAlpha(t.textPrimary, 0.08) }),
+        clipShape("capsule"),
+        frame({ maxWidth }),
+      ]}
+    >
+      <SUIText modifiers={[font({ weight: "medium", size }), foregroundStyle(t.textPrimary), lineLimit(1), truncationMode("middle")]}>
+        {m.current}
+      </SUIText>
+      {m.providers.length > 1 ? (
+        <SUIText modifiers={[font({ size }), foregroundStyle(t.textTertiary), lineLimit(1)]}>{m.providerName}</SUIText>
+      ) : null}
+      <SUIImage systemName="chevron.down" size={9} color={t.textSecondary} />
     </HStack>
   );
   return (
-    // Fixed-height wrapper centers the title in the header; the vertical padding
-    // on the label (not a Host minHeight, which top-aligns the content) keeps the
-    // tap target at ~40pt.
-    // Explicit width (not content-sized): the header centers a title on screen only
-    // when its box fits symmetrically, and a content-sized box reports the label's
-    // natural width, so a long model id got pushed flush-left. The box is a fixed
-    // maxW wide and centers its content.
-    <View style={{ height: 44, width: maxW, alignSelf: "center", flexDirection: "row", justifyContent: "center", alignItems: "center" }}>
-    <Host matchContents style={{ minWidth: 80, maxWidth: maxW }}>
+    <Host matchContents style={{ maxWidth }}>
       {m.disabled ? (
         label
       ) : (
         <Menu label={label}>
-          {m.providers.length > 1 ? (
-            <Section title="Provider">
-              {m.providers.map((p) => (
-                <SUIButton
-                  key={p.id}
-                  label={p.name}
-                  systemImage={p.id === m.activeId ? "checkmark" : undefined}
-                  onPress={() => m.pickProvider(p.id)}
-                />
-              ))}
-            </Section>
-          ) : null}
-          {m.favorites.length > 0 ? (
-            <Section title="Favorites">
-              {m.favorites.map((name) => (
-                <SUIButton
-                  key={name}
-                  label={name}
-                  systemImage={name === m.current ? "checkmark" : "star.fill"}
-                  onPress={() => m.pickModel(name)}
-                />
-              ))}
-            </Section>
-          ) : null}
-          <Section title="Model">
-            {m.models.map((name) => (
-              <SUIButton
-                key={name}
-                label={name}
-                systemImage={name === m.current ? "checkmark" : undefined}
-                onPress={() => m.pickModel(name)}
-              />
-            ))}
-          </Section>
+          <ModelMenuSections model={m} />
         </Menu>
       )}
     </Host>
-    </View>
   );
 }

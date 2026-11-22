@@ -14,10 +14,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useSyncStatus } from "@/sync/useSyncStatus";
-import { Settings, Settings2, Trash2 } from "lucide-react-native";
+import { Settings, Settings2, Sparkles, Trash2, Wrench } from "lucide-react-native";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
-import { ICON_DELETE, ICON_AI } from "@/components/toolbar-icons";
 import { railToolbar, useTightSideRail } from "@/components/screen-chrome";
 import { useTheme, withAlpha, type as typeScale, type Theme, KEYBOARD_OPEN_GAP } from "@/theme";
 import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/agent";
@@ -26,7 +25,8 @@ import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage
 import { redactValue } from "@cairn/shared/chat/redaction";
 import { hasProvider, resolveProvider } from "@/chat/providers";
 import { resetAppleSession } from "@/chat/providers/apple";
-import { getOpenAIModel, getProviderPref, getActiveProvider } from "@/chat/ai-config";
+import { getOpenAIModel, getProviderPref, getActiveProvider, getChatPersonalityId, setChatPersonalityId } from "@/chat/ai-config";
+import { getCachedPersonalitiesManifest } from "@/chat/personalities-registry";
 import { getModelInfo, getModelCatalogVersion, subscribeModelCatalog } from "@/chat/models-dev";
 import { supportsImageInput } from "@cairn/shared/models/model-catalog";
 import { type UIMessage, type ChatUsage, msgId } from "@/chat/providers/types";
@@ -41,7 +41,8 @@ import { DictationMic } from "@/components/DictationMic";
 import { useDictation } from "@/dictation/useDictation";
 import { ListeningOrb } from "@/components/animations/ListeningOrb";
 import { useListeningOrb } from "@/lib/dev-flags";
-import { ModelTitleMenu, modelToolbarMenu, useModelMenuState } from "@/components/chat/ModelMenu";
+import { ModelChip, modelToolbarMenu, useModelMenuState } from "@/components/chat/ModelMenu";
+import type { MenuGroup } from "@/components/chat/attachment-panel/attachment-menu";
 import { ScrollToBottomButton } from "@/components/chat/ScrollToBottomButton";
 import { MentionStrip } from "@/components/chat/MentionStrip";
 import { mentionContext } from "@/chat/mentions";
@@ -57,7 +58,7 @@ import { safeToolOutput } from "@/chat/tool-output";
 import { fetchManifest } from "@/chat/registry";
 import { useSharedValue, withSpring, useDerivedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { COMPOSER, SPRING } from "@/components/chat/attachment-panel/constants";
+import { COMPOSER, GUTTER, SPRING } from "@/components/chat/attachment-panel/constants";
 import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
 import { useFold, useTopHalf } from "@/lib/use-fold";
 
@@ -193,6 +194,8 @@ export default function ChatScreen() {
   // Morph composer springs (strip + plusOut) + attachment host
   const strip = useSharedValue(0);
   const plusOut = useSharedValue(0);
+  // Composer height below its attachment strip: one row at rest, two while typing.
+  const composerRows = useSharedValue<number>(COMPOSER.rowHeight);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   // Wide windows open touched notes/tasks in a column beside the chat (folding a
@@ -288,10 +291,14 @@ export default function ChatScreen() {
     [openAiModelActive, catalogVersion],
   );
 
+  // Chat personality, picked from the `+` panel (or AI settings, re-read on focus).
+  const [personalityId, setPersonalityId] = useState(() => getChatPersonalityId());
+
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       refreshConfigured();
+      setPersonalityId(getChatPersonalityId());
       void fetchManifest(false).then(() => setRegistryRevision((revision) => revision + 1));
       resolveProvider()
         .then((p) => {
@@ -621,7 +628,49 @@ export default function ChatScreen() {
   // TabScreen pushes the whole body below the header (the banner takes the header-height margin),
   // so the content must not add that inset a second time.
   const headerInset = glassHeader && conflicts === 0 ? headerHeight : 0;
-  const modelInTitle = Platform.OS === "ios" && modelMenu != null && showHeaderTools && sp.screenOptions.title !== "";
+  const androidModelMenu = Platform.OS === "ios" ? null : modelToolbarMenu(modelMenu);
+  // iOS: the model chip in the composer's second row (shown while typing). Capped so the
+  // `+`, mic and send keep their room: the row's padding, three gaps and those buttons.
+  const composerWidth = width - composerLeftInset - insets.left - insets.right - GUTTER * 2;
+  const modelChip =
+    Platform.OS === "ios" && modelMenu ? <ModelChip model={modelMenu} maxWidth={Math.max(120, composerWidth - 140)} /> : undefined;
+
+  // The `+` panel's rows under the attach group: session settings, then the chat itself.
+  const personalities = getCachedPersonalitiesManifest()?.personalities ?? [];
+  const personalityName = personalities.find((p) => p.id === personalityId)?.definition.name;
+  const menuGroups: MenuGroup[] = [
+    {
+      key: "session",
+      rows: [
+        {
+          key: "personality",
+          label: "Personality",
+          Icon: Sparkles,
+          value: personalityName ?? "None",
+          more: true,
+          // No catalogue fetched yet (or Android): AI settings lists and fetches them.
+          onPress: () => router.push("/settings/ai"),
+          choices:
+            personalities.length > 0
+              ? [{ id: "", label: "None", selected: !personalityName }, ...personalities.map((p) => ({ id: p.id, label: p.definition.name, selected: p.id === personalityId }))]
+              : undefined,
+          onChoose: (id: string) => {
+            haptics.selection();
+            setChatPersonalityId(id);
+            setPersonalityId(id);
+          },
+        },
+        { key: "tools", label: "Tools & services", Icon: Wrench, more: true, onPress: () => router.push("/settings/tools") },
+      ],
+    },
+    {
+      key: "chat",
+      rows: [
+        { key: "ai-settings", label: "AI settings", Icon: Settings, more: true, onPress: () => router.push("/settings/ai") },
+        { key: "clear", label: "Clear chat", Icon: Trash2, destructive: true, disabled: messages.length === 0 || busy, onPress: onClear },
+      ],
+    },
+  ];
   const showToolsPills = laptop && !inputFocused && !keyboardVisible;
   const bottomRing = showToolsPills ? renderContextRing("bottom") : null;
   // Left of the tab bar: a small glass capsule carries the context ring and
@@ -685,10 +734,6 @@ export default function ChatScreen() {
           // preview is open: its own bar owns the rail, and stacked above the chat
           // the pane's ✕ sits exactly where the ring would, which then swallows taps.
           headerLeft: contextRing && showHeaderTools ? () => contextRing : undefined,
-          // iOS: the model name is the header title, opening the model menu (as in
-          // the chat-template). Only while the title is shown at all — wide windows
-          // and open previews blank it, and the toolbar menu takes over there.
-          headerTitle: modelInTitle ? () => <ModelTitleMenu model={modelMenu} /> : undefined,
           ...(glassHeader
             ? !headerBlur
               ? {
@@ -729,32 +774,12 @@ export default function ChatScreen() {
       {/* While a preview is open its own bar is the rail's: the chat's items
           would stack a second column of buttons beside it (and, folded, keep
           the chat's header up over a chat that isn't showing). */}
-      {showHeaderTools ? (
+      {/* Clear chat and AI settings live in the composer's `+` panel, and on iOS the model
+          is the composer's chip, so the header carries only the context ring. Android has
+          no SwiftUI menu for the chip: its model menu stays here. */}
+      {showHeaderTools && androidModelMenu ? (
       <Stack.Toolbar placement="right">
-        {railToolbar(
-          tightRail,
-          <Stack.Toolbar.Button
-            key="clear"
-            icon={ICON_DELETE}
-            hidden={messages.length === 0}
-            disabled={busy}
-            accessibilityLabel="Clear chat"
-            // Inline arrow (not a bare toolbarPress(onClear)) so the react-hooks
-            // ref lint doesn't flag onClear's transitive ref access during render.
-            onPress={() => toolbarPress(onClear)()}
-          >
-            Clear chat
-          </Stack.Toolbar.Button>,
-          modelInTitle ? null : modelToolbarMenu(modelMenu),
-          <Stack.Toolbar.Button
-            key="ai-settings"
-            icon={ICON_AI}
-            accessibilityLabel="AI settings"
-            onPress={toolbarPress(() => router.push("/settings/ai"))}
-          >
-            AI settings
-          </Stack.Toolbar.Button>,
-        )}
+        {railToolbar(tightRail, androidModelMenu)}
       </Stack.Toolbar>
       ) : null}
       {/* Every width previews in the pane (not a pushed route): folded it fills
@@ -922,8 +947,9 @@ export default function ChatScreen() {
             setComposerH(h);
             setComposerHeight(h);
           }}
-          allowImages={allowImages}
           queuedCount={queued.length}
+          modelChip={modelChip}
+          rowsHeight={composerRows}
         />
         <MentionStrip people={mentionMatches} composerHeight={composerHeight} closedLift={closedLift} leftInset={composerLeftInset} onPick={pickMention} />
         <ScrollToBottomButton
@@ -938,8 +964,11 @@ export default function ChatScreen() {
           plusOut={plusOut}
           composerBottom={composerBottom}
           leftInset={composerLeftInset}
+          rowsHeight={composerRows}
           existingCount={attachments.length}
           onAddAttachments={onAddAttachments}
+          allowImages={allowImages}
+          groups={menuGroups}
         />
         {toolsPill}
         {settingsPill}

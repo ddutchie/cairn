@@ -1,17 +1,18 @@
 import type { CameraType, FlashMode } from "expo-camera";
 import * as Haptics from "expo-haptics";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import { KeyboardController, OverKeyboardView, useKeyboardHandler } from "react-native-keyboard-controller";
 import { useSharedValue, withDelay, withSequence, withSpring, withTiming, type SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 import { AttachmentFlight, type Flight } from "./attachment-flight";
-import { AttachmentMenu, type MenuAction } from "./attachment-menu";
+import { Camera, Images, Paperclip } from "lucide-react-native";
+import { AttachmentMenu, type MenuAction, type MenuGroup } from "./attachment-menu";
 import { AttachmentPanel } from "./attachment-panel";
 import { CameraBar } from "./camera-bar";
 import { CameraSheet, type CameraSheetHandle } from "./camera-sheet";
-import { COMPOSER, DURATION, EASE_FADE, EASE_OUT, GRID, GUTTER, MENU, MENU_HEIGHT, SPRING } from "./constants";
+import { COMPOSER, DURATION, EASE_FADE, EASE_OUT, GRID, GUTTER, MENU, menuHeightFor, SPRING, type Frame } from "./constants";
 import { PhotoGrid, PhotoGridBar, type PhotoGridHandle } from "./photo-grid";
 import { usePhotoLibrary, type LibraryPhoto } from "./use-photo-library";
 import { cameraUriToAttachment, libraryPhotoToAttachment, pickFiles } from "@/chat/file-attachments";
@@ -31,15 +32,23 @@ export interface CairnAttachmentHostProps {
   strip: SharedValue<number>;
   plusOut: SharedValue<number>;
   composerBottom: SharedValue<number>;
+  /** Height of the composer below its attachment strip (one row, or two while open). */
+  rowsHeight: SharedValue<number>;
   existingCount: number;
   onAddAttachments: (atts: Attachment[]) => void;
-  onMenuAction?: (action: MenuAction) => void;
+  /** False when the model can't read images: the attach rows and recent photos are hidden. */
+  allowImages: boolean;
+  /**
+   * The rows under the attach group (session settings, chat actions). The panel
+   * closes before a row's `onPress` or `onChoose` runs.
+   */
+  groups: MenuGroup[];
   /** Left edge of the composer in book pose (see CairnMorphComposer); 0 spans the window. */
   leftInset?: number;
 }
 
 export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAttachmentHostProps>(function CairnAttachmentHost(
-  { strip, plusOut, composerBottom, existingCount, onAddAttachments, onMenuAction, leftInset = 0 },
+  { strip, plusOut, composerBottom, rowsHeight, existingCount, onAddAttachments, allowImages, groups, leftInset = 0 },
   ref,
 ) {
   const { width: windowWidth, height } = useWindowDimensions();
@@ -79,15 +88,25 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
   const settledBottom = height - Math.max(settledKeyboard, insets.bottom) - COMPOSER.keyboardGap;
   // The menu is centred on the `+`, which assumes the keyboard is up; with it down (or in a
   // short window) the composer is low on the screen, so keep the whole menu above the bottom edge.
-  const menuTopMax = height - insets.bottom - MENU_HEIGHT - GUTTER;
+  // The menu's height follows what it holds. Recent photos show once the library can be
+  // read (placeholders while it loads); a window too short for everything (a cover
+  // screen, landscape) caps it below the status bar and lets it scroll.
+  const gridWidth = width - GUTTER * 2;
+  const menuWidth = Math.min(MENU.width, gridWidth);
+  const showRecent = allowImages && status !== "denied" && status !== "empty";
+  const attachRows = allowImages ? 3 : 0;
+  const naturalHeight = menuHeightFor(menuWidth, [attachRows, ...groups.map((g) => g.rows.length)], showRecent);
+  const menuTopMin = insets.top + GUTTER;
+  const menuHeight = Math.min(naturalHeight, height - insets.bottom - GUTTER - menuTopMin);
+  const menuTopMax = height - insets.bottom - menuHeight - GUTTER;
   // Top of the panel for a given composer bottom — shared with the flight start frames below so
   // they begin exactly where the panel is drawn.
   const panelTopFor = useCallback(
-    (composerBottomNow: number) => Math.min(composerBottomNow - COMPOSER.rowHeight / 2 + MENU.centerOffset - MENU_HEIGHT / 2, menuTopMax),
-    [menuTopMax],
+    (composerBottomNow: number) =>
+      Math.max(menuTopMin, Math.min(composerBottomNow - COMPOSER.rowHeight / 2 + MENU.centerOffset - menuHeight / 2, menuTopMax)),
+    [menuHeight, menuTopMax, menuTopMin],
   );
   const panelTop = panelTopFor(settledBottom);
-  const gridWidth = width - GUTTER * 2;
   const gridHeight = height - panelTop - GUTTER;
 
   const closeSheet = useCallback(() => {
@@ -169,13 +188,9 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
     (action: MenuAction) => {
       if (action === "photos") showSheet("photos");
       else if (action === "camera") showSheet("camera");
-      else if (action === "files") void handleFiles();
-      else {
-        if (onMenuAction) onMenuAction(action);
-        dismiss();
-      }
+      else void handleFiles();
     },
-    [dismiss, handleFiles, onMenuAction, showSheet],
+    [handleFiles, showSheet],
   );
 
   const togglePhoto = useCallback((photo: LibraryPhoto) => {
@@ -234,6 +249,49 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
     );
   }, [photos, selected, composerBottom, gridWidth, gridHeight, existingCount, attachAndLeave, panelTopFor]);
 
+  // A recent photo in the menu's strip attaches straight away, flying from its thumbnail.
+  const pickRecent = useCallback(
+    (photo: LibraryPhoto, from: Frame) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const top = panelTopFor(composerBottom.get());
+      attachAndLeave([{ photo, slot: existingCount, from: { ...from, x: GUTTER + from.x, y: top + from.y }, fromRadius: MENU.stripRadius }]);
+    },
+    [attachAndLeave, composerBottom, existingCount, panelTopFor],
+  );
+
+  // Attach rows first, then the caller's groups with each row closing the panel before it acts.
+  const menuGroups = useMemo<MenuGroup[]>(() => {
+    const attach: MenuGroup = {
+      key: "attach",
+      rows: allowImages
+        ? [
+            { key: "camera", label: "Camera", Icon: Camera, onPress: () => onMenuActionInternal("camera") },
+            { key: "photos", label: "Photos", Icon: Images, more: true, onPress: () => onMenuActionInternal("photos") },
+            { key: "files", label: "Add files", Icon: Paperclip, onPress: () => onMenuActionInternal("files") },
+          ]
+        : [],
+    };
+    const wrapped = groups.map((g) => ({
+      ...g,
+      rows: g.rows.map((row) => ({
+        ...row,
+        onPress: row.onPress
+          ? () => {
+              dismiss();
+              row.onPress?.();
+            }
+          : undefined,
+        onChoose: row.onChoose
+          ? (id: string) => {
+              row.onChoose?.(id);
+              dismiss();
+            }
+          : undefined,
+      })),
+    }));
+    return [attach, ...wrapped];
+  }, [allowImages, dismiss, groups, onMenuActionInternal]);
+
   const capturePhoto = useCallback(async () => {
     if (capturing.current) return;
     capturing.current = true;
@@ -271,6 +329,9 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
         <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { left }]}>
         <AttachmentPanel
           screenHeight={height}
+          menuWidth={menuWidth}
+          menuHeight={menuHeight}
+          menuTopMin={menuTopMin}
           menuTopMax={menuTopMax}
           gridWidth={gridWidth}
           gridHeight={gridHeight}
@@ -283,7 +344,15 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
           gridOpacity={gridOpacity}
           blur={blur}
           composerBottom={composerBottom}
-          menu={<AttachmentMenu onSelect={onMenuActionInternal} />}
+          menu={
+            <AttachmentMenu
+              width={menuWidth}
+              height={menuHeight}
+              scrolls={naturalHeight > menuHeight}
+              groups={menuGroups}
+              recent={showRecent ? { photos, onPick: pickRecent } : undefined}
+            />
+          }
           grid={
             sheet === "camera" ? (
               <CameraSheet ref={cameraRef} width={gridWidth} height={gridHeight} facing={facing} flash={flash} lifting={isFlying} />
@@ -306,7 +375,7 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
         ) : (
           <PhotoGridBar width={gridWidth} selected={selected} active={mode === "photos" && !isFlying} fade={gridOpacity} onBack={backToMenu} onConfirm={confirmSelection} />
         )}
-        <AttachmentFlight flights={flights} screenWidth={width} attach={attach} strip={strip} composerBottom={composerBottom} />
+        <AttachmentFlight flights={flights} screenWidth={width} attach={attach} strip={strip} composerBottom={composerBottom} rowsHeight={rowsHeight} />
         </View>
       </View>
     </OverKeyboardView>
