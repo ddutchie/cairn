@@ -1,12 +1,12 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { NativeTabs } from "expo-router/native-tabs";
-import { BarChart3, Network, RefreshCw, Users } from "lucide-react-native";
+import { BarChart3, Network, RefreshCw, Sun, Users } from "lucide-react-native";
 import { WORKSPACE_TOOLS, liveLine, type ToolId } from "@/lib/workspace-tools";
 import { showAccessoryMenu } from "@/lib/pin-menu";
 import { useTheme, type as typeScale } from "@/theme";
 
-const ICONS: Record<ToolId, typeof Users> = { people: Users, graph: Network, usage: BarChart3, sync: RefreshCw };
+const ICONS: Record<ToolId, typeof Users> = { today: Sun, people: Users, graph: Network, usage: BarChart3, sync: RefreshCw };
 
 /**
  * The tool the user pinned from the Workspace tab, shown above the tab bar.

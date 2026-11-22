@@ -15,6 +15,7 @@ export default function WorkspaceLayout() {
   return (
     <TabStack>
       <Stack.Screen name="workspace/index" options={{ title: "Workspace" }} />
+      <Stack.Screen name="workspace/today" options={{ title: "Today" }} />
       <Stack.Screen name="workspace/people/index" options={{ title: "People" }} />
       <Stack.Screen name="workspace/people/[id]" options={{ title: "Person" }} />
       <Stack.Screen name="workspace/people/team/[id]" options={{ title: "Team" }} />

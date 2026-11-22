@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { ActionSheetIOS, Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack, useFocusEffect, useRouter, type Href } from "expo-router";
-import { BarChart3, FolderOpen, Network, Pin, RefreshCw, Settings, Users } from "lucide-react-native";
+import { BarChart3, FolderOpen, Network, Pin, RefreshCw, Settings, Sun, Users } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
@@ -13,7 +13,7 @@ import { switchSource } from "@/sync/controller";
 import { useSyncSources } from "@/sync/useSyncSources";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
-const ICONS: Record<ToolId, typeof Users> = { people: Users, graph: Network, usage: BarChart3, sync: RefreshCw };
+const ICONS: Record<ToolId, typeof Users> = { today: Sun, people: Users, graph: Network, usage: BarChart3, sync: RefreshCw };
 
 type Row = { key: string; title: string; line: string; href: Href; icon: typeof Users; tool?: ToolId };
 
@@ -53,7 +53,7 @@ export function WorkspaceScreen() {
   }, []);
   useRefreshOnFocus(load);
 
-  const tools: Row[] = (["people", "graph"] as ToolId[]).map((id) => ({
+  const tools: Row[] = (["today", "people", "graph"] as ToolId[]).map((id) => ({
     key: id, title: WORKSPACE_TOOLS[id].title, line: lines[id] ?? WORKSPACE_TOOLS[id].blurb,
     href: WORKSPACE_TOOLS[id].href, icon: ICONS[id], tool: id,
   }));

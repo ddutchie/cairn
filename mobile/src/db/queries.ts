@@ -429,6 +429,33 @@ export function listDueTasks(limit = 8, onDate?: string): { id: string; title: s
   );
 }
 
+/** Open tasks due on or before `day` (local `YYYY-MM-DD`), oldest first, with their project's name. Feeds Today. */
+export function listOpenDueTasks(day: string, limit = 60): { id: string; title: string; due_date: string; priority: string | null; project_name: string | null }[] {
+  return getDb().getAllSync<{ id: string; title: string; due_date: string; priority: string | null; project_name: string | null }>(
+    `SELECT c.id AS id, c.title AS title, c.due_date AS due_date, c.priority AS priority, p.name AS project_name
+     FROM task_cards c
+     LEFT JOIN board_columns col ON col.id = c.column_id
+     LEFT JOIN projects p ON p.id = c.project_id
+     WHERE c.deleted_at IS NULL AND c.archived_at IS NULL AND c.due_date IS NOT NULL
+       AND (col.id IS NULL OR col.type != 'done' OR col.deleted_at IS NOT NULL)
+       AND date(c.due_date) <= date(?)
+     ORDER BY c.due_date ASC LIMIT ?`,
+    day,
+    limit,
+  );
+}
+
+/** Live meetings that start in `[startIso, endIso)`, earliest first. Feeds Today's day strip. */
+export function listMeetingsBetween(startIso: string, endIso: string): { id: string; title: string; starts_at: string; ends_at: string | null }[] {
+  return getDb().getAllSync<{ id: string; title: string; starts_at: string; ends_at: string | null }>(
+    `SELECT id, title, starts_at, ends_at FROM meetings
+     WHERE deleted_at IS NULL AND starts_at >= ? AND starts_at < ?
+     ORDER BY starts_at ASC`,
+    startIso,
+    endIso,
+  );
+}
+
 /** Distinct folders within a project. Case-insensitively de-duplicated
  *  (first-seen casing wins) so "Mobile" and "mobile" list as one — mirrors the
  *  notes-tree grouping. Root (empty folder) is excluded. */
