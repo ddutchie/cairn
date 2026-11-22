@@ -426,6 +426,7 @@ export default function ToolsSettingsScreen() {
       <Stack.Toolbar>
         <Stack.Toolbar.Button
           icon={ICON_CHECK}
+          variant="done"
           accessibilityLabel="Done"
           onPress={() => toolbarPress(() => router.canGoBack() && router.back())()}
         >

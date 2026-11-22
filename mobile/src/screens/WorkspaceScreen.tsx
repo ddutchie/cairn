@@ -1,13 +1,16 @@
 import { useCallback, useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
-import { Stack, useRouter, type Href } from "expo-router";
-import { BarChart3, Network, Palette, Pin, RefreshCw, Sparkles, Users, Wrench } from "lucide-react-native";
+import { ActionSheetIOS, Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Stack, useFocusEffect, useRouter, type Href } from "expo-router";
+import { BarChart3, FolderOpen, Network, Palette, Pin, RefreshCw, Sparkles, Users, Wrench } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { PINNABLE, WORKSPACE_TOOLS, liveLine, usePinnedTool, type ToolId } from "@/lib/workspace-tools";
 import { showPinMenu } from "@/lib/pin-menu";
+import { getActiveSource } from "@/db";
+import { switchSource } from "@/sync/controller";
+import { useSyncSources } from "@/sync/useSyncSources";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 const ICONS: Record<ToolId, typeof Users> = { people: Users, graph: Network, usage: BarChart3, sync: RefreshCw };
@@ -25,6 +28,25 @@ export function WorkspaceScreen() {
   const router = useRouter();
   const pinned = usePinnedTool();
   const [lines, setLines] = useState<Record<string, string>>({});
+  // The workspace switcher lives here (a tab-root header can't carry it on every layout).
+  const [active, setActive] = useState<string | null>(() => getActiveSource());
+  const { sources, refresh } = useSyncSources({ mergeActive: true });
+  useFocusEffect(useCallback(() => { setActive(getActiveSource()); void refresh(); }, [refresh]));
+  const activeName = sources.find((x) => x.workspaceId === active)?.name ?? "This workspace";
+  const pickWorkspace = () => {
+    const names = sources.map((x) => x.name || "Untitled");
+    const pick = (i: number) => {
+      const next = sources[i];
+      if (!next || next.workspaceId === active) return;
+      switchSource(next.workspaceId);
+      setActive(next.workspaceId);
+    };
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions({ title: "Switch workspace", options: [...names, "Cancel"], cancelButtonIndex: names.length }, pick);
+    } else {
+      Alert.alert("Switch workspace", undefined, [...names.map((n, i) => ({ text: n, onPress: () => pick(i) })), { text: "Cancel", style: "cancel" as const }]);
+    }
+  };
 
   const load = useCallback(() => {
     setLines(Object.fromEntries(PINNABLE.map((id) => [id, liveLine(id)])));
@@ -38,9 +60,9 @@ export function WorkspaceScreen() {
   const settings: Row[] = [
     { key: "usage", title: "Usage", line: lines.usage ?? WORKSPACE_TOOLS.usage.blurb, href: WORKSPACE_TOOLS.usage.href, icon: ICONS.usage, tool: "usage" },
     { key: "sync", title: "Sync", line: lines.sync ?? WORKSPACE_TOOLS.sync.blurb, href: WORKSPACE_TOOLS.sync.href, icon: ICONS.sync, tool: "sync" },
-    { key: "ai", title: "AI settings", line: "Provider, model and keys", href: "/settings/ai" as Href, icon: Sparkles },
-    { key: "tools", title: "Tools and services", line: "Connectors the assistant can use", href: "/settings/tools" as Href, icon: Wrench },
-    { key: "appearance", title: "Appearance", line: "Theme and text size", href: "/settings/appearance" as Href, icon: Palette },
+    { key: "ai", title: "AI settings", line: "Provider, model and keys", href: "/workspace/ai" as Href, icon: Sparkles },
+    { key: "tools", title: "Tools and services", line: "Connectors the assistant can use", href: "/workspace/tools" as Href, icon: Wrench },
+    { key: "appearance", title: "Appearance", line: "Theme and text size", href: "/workspace/appearance" as Href, icon: Palette },
   ];
 
   const renderRow = (r: Row): ReactNode => {
@@ -70,6 +92,19 @@ export function WorkspaceScreen() {
     <TabScreen>
       <Stack.Screen options={{ title: "Workspace" }} />
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={s.list}>
+        <PressableScale
+          style={s.row}
+          onPress={pickWorkspace}
+          disabled={sources.length < 2}
+          accessibilityLabel={`Workspace, ${activeName}${sources.length > 1 ? ", switch" : ""}`}
+        >
+          <View style={s.iconWrap}><FolderOpen size={18} color={t.accent} /></View>
+          <View style={s.body}>
+            <Text style={s.title} numberOfLines={1}>{activeName}</Text>
+            <Text style={s.line} numberOfLines={1}>{sources.length > 1 ? "Switch workspace" : "Your workspace"}</Text>
+          </View>
+          {sources.length > 1 ? <Text style={s.chevron}>›</Text> : null}
+        </PressableScale>
         <Text style={s.section}>Tools</Text>
         {tools.map(renderRow)}
         <Text style={s.section}>Settings</Text>

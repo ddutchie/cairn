@@ -37,6 +37,14 @@ export function useTabContentStyle() {
   return { backgroundColor: t.background, paddingLeft: left, paddingRight: right, paddingBottom: accessory };
 }
 
+/**
+ * Title rule for every tab: list-like roots (Projects, Workspace, People) get a
+ * large title; canvas and conversation roots (Calendar, Chat, Search, the graph)
+ * and every pushed detail screen get a small inline one. Buttons go through
+ * `ScreenChrome` so the back label, haptics and Duo side-rail overflow apply
+ * everywhere; Chat (glass header, model menu) and Search (search bar) add their
+ * own header options on top.
+ */
 export function TabStack({
   largeTitle = true,
   children,
