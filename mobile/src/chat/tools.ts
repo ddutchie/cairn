@@ -22,6 +22,7 @@ import { peopleTool, setCardOwnerArg, setNoteAttendees, type PeopleToolContext }
 import { agentHiddenNoteIds } from "@cairn/shared/people/queries";
 import { CADENCES, LINK_KINDS, PEOPLE_STATUSES, RELATIONSHIP_TYPES, TEAM_KINDS } from "@cairn/shared/types/people";
 import { peopleDb, peopleWorkspaceId } from "@/db/people";
+import { cardChanges, type ToolChange } from "@cairn/shared/conversation/tool-view";
 import { notifyLocalWrite } from "@/sync/write-signal";
 
 export interface ToolDef {
@@ -345,6 +346,7 @@ const BASE_TOOLS: ToolDef[] = [
           errors.push(`${label}: ${(e as Error).message}`);
         }
       };
+      const oldTitle = a.title !== undefined ? q.getNote(ids[0])?.title : undefined;
       if (a.title !== undefined) step("rename", () => q.renameNote(ids[0], str(a.title)));
       if (a.folder !== undefined) step("move", () => q.moveNotesToFolder(ids, str(a.folder)));
       for (const id of ids) {
@@ -358,8 +360,12 @@ const BASE_TOOLS: ToolDef[] = [
       if (a.attendees !== undefined || a.date !== undefined) for (const id of ids) if (!live.includes(id)) errors.push(`attendees ${id}: Note not found`);
       const meeting = applyNoteMeeting(live, a, errors);
       const notes = ids.map((id) => q.getNote(id)).filter((n) => n !== null).map((n) => ({ id: n!.id, title: n!.title }));
+      // Renames report old and new title (an empty list when the title was already that); other fields are not measured.
+      const renamed = oldTitle !== undefined && notes[0]
+        ? { changes: notes[0].title !== oldTitle ? [{ id: notes[0].id, title: notes[0].title, field: "title", from: oldTitle, to: notes[0].title } satisfies ToolChange] : [] }
+        : {};
       const met = meeting !== undefined ? { meeting } : {};
-      return summarize(notes.length === 1 ? { ...notes[0], updated: true, ...met } : { updated: notes, ...met }, errors);
+      return summarize(notes.length === 1 ? { ...notes[0], updated: true, ...renamed, ...met } : { updated: notes, ...renamed, ...met }, errors);
     },
   },
   {
@@ -423,6 +429,7 @@ const BASE_TOOLS: ToolDef[] = [
       if (a.dueDate !== undefined) patch.dueDate = str(a.dueDate) || null;
       if (a.assignee !== undefined) patch.assignee = str(a.assignee) || null;
       const applied: string[] = [];
+      const before = new Map(ids.map((id) => [id, q.getCardSnapshot(id)] as const));
       for (const id of ids) {
         const card = q.getCard(id);
         if (!card) { errors.push(`${id}: Task not found`); continue; }
@@ -455,7 +462,13 @@ const BASE_TOOLS: ToolDef[] = [
       const owner = applyCardOwner(applied, a, errors);
       const cards = ids.map((id) => q.getCard(id)).filter((c) => c !== null).map((c) => ({ id: c!.id, title: c!.title, columnId: c!.column_id }));
       const own = owner !== undefined ? { owner } : {};
-      return summarize(cards.length === 1 ? { ...cards[0], updated: true, ...own } : { updated: cards, ...own }, errors);
+      // A measured call always reports its list (empty = nothing changed), so a no-op is not shown as a change.
+      // Description, tag and note-link updates are not in the snapshot, so an empty list is only
+      // trustworthy when none were requested; otherwise leave `changes` out and the view falls back.
+      const changes: ToolChange[] = ids.flatMap((id) => cardChanges(id, before.get(id), q.getCardSnapshot(id)));
+      const unmeasured = a.description !== undefined || strArray(a.tagNames).length > 0 || strArray(a.linkNoteIds).length > 0 || strArray(a.unlinkNoteIds).length > 0 || a.owner !== undefined;
+      const extra = ids.some((id) => before.get(id)) && (changes.length > 0 || !unmeasured) ? { changes } : {};
+      return summarize(cards.length === 1 ? { ...cards[0], updated: true, ...extra, ...own } : { updated: cards, ...extra, ...own }, errors);
     },
   },
   {

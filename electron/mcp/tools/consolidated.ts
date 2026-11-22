@@ -19,6 +19,7 @@
 import type Database from "better-sqlite3";
 import { refusesHiddenWrite, scrubAgentPrivate } from "./people-privacy";
 import { isReadCall } from "../../../shared/agent/people-privacy";
+import { cardChanges, type CardSnapshot, type ToolChange } from "../../../shared/conversation/tool-view";
 
 type Args = Record<string, any>;
 /** Run one internal (per-operation) handler by name. */
@@ -64,16 +65,7 @@ function cardRow(db: Database.Database, id: string) {
 }
 
 
-/** One field that a call changed, shown in the transcript as `from → to`. */
-export interface ToolChange { id: string; title: string; field: string; from?: string; to?: string }
-
-type CardSnapshot = {
-  title: string; columnId: string; columnName: string; priority: string; dueDate: string; assignee: string; archived: string;
-  /** Titles of the cards blocking this one (sorted), so a dependency change reads as names. */
-  blockedBy: string[];
-  /** Ids of those cards (sorted): the comparison key, since titles can repeat or be renamed. */
-  blockedByIds: string[];
-};
+export type { ToolChange };
 
 function cardSnapshot(db: Database.Database, id: string): CardSnapshot | undefined {
   const row = db.prepare(
@@ -88,24 +80,6 @@ function cardSnapshot(db: Database.Database, id: string): CardSnapshot | undefin
   const title = db.prepare("SELECT title FROM task_cards WHERE id = ?");
   const { blockedByIds: _raw, ...rest } = row;
   return { ...rest, blockedByIds: [...ids].sort(), blockedBy: ids.map((b) => (title.get(b) as { title: string } | undefined)?.title ?? b).sort() };
-}
-
-const CARD_FIELD_LABELS: Array<[keyof CardSnapshot, string]> = [
-  ["title", "title"], ["priority", "priority"], ["dueDate", "due"], ["assignee", "assignee"], ["archived", "archived"],
-];
-
-function cardChanges(id: string, before: CardSnapshot | undefined, after: CardSnapshot | undefined): ToolChange[] {
-  if (!before || !after) return [];
-  const out: ToolChange[] = [];
-  // Compare the column by id: two columns in a project may share a name.
-  if (before.columnId !== after.columnId) out.push({ id, title: after.title, field: "column", from: before.columnName || undefined, to: after.columnName || undefined });
-  for (const [key, field] of CARD_FIELD_LABELS) {
-    if (before[key] !== after[key]) out.push({ id, title: after.title, field, from: (before[key] as string) || undefined, to: (after[key] as string) || undefined });
-  }
-  if (before.blockedByIds.join("\u0000") !== after.blockedByIds.join("\u0000")) {
-    out.push({ id, title: after.title, field: "blocked by", from: before.blockedBy.join(", ") || undefined, to: after.blockedBy.join(", ") || undefined });
-  }
-  return out;
 }
 
 /** First column of `type` in the project (board order), or undefined. */

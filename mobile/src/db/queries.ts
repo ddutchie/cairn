@@ -11,6 +11,7 @@ import type { RestoreResult, SyncActivityRow, RestorableRow } from "@cairn/share
 import { queryTerms, ftsMatchQuery } from "@cairn/shared/notes/text";
 import { buildNoteOutline, sliceLines, noteDigest } from "@cairn/shared/notes/toc";
 import { dedupeFoldersCaseInsensitive, normalizeFolderPath } from "@cairn/shared/notes/folder-tree";
+import type { CardSnapshot } from "@cairn/shared/conversation/tool-view";
 import { buildNoteMarkdown } from "@cairn/shared/notes/export";
 import { appendToStyleGuide } from "@cairn/shared/user-style";
 import { notifyLocalWrite } from "@/sync/write-signal";
@@ -492,6 +493,23 @@ export function getCard(id: string): CardRow | null {
       id,
     ) ?? null
   );
+}
+
+/**
+ * A card's comparable fields (column by name, dates and assignee as plain
+ * strings), read before and after an agent call so the transcript can show what
+ * changed. Mobile has no blockers, so those lists stay empty.
+ */
+export function getCardSnapshot(id: string): CardSnapshot | undefined {
+  const row = getDb().getFirstSync<Omit<CardSnapshot, "blockedBy" | "blockedByIds">>(
+    `SELECT c.title, c.column_id AS columnId, COALESCE(b.name, '') AS columnName, c.priority,
+            COALESCE(c.due_date, '') AS dueDate, COALESCE(c.assignee, '') AS assignee,
+            CASE WHEN c.archived_at IS NULL THEN '' ELSE 'archived' END AS archived
+     FROM task_cards c LEFT JOIN board_columns b ON b.id = c.column_id
+     WHERE c.id = ? AND c.deleted_at IS NULL`,
+    id,
+  );
+  return row ? { ...row, blockedBy: [], blockedByIds: [] } : undefined;
 }
 
 /**

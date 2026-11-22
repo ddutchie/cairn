@@ -11,6 +11,7 @@ import type { ConversationToolCall } from "@/lib/conversation/message";
 import { prettyToolOutput, redactToolOutput, redactTranscriptValue } from "@/lib/redact-agent-transcript";
 import { prettifyToolLabel } from "@/lib/utils";
 import { cairnToolView } from "./cairn-tool-views";
+import { searchResultCount } from "../../../shared/conversation/tool-view";
 
 const MAX_DETAIL_LENGTH = 8_000;
 
@@ -28,7 +29,7 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
   const summaryArgs = toolCall.name === "people" ? withOutcome(withPersonName(toolCall.args, parsed), parsed) : toolCall.args;
   const base = toolCall.viewTitle ? { pre: toolCall.viewTitle } : humanizeTool(toolCall.name, summaryArgs, cairnNameLookup);
   // A style rule that was already in the guide must not read as "Added".
-  const hitCount = toolCall.ok && (toolCall.name === "search_notes" || toolCall.name === "search_tasks") ? resultCount(resultText) : undefined;
+  const hitCount = toolCall.ok && (toolCall.name === "search_notes" || toolCall.name === "search_tasks") ? searchResultCount(resultText) : undefined;
   const summary = toolCall.name === "update_user_writing_style" && toolCall.ok && parsed?.updated === false
     ? { pre: "Writing style already had this", obj: typeof toolCall.args?.section === "string" ? toolCall.args.section : undefined }
     : hitCount !== undefined
@@ -108,17 +109,6 @@ function OpenPersonButton({ personId }: { personId: string }) {
       <User size={11} />
     </IconButton>
   );
-}
-
-/** Number of hits in a search result (a top-level array, or `{results}`), or undefined when it isn't one. */
-function resultCount(text: string | undefined): number | undefined {
-  if (!text) return undefined;
-  try {
-    const value = JSON.parse(text);
-    if (Array.isArray(value)) return value.length;
-    if (value && typeof value === "object" && Array.isArray((value as { results?: unknown }).results)) return (value as { results: unknown[] }).results.length;
-  } catch { /* not JSON */ }
-  return undefined;
 }
 
 function parseObject(text: string | undefined): Record<string, unknown> | undefined {

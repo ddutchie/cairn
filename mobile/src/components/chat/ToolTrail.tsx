@@ -16,15 +16,17 @@ import { listInstalledServices } from "@/chat/services";
 import { getCachedManifest } from "@/chat/registry";
 import { prettyToolOutput, safeToolOutput } from "@/chat/tool-output";
 import { useOpenInPreview } from "@/components/SidePreview";
+import { CairnToolCard, hasToolDetail } from "./CairnToolCard";
 import { DisclosureBody, DisclosureTurn, useDisclosure } from "@/components/Disclosure";
 
 type Connector = { name: string; kind: "mcp" | "service"; iconSvg?: string; brandColor?: string };
 
 /**
- * The vertical trail of tool-call chips shown above an assistant bubble. A chip
- * whose tool created/touched a note or card is tappable and opens it by id (the
- * reliable, collision-proof path) — beside the chat on wide windows (see
- * SidePreview), otherwise by navigating; read-only tools render as a plain chip.
+ * The vertical trail of tool-call chips shown above an assistant bubble. A Cairn
+ * tool call expands to what it changed (CairnToolCard); one that created/touched
+ * a note or card also has an Open button that opens it by id (the reliable,
+ * collision-proof path) — beside the chat on wide windows (see SidePreview),
+ * otherwise by navigating. Calls with no detail render as a plain chip.
  */
 export function ToolTrail({ tools }: { tools: ToolCall[] }) {
   const t = useTheme();
@@ -71,6 +73,21 @@ export function ToolTrail({ tools }: { tools: ToolCall[] }) {
               <WorkLoader phase="tools" size={14} />
               <Text style={styles.toolChipText}>{label}…</Text>
             </View>
+          );
+        }
+        if (!connector && !(tt.externalRef && isHttpUrl(tt.externalRef.url)) && hasToolDetail(tt)) {
+          const ref = tt.ref;
+          return (
+            <CairnToolCard
+              key={i}
+              tool={tt}
+              label={label}
+              onOpen={ref ? () => {
+                // Wide windows preview beside the chat; narrow ones navigate.
+                if (preview) preview({ kind: ref.kind === "card" ? "card" : "note", id: ref.id });
+                else router.push(ref.kind === "card" ? `/card/${ref.id}` : `/note/${ref.id}`);
+              } : undefined}
+            />
           );
         }
         if (tt.ref) {
