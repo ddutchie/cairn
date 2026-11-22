@@ -324,12 +324,21 @@ export function AiSettingsForm({ onClose, section = "hub" }: { onClose: () => vo
       let cancelled = false;
       void (async () => {
         const list = await listSavedProviders();
-        if (!cancelled) setProviders(list);
+        if (cancelled) return;
+        setProviders(list);
+        // The hub stays mounted under Provider & model: re-read what was saved there for its summary
+        // row. The model screen keeps its own drafts, so it does not re-read.
+        if (section === "hub") {
+          setPref(getProviderPref());
+          setModel(getOpenAIModel());
+          const active = list.find((p) => p.id === getActiveProviderId());
+          if (active) setName(active.name);
+        }
       })();
       return () => {
         cancelled = true;
       };
-    }, []),
+    }, [section]),
   );
   // Switch the active provider: persist any pending edits to the current one,
   // then load the target provider's values into the fields. Guarded against

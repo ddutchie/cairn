@@ -23,7 +23,7 @@ export function PinnedAccessory({ tool }: { tool: ToolId }) {
   return (
     <Pressable
       style={s.root}
-      onPress={() => router.push(meta.href)}
+      onPress={() => router.push(meta.href, { withAnchor: true })}
       onLongPress={() => showAccessoryMenu(tool)}
       accessibilityRole="button"
       accessibilityLabel={`${meta.title}, ${liveLine(tool)}`}

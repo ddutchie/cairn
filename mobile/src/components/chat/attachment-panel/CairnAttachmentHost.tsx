@@ -396,14 +396,14 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
             />
           }
           grid={
-            sheet === "camera" ? (
+            sheet === "camera" && !isModel ? (
               <CameraSheet ref={cameraRef} width={gridWidth} height={gridHeight} facing={facing} flash={flash} lifting={isFlying} />
             ) : (
               <PhotoGrid ref={gridRef} width={gridWidth} height={gridHeight} photos={photos} status={status} selected={selected} lifting={isFlying} onTogglePhoto={togglePhoto} />
             )
           }
         />
-        {sheet === "camera" ? (
+        {sheet === "camera" && !isModel ? (
           <CameraBar
             width={gridWidth}
             active={mode === "camera" && !isFlying}

@@ -277,6 +277,6 @@ The open questions are settled (also captured in the Cairn note "Mobile routing 
 
 The spike in step 4 answered the open question: `router.push` of a shared href stays inside the current tab's stack with `NativeTabs`, so the per-tab-stub fallback was not needed.
 
-Not yet checked on a device: opening a note from Search, link taps from Graph, People and Chat, the Duo (including the settings modal against the side rail), the iPad Projects tab bar, and back-button titles.
+Not yet checked on a device: opening a note from Search, link taps from Graph, People and Chat, the Duo (including the settings modal against the side rail), the iPad Projects tab bar, Android (modal presentation and back behaviour; the decisions require it before merge), and back-button titles.
 
 Follow-ups: Chat's "Configure" button (no provider) opens the AI hub and probably wants `/settings/model`; temperature and max steps now appear in both the chat chip panel and the AI hub (same stored values).

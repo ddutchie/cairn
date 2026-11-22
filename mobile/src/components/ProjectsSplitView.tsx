@@ -175,7 +175,7 @@ export function ProjectsSplitView({
     ? [
         { kind: "button", key: "capture", label: "Capture", icon: "square.and.pencil", onPress: toolbarPress(() => router.push("/capture")) },
         ...(pinnedTool
-          ? [{ kind: "button" as const, key: "pinned-tool", label: WORKSPACE_TOOLS[pinnedTool].title, icon: TOOL_SYMBOL[pinnedTool], onPress: toolbarPress(() => router.push(WORKSPACE_TOOLS[pinnedTool].href)) }]
+          ? [{ kind: "button" as const, key: "pinned-tool", label: WORKSPACE_TOOLS[pinnedTool].title, icon: TOOL_SYMBOL[pinnedTool], onPress: toolbarPress(() => router.push(WORKSPACE_TOOLS[pinnedTool].href, { withAnchor: true })) }]
           : []),
       ]
     : [];

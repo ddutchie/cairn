@@ -1,7 +1,7 @@
 import { useRef, useState, type ComponentRef } from "react";
 import { StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
 import { MENU } from "./constants";
-import { type, withAlpha } from "@/theme";
+import { type, useTheme, withAlpha } from "@/theme";
 
 /**
  * A stepped slider for the chat panel. Touch handling is the View's own responder
@@ -50,6 +50,7 @@ export function MenuSlider({
   const shown = value ?? placeholder;
   const frac = (shown - min) / (max - min);
   const steps = Math.round((max - min) / step);
+  const t = useTheme();
   const dim = withAlpha(fg, 0.55);
 
   return (
@@ -102,7 +103,7 @@ export function MenuSlider({
           pointerEvents="none"
           style={[
             styles.thumb,
-            { left: trackWidth * frac - THUMB / 2, opacity: value == null ? 0.6 : 1, borderColor: withAlpha(fg, 0.12) },
+            { left: trackWidth * frac - THUMB / 2, opacity: value == null ? 0.6 : 1, borderColor: withAlpha(fg, 0.12), backgroundColor: fg, shadowColor: t.scrim },
           ]}
         />
       </View>
@@ -127,9 +128,7 @@ const styles = StyleSheet.create({
     width: THUMB,
     height: THUMB,
     borderRadius: THUMB / 2,
-    backgroundColor: "#FFFFFF",
     borderWidth: StyleSheet.hairlineWidth,
-    shadowColor: "#000",
     shadowOpacity: 0.18,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },

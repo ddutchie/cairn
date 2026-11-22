@@ -244,7 +244,7 @@ export function ProjectsTreeSidebar({
                 systemImage="person.2"
                 onPress={() => {
                   haptics.selection();
-                  router.push("/workspace/people" as Href);
+                  router.push("/workspace/people" as Href, { withAnchor: true });
                 }}
               />
             </Section>
@@ -273,7 +273,7 @@ export function ProjectsTreeSidebar({
               systemImage={TOOL_SYMBOL[pinnedTool]}
               onPress={() => {
                 haptics.selection();
-                router.push(WORKSPACE_TOOLS[pinnedTool].href);
+                router.push(WORKSPACE_TOOLS[pinnedTool].href, { withAnchor: true });
               }}
             />
           </ToolbarItem>
