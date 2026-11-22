@@ -752,7 +752,7 @@ export default function ChatScreen() {
                 setMaxSteps(n);
               },
             },
-            { key: "model-settings", label: "AI settings", Icon: Settings, more: true, onPress: () => router.push("/settings/ai") },
+            { key: "model-settings", label: "AI settings", Icon: Settings, more: true, opensScreen: true, onPress: () => router.push("/settings/ai") },
           ],
         },
       ]
@@ -785,9 +785,9 @@ export default function ChatScreen() {
                   setPersonalityId(id);
                 },
               }
-            : { onPress: () => router.push("/settings/ai") }),
+            : { opensScreen: true, onPress: () => router.push("/settings/ai") }),
         },
-        { key: "tools", label: "Tools & services", Icon: Wrench, more: true, onPress: () => router.push("/settings/tools") },
+        { key: "tools", label: "Tools & services", Icon: Wrench, more: true, opensScreen: true, onPress: () => router.push("/settings/tools") },
       ],
     },
     // No model chip (Apple on-device, Android): AI settings stays here instead.
@@ -796,7 +796,7 @@ export default function ChatScreen() {
       : [
           {
             key: "chat",
-            rows: [{ key: "ai-settings", label: "AI settings", Icon: Settings, more: true, onPress: () => router.push("/settings/ai") }],
+            rows: [{ key: "ai-settings", label: "AI settings", Icon: Settings, more: true, opensScreen: true, onPress: () => router.push("/settings/ai") }],
           },
         ]),
   ];

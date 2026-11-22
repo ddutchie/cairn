@@ -24,6 +24,8 @@ export interface MenuRow {
   disabled?: boolean;
   /** Tap. The panel closes first. Ignored when the row has `choices`. */
   onPress?: () => void;
+  /** `onPress` opens another screen: the keyboard goes away instead of coming back to the chat box. */
+  opensScreen?: boolean;
   /**
    * Options picked inside the panel: tapping the row swaps the panel's rows for this
    * list, with a back row on top. (Native SwiftUI menus don't draw in the panel, which

@@ -120,10 +120,14 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
   const panelTop = panelTopFor(settledBottom);
   const gridHeight = height - panelTop - GUTTER;
 
+  // False while a row is opening another screen: the chat box must not take the
+  // keyboard back as the panel finishes closing.
+  const refocus = useRef(true);
   const closeSheet = useCallback(() => {
     setMode("closed");
     setClosing(false);
-    KeyboardController.setFocusTo("current");
+    if (refocus.current) KeyboardController.setFocusTo("current");
+    refocus.current = true;
   }, []);
 
   const pulseBlur = useCallback(() => {
@@ -309,6 +313,10 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
         ...row,
         onPress: row.onPress
           ? () => {
+              if (row.opensScreen) {
+                refocus.current = false;
+                void KeyboardController.dismiss();
+              }
               dismiss();
               row.onPress?.();
             }
