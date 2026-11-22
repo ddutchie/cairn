@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { ActionSheetIOS, Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack, useFocusEffect, useRouter, type Href } from "expo-router";
-import { BarChart3, FolderOpen, Network, Palette, Pin, RefreshCw, Sparkles, Users, Wrench } from "lucide-react-native";
+import { BarChart3, FolderOpen, Network, Pin, RefreshCw, Settings, Users } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
@@ -57,13 +57,8 @@ export function WorkspaceScreen() {
     key: id, title: WORKSPACE_TOOLS[id].title, line: lines[id] ?? WORKSPACE_TOOLS[id].blurb,
     href: WORKSPACE_TOOLS[id].href, icon: ICONS[id], tool: id,
   }));
-  const settings: Row[] = [
-    { key: "usage", title: "Usage", line: lines.usage ?? WORKSPACE_TOOLS.usage.blurb, href: WORKSPACE_TOOLS.usage.href, icon: ICONS.usage, tool: "usage" },
-    { key: "sync", title: "Sync", line: lines.sync ?? WORKSPACE_TOOLS.sync.blurb, href: WORKSPACE_TOOLS.sync.href, icon: ICONS.sync, tool: "sync" },
-    { key: "ai", title: "AI settings", line: "Provider, model and keys", href: "/workspace/ai" as Href, icon: Sparkles },
-    { key: "tools", title: "Tools and services", line: "Connectors the assistant can use", href: "/workspace/tools" as Href, icon: Wrench },
-    { key: "appearance", title: "Appearance", line: "Theme and text size", href: "/workspace/appearance" as Href, icon: Palette },
-  ];
+  const usage: Row = { key: "usage", title: "Usage", line: lines.usage ?? WORKSPACE_TOOLS.usage.blurb, href: WORKSPACE_TOOLS.usage.href, icon: ICONS.usage, tool: "usage" };
+  const settings: Row = { key: "settings", title: "Settings", line: "Appearance, AI, tools and sync", href: "/workspace/settings" as Href, icon: Settings };
 
   const renderRow = (r: Row): ReactNode => {
     const isPinned = r.tool != null && r.tool === pinned;
@@ -107,8 +102,9 @@ export function WorkspaceScreen() {
         </PressableScale>
         <Text style={s.section}>Tools</Text>
         {tools.map(renderRow)}
+        {renderRow(usage)}
         <Text style={s.section}>Settings</Text>
-        {settings.map(renderRow)}
+        {renderRow(settings)}
         <Text style={s.hint}>Press and hold a tool to show it above the tab bar.</Text>
       </ScrollView>
     </TabScreen>

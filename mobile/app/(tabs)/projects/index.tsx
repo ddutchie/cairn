@@ -12,7 +12,7 @@ import { ProjectIcon } from "@/components/ProjectIcon";
 import { WorkspaceProgressCard } from "@/components/overview/WorkspaceProgressCard";
 import { ProjectsSplitView, resetProjectsSelection } from "@/components/ProjectsSplitView";
 import { WorkspaceHeaderMenu } from "@/components/WorkspaceHeaderMenu";
-import { ICON_APPEARANCE, ICON_CAPTURE } from "@/components/toolbar-icons";
+import { ICON_SETTINGS, ICON_CAPTURE } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { requestSync } from "@/sync/controller";
@@ -104,12 +104,12 @@ export default function ProjectsScreen() {
             Capture
           </Stack.Toolbar.Button>,
           <Stack.Toolbar.Button
-            key="appearance"
-            icon={ICON_APPEARANCE}
-            accessibilityLabel="Appearance settings"
-            onPress={toolbarPress(() => router.push("/settings/appearance"))}
+            key="settings"
+            icon={ICON_SETTINGS}
+            accessibilityLabel="Settings"
+            onPress={toolbarPress(() => router.push("/workspace/settings"))}
           >
-            Appearance
+            Settings
           </Stack.Toolbar.Button>,
         )}
       </Stack.Toolbar>

@@ -1,0 +1,66 @@
+import { useMemo, type ReactNode } from "react";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useRouter, type Href } from "expo-router";
+import { Palette, RefreshCw, Sparkles, Wrench } from "lucide-react-native";
+import { PressableScale } from "@/components/PressableScale";
+import { TabScreen } from "@/components/TabScreen";
+import { useTheme, type as typeScale, type Theme } from "@/theme";
+
+type Row = { key: string; title: string; line: string; href: Href; icon: typeof Palette };
+type Group = { title: string; rows: Row[] };
+
+/** Same groups, same names and same order as the desktop Settings rail (App, AI, Extensions, Data). */
+const GROUPS: Group[] = [
+  { title: "App", rows: [{ key: "appearance", title: "Appearance", line: "Theme and text size", href: "/workspace/appearance" as Href, icon: Palette }] },
+  { title: "AI", rows: [{ key: "ai", title: "AI settings", line: "Provider, model and keys", href: "/workspace/ai" as Href, icon: Sparkles }] },
+  { title: "Extensions", rows: [{ key: "tools", title: "Tools and services", line: "Connectors the assistant can use", href: "/workspace/tools" as Href, icon: Wrench }] },
+  { title: "Data", rows: [{ key: "sync", title: "Sync", line: "Devices and the shared folder", href: "/workspace/sync" as Href, icon: RefreshCw }] },
+];
+
+/** The one home for settings on mobile, reached from the Workspace tab (and the Projects menu). */
+export function SettingsScreen() {
+  const t = useTheme();
+  const s = useMemo(() => makeStyles(t), [t]);
+  const router = useRouter();
+  const renderRow = (r: Row): ReactNode => {
+    const Icon = r.icon;
+    return (
+      <PressableScale key={r.key} style={s.row} onPress={() => router.push(r.href)} accessibilityLabel={`${r.title}, ${r.line}`}>
+        <View style={s.iconWrap}><Icon size={18} color={t.accent} /></View>
+        <View style={s.body}>
+          <Text style={s.title} numberOfLines={1}>{r.title}</Text>
+          <Text style={s.line} numberOfLines={2}>{r.line}</Text>
+        </View>
+        <Text style={s.chevron}>›</Text>
+      </PressableScale>
+    );
+  };
+  return (
+    <TabScreen>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={s.list}>
+        {GROUPS.map((g) => (
+          <View key={g.title}>
+            <Text style={s.section}>{g.title}</Text>
+            {g.rows.map(renderRow)}
+          </View>
+        ))}
+      </ScrollView>
+    </TabScreen>
+  );
+}
+
+function makeStyles(t: Theme) {
+  return StyleSheet.create({
+    list: { padding: 12, paddingBottom: 120 },
+    section: { ...typeScale.label, color: t.textTertiary, marginTop: 14, marginBottom: 8, marginLeft: 4 },
+    row: {
+      flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 14,
+      borderRadius: 12, backgroundColor: t.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border, marginBottom: 6,
+    },
+    iconWrap: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: t.surface2 },
+    body: { flex: 1, gap: 2 },
+    title: { ...typeScale.control, color: t.textPrimary },
+    line: { ...typeScale.caption, color: t.textTertiary },
+    chevron: { fontSize: 20, color: t.textTertiary },
+  });
+}

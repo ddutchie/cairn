@@ -13,10 +13,10 @@ export default function ProjectsLayout() {
   return (
     <TabStack>
       <Stack.Screen name="index" options={{ title: "Projects" }} />
-      <Stack.Screen name="project/[id]" options={{ headerLargeTitle: false, title: "Project" }} />
-      <Stack.Screen name="project/calendar" options={{ headerLargeTitle: false, title: "Calendar" }} />
-      <Stack.Screen name="note/[id]" options={{ headerLargeTitle: false, title: "Note" }} />
-      <Stack.Screen name="card/[id]" options={{ headerLargeTitle: false, title: "Task" }} />
+      <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
+      <Stack.Screen name="project/calendar" options={{ title: "Calendar" }} />
+      <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
+      <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
     </TabStack>
   );
 }

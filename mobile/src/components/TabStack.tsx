@@ -38,15 +38,15 @@ export function useTabContentStyle() {
 }
 
 /**
- * Title rule for every tab: list-like roots (Projects, Workspace, People) get a
- * large title; canvas and conversation roots (Calendar, Chat, Search, the graph)
- * and every pushed detail screen get a small inline one. Buttons go through
- * `ScreenChrome` so the back label, haptics and Duo side-rail overflow apply
- * everywhere; Chat (glass header, model menu) and Search (search bar) add their
- * own header options on top.
+ * Title rule: every tab root and pushed screen gets the small inline title, so
+ * the same band sits above every tab (a large title ate a third of the Duo's
+ * closed display). Buttons go through `ScreenChrome` so the back label, haptics
+ * and Duo side-rail overflow apply everywhere; Chat (glass header, model menu)
+ * and Search (search bar) add their own header options on top. A screen that
+ * really wants a large title can pass `largeTitle`.
  */
 export function TabStack({
-  largeTitle = true,
+  largeTitle = false,
   children,
 }: {
   largeTitle?: boolean;

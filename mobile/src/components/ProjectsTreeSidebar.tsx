@@ -39,7 +39,7 @@ import { useRecentStones } from "@/gamification/useRecentStones";
 import { SyncRingLogo } from "@/components/SyncRingLogo";
 import { getActiveSource } from "@/db";
 import { useTightSideRail } from "@/lib/layout";
-import { useRefreshOnFocus, useSyncStatus } from "@/sync/useSyncStatus";
+import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { haptics } from "@/haptics";
 import { requestSync, switchSource } from "@/sync/controller";
 import { useSyncSources } from "@/sync/useSyncSources";
@@ -94,7 +94,6 @@ export function ProjectsTreeSidebar({
     hideTrailingActions
       ? ({ placement: "secondaryAction" } as const)
       : ({ placement: "topBarTrailing", visibilityPriority: priority } as const);
-  const { state: syncState, pending: syncPending } = useSyncStatus();
   const { sources, refresh } = useSyncSources({ mergeActive: true });
   // Discover workspaces whenever the sidebar shows: sync never scans for new
   // ones, and without a scan the switcher menu only knows the active workspace.
@@ -104,8 +103,6 @@ export function ProjectsTreeSidebar({
     }, [refresh]),
   );
   const { inputs: stones, newestId } = useRecentStones(SHOW_CAIRN_STACK);
-  const syncOffline = syncState === "offline";
-  const syncStatusText = syncOffline ? "Offline" : syncState === "syncing" ? "Syncing…" : syncPending > 0 ? `${syncPending} pending` : "Synced";
 
   // Workspace-wide progress for the header card above the project list. Read
   // here (not passed in) so focus / sync / task-save refreshes stay local to
@@ -243,14 +240,14 @@ export function ProjectsTreeSidebar({
                 }}
               />
             </Section>
-            {/* Sync lives here now (it used to be its own toolbar button). */}
-            <Section title="Sync">
+            {/* Settings has one home, the Workspace tab (as on desktop); this is the way in from here. */}
+            <Section title="Settings">
               <Button
-                label={`Sync · ${syncStatusText}`}
-                systemImage="arrow.triangle.2.circlepath"
+                label="Settings"
+                systemImage="gearshape"
                 onPress={() => {
                   haptics.selection();
-                  router.push("/sync");
+                  router.push("/workspace/settings" as Href);
                 }}
               />
             </Section>
@@ -268,16 +265,6 @@ export function ProjectsTreeSidebar({
             onPress={() => {
               haptics.selection();
               router.push("/capture");
-            }}
-          />
-        </ToolbarItem>
-        <ToolbarItem {...trailingItem("low")}>
-          <Button
-            label="Appearance settings"
-            systemImage="paintpalette"
-            onPress={() => {
-              haptics.selection();
-              router.push("/settings/appearance");
             }}
           />
         </ToolbarItem>

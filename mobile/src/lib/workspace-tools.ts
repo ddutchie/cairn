@@ -24,7 +24,7 @@ export const WORKSPACE_TOOLS: Record<ToolId, WorkspaceTool> = {
 /** Space the pinned accessory takes above the tab bar, so screens end above it. */
 export const ACCESSORY_HEIGHT = 56;
 
-export const PINNABLE: ToolId[] = ["people", "graph", "usage", "sync"];
+export const PINNABLE: ToolId[] = ["people", "graph", "usage"];
 
 /** One live line for a tool, or its blurb when there is nothing to count. Cheap, synchronous SQLite. */
 export function liveLine(id: ToolId): string {
