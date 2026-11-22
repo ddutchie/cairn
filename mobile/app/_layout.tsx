@@ -245,6 +245,8 @@ function RootNavigator({
       {/* Tabs own their side-inset padding themselves (TabStack /
           useTabContentStyle, incl. the split view's overrides) — the root
           safe-zone padding must not inset the whole tab navigator twice. */}
+      {/* The entry redirect to /projects: without this it gets the default header and flashes "index" at launch. */}
+      <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen
         name="(tabs)"
         options={{ headerShown: false, contentStyle: { backgroundColor } }}
