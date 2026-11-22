@@ -4,7 +4,8 @@
  * so a bare `/project/<id>` would open in whichever tab sorts first (Calendar). Pin them to the
  * Projects tab, the same place a tap in the app opens them from. Anything else passes through.
  */
-const DETAIL = /^\/(project|note|card)\/[^/?#]+/;
+// `/note/new` and `/card/new` are the root create modals, not details.
+const DETAIL = /^\/(project|note|card)\/(?!new(?:[/?#]|$))[^/?#]+/;
 
 export function redirectDetailLink(path: string): string {
   // `path` can be a full URL (`cairn://project/abc`, where the host is the first segment) or a path.
