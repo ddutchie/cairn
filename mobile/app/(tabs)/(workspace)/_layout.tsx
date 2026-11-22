@@ -1,6 +1,11 @@
 import { Stack } from "expo-router";
 import { TabStack } from "@/components/TabStack";
 
+// The tab's first screen. The tab is a group, so its list is no longer a plain `index` route and
+// the stack would not seed it: opening a deeper screen first (a link, the pinned tool) left it as
+// the only screen, and re-tapping the tab had nothing to pop back to.
+export const unstable_settings = { anchor: "workspace/index" };
+
 /**
  * Workspace tab stack: the home, then People (list, person, team) and the
  * knowledge graph pushed inside it so the tab bar stays visible and back goes to
