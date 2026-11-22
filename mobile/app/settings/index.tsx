@@ -1,11 +1,14 @@
 import { Stack, useRouter } from "expo-router";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { toolbarPress, useModalOpenHaptic } from "@/haptics";
+import { ModalSafeView } from "@/components/ModalSafeView";
 import { SettingsScreen } from "@/screens/SettingsScreen";
+import { useTheme } from "@/theme";
 
 /** The settings hub: the first screen of the settings modal. Done closes the modal. */
 export default function SettingsHub() {
   useModalOpenHaptic();
+  const t = useTheme();
   const router = useRouter();
   const close = () => {
     if (router.canGoBack()) router.back();
@@ -17,7 +20,10 @@ export default function SettingsHub() {
           Done
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
-      <SettingsScreen />
+      {/* Clears the Duo's side rail when the modal spans the window. */}
+      <ModalSafeView backgroundColor={t.background}>
+        <SettingsScreen />
+      </ModalSafeView>
     </>
   );
 }
