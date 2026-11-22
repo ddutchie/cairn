@@ -62,7 +62,7 @@ export default function TabsLayout() {
             settings, each with a live line. Five tabs including Search fit
             without iOS folding any into More. */}
         <NativeTabs.Trigger name="(workspace)">
-          <NativeTabs.Trigger.Icon sf="square.grid.2x2.fill" md="apps" />
+          <NativeTabs.Trigger.Icon sf="square.stack.3d.up.fill" md="layers" />
           <NativeTabs.Trigger.Label>Workspace</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
