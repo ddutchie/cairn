@@ -1,5 +1,4 @@
-import { StyleSheet, Text, View } from "react-native";
-import { Pressable } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { NativeTabs } from "expo-router/native-tabs";
 import { BarChart3, Network, RefreshCw, Users } from "lucide-react-native";

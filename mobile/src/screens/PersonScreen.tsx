@@ -19,9 +19,8 @@ import { cleanProfileField, PROFILE_FIELDS, type ProfileField } from "@cairn/sha
 import { CADENCE_LABELS, RELATIONSHIP_LABELS, describeRelation } from "@cairn/shared/people/model";
 import { formatDate, formatRelative } from "@cairn/shared/format/date";
 import { KIND_LABEL } from "@/lib/team-labels";
-import { CADENCES, RELATIONSHIP_TYPES, type Cadence, type Relationship, type RelationshipType } from "@cairn/shared/types/people";
+import { CADENCES, RELATIONSHIP_TYPES, type Cadence, type Relationship, type RelationshipType, type Team } from "@cairn/shared/types/people";
 import type { PersonPage, PersonSummary, PersonTimelineItem } from "@cairn/shared/types/people-view";
-import type { Team } from "@cairn/shared/types/people";
 
 type Page = PersonPage & { items: OpenItems };
 

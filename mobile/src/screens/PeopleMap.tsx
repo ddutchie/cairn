@@ -29,6 +29,11 @@ const WORDS: Record<Availability, string> = { work: "At work", edge: "Early or l
 const MAX_K = 8;
 const hhmm = (h: number) => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.floor((h % 1) * 60)).padStart(2, "0")}`;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+/** The night hemisphere: the circle centred opposite the sun. */
+const nightCircle = (ms: number) => {
+  const s = sunAt(ms);
+  return d3.geoCircle().center([s.lon + 180, -s.lat]).radius(90)();
+};
 const toPath = (d: string | null) => (d ? Skia.Path.MakeFromSVGString(d) : null);
 
 interface View2 { k: number; x: number; y: number }
@@ -51,21 +56,23 @@ export function PeopleMap({ people, header }: { people: readonly PersonSummary[]
     const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
   }, []);
-  const at = new Date(now + offset * 3_600_000);
+  const atMs = now + offset * 3_600_000;
+  const at = new Date(atMs);
 
   const me = people.find((p) => p.isMe) ?? null;
   // The globe starts facing you (your zone's city), else the zone this phone is in.
   const home = ZONE_COORDS[me?.timezone ?? systemZone()] ?? [20, 0];
   const rot: [number, number] = rotate ?? [-home[1], -clamp(home[0], -60, 60)];
+  const [rot0, rot1] = rot;
 
   const projection = useMemo(() => {
     if (kind === "globe") {
-      return d3.geoOrthographic().translate([W / 2, H / 2]).scale((Math.min(W, H) / 2 - 6) * view.k).rotate(rot).clipAngle(90).precision(0.6);
+      return d3.geoOrthographic().translate([W / 2, H / 2]).scale((Math.min(W, H) / 2 - 6) * view.k).rotate([rot0, rot1]).clipAngle(90).precision(0.6);
     }
     const base = d3.geoNaturalEarth1().fitSize([W, H], { type: "Sphere" });
     const [tx, ty] = base.translate();
     return base.scale(base.scale() * view.k).translate([tx * view.k + view.x, ty * view.k + view.y]);
-  }, [kind, view, rot[0], rot[1], W, H]); // eslint-disable-line react-hooks/exhaustive-deps -- rot is a fresh tuple each render; its parts are the deps
+  }, [kind, view, rot0, rot1, W, H]);
   const geo = useMemo(() => d3.geoPath(projection), [projection]);
 
   const { groups, unplaced } = useMemo(() => groupBySpot(people), [people]);
@@ -76,8 +83,8 @@ export function PeopleMap({ people, header }: { people: readonly PersonSummary[]
     sphere: toPath(geo({ type: "Sphere" })),
     grid: toPath(geo(d3.geoGraticule10())),
     land: toPath(geo(land as unknown as d3.GeoPermissibleObjects)),
-    night: toPath(geo(d3.geoCircle().center([sun.lon + 180, -sun.lat]).radius(90)())),
-  }), [geo, sun.lon, sun.lat]);
+    night: toPath(geo(nightCircle(atMs))),
+  }), [geo, atMs]);
 
   const availOf = (g: MapGroup): Availability => availabilityAt(localHourAt(g.tz, at) ?? 12);
   const color = (a: Availability) => (a === "work" ? t.success : a === "edge" ? t.warning : t.textTertiary);
