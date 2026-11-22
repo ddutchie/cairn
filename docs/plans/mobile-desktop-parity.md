@@ -79,8 +79,28 @@ Mobile: one Settings modal (`/settings`) with the same four group names; the hub
 |---|---|
 | Workspace switcher | Yes, at the top of the Workspace tab and in the Projects menu |
 | Command palette, global shortcuts | n/a (Search tab, quick actions) |
-| Capture | Mobile-first: capture sheet, widgets, share extension |
+| Capture | Mobile-first: capture sheet, widgets, quick actions. A share extension is planned, not built (`mobile-capture-and-widgets.md`, section E) |
 | Sync | Shared engine; phone can delete a workspace from the sync folder |
+
+## Mobile only (the phone is ahead, or the job does not exist on desktop)
+
+Checked against `mobile/src`, `mobile/modules` and `app.json`, 2026-11-22.
+
+| Mobile feature | What it is | Desktop |
+|---|---|---|
+| AI capture | The capture sheet files a thought, to-do or link into the right project (ranked, with confirm card and Undo). Entry points: Projects toolbar, home-screen quick action, `cairn://capture` | No equivalent; desktop has the editor and chat |
+| Voice dictation | Hold-to-talk mic in the chat box and capture, on-device where supported, project and note titles as vocabulary | No |
+| Home-screen widgets | Workspace progress and what is due today, one-tap Capture, per-project progress | No |
+| Quick actions | Long-press the app icon: Quick capture, Search | n/a |
+| On-device AI | Apple Intelligence as a chat provider (on-device and Private Cloud Compute) and Apple on-device embeddings for semantic search, so search works with no desktop | Desktop embeds with its own model |
+| Background sync | A periodic catch-up while the app is closed, over the iCloud sync folder | Desktop syncs while open |
+| Camera, photos, files in chat | Recent photos strip, Camera, Photos and Add files from the `+` panel | Files only |
+| Fold and tablet layouts | iPhone Duo postures (side rail, crease-aware split), iPad split view and sidebar-adaptable tabs | n/a |
+| Touch drag and drop | Board cards, with edge auto-scroll | Mouse drag |
+| Stones and milestones | A Skia cairn that stacks as notes are written, with milestone celebrations and haptics | No |
+| Haptics | Selection, success and settle feedback across the app | n/a |
+
+Planned, not built: share extension and a lock-screen capture control (`mobile-capture-and-widgets.md`, section E); a "stone to revisit" daily pick (section D).
 
 ## Suggested order
 
