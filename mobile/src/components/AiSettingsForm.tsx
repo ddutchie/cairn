@@ -127,10 +127,9 @@ function formatCredits(n: number): string {
 }
 
 /**
- * AI settings form body. Presented as a native `formSheet` route
- * (`app/settings/ai.tsx`) rather than a hand-rolled modal, so it gets the
- * system modal transition + swipe-to-dismiss instead of a backdrop that slides
- * in with the card. Lets the user pick the chat backend:
+ * AI settings form body, shared by two screens of the settings modal:
+ * `app/settings/ai.tsx` (the hub: live tuning plus rows into the rest) and
+ * `app/settings/model.tsx` (provider and model, saved on Save). Lets the user pick the chat backend:
  *   - "Apple Intelligence (on-device)" — shown when the device supports it
  *     (iOS 26+, Apple Intelligence enabled). Runs fully offline, no key.
  *   - "OpenAI-compatible" — always available; the user supplies endpoint + key.
@@ -140,7 +139,7 @@ function formatCredits(n: number): string {
  * fields (base URL, model) persist to local SQLite; the API key goes to the
  * device keychain (expo-secure-store). Saved on Done.
  */
-export function AiSettingsForm({ onClose }: { onClose: () => void }) {
+export function AiSettingsForm({ onClose, section = "hub" }: { onClose: () => void; section?: "hub" | "model" }) {
   const t = useTheme();
   const isDark = useIsDark();
   const styles = useAiSettingsStyles();
@@ -241,9 +240,10 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const [personalityId, setPersonalityId] = useState(() => getChatPersonalityId());
   const [personalityManifest, setPersonalityManifest] = useState(() => getCachedPersonalitiesManifest());
   const [personalityRefreshing, setPersonalityRefreshing] = useState(false);
-  // 2-tab layout: setup (provider + model) / tuning (settings + theme).
-  // "setup" persists on Save (Done); "tuning" is live. Usage lives in the Workspace tab.
-  const [tab, setTab] = useState(0);
+  // Two screens share this form. "model" (Provider & model) persists on Save; the
+  // "hub" (AI settings) is live tuning plus the way into the model, providers and
+  // tools screens. Usage lives in the Workspace tab.
+  const tab = section === "model" ? 0 : 1;
   // Model-behavior knobs (live-apply, desktop parity) — temperature "Auto" =
   // undefined (omit the field); max steps default 30.
   const [temperature, setTemperature] = useState<number | undefined>(() => getChatTemperature());
@@ -703,7 +703,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
 
   return (
     <ModalSafeView backgroundColor={t.surface}>
-      <Stack.Screen options={{ headerShown: true, title: "AI settings", headerBackTitle: "Back" }} />
+      <Stack.Screen options={{ headerShown: true, title: section === "model" ? "Provider & model" : "AI settings", headerBackTitle: "Back" }} />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
           icon={ICON_CHECK}
@@ -715,6 +715,9 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
         >
           Save
         </Stack.Toolbar.Button>
+        <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" hidden={tab !== 1} accessibilityLabel="Done" onPress={toolbarPress(onClose)}>
+          Done
+        </Stack.Toolbar.Button>
       </Stack.Toolbar>
 
         {loading ? (
@@ -723,19 +726,6 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
           </View>
         ) : (
           <>
-          {/* 2-tab layout (native segmented control, iOS/Android). "Setup" holds
-              provider + model and saves on Done; "Tuning" (settings + theme) is live. */}
-          <View style={[styles.tabBar, edgePad]}>
-            <SegmentedControl
-              style={{ height: 36 }}
-              tintColor={t.accent}
-              fontStyle={{ color: t.textSecondary, fontSize: 14, fontWeight: "600" }}
-              activeFontStyle={{ color: t.accentFg, fontSize: 14, fontWeight: "600" }}
-              values={["Setup", "Tuning"]}
-              selectedIndex={tab}
-              onChange={(e) => setTab(e.nativeEvent.selectedSegmentIndex)}
-            />
-          </View>
           <KeyboardAwareScrollView
             style={styles.body}
             contentContainerStyle={[styles.bodyContent, edgePad]}
@@ -1128,6 +1118,26 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
           )}
           {tab === 1 && (
             <>
+              {/* Provider and model change rarely and save on their own screen. */}
+              <Pressable
+                style={styles.navRow}
+                onPress={() => {
+                  haptics.selection();
+                  router.push("/settings/model" as Href);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Provider and model"
+              >
+                <Cpu size={16} color={t.textSecondary} />
+                <View style={styles.navRowMain}>
+                  <Text style={styles.navRowTitle}>Provider &amp; model</Text>
+                  <Text style={styles.navRowSub} numberOfLines={1}>
+                    {showChooser && pref === "apple" ? "Apple Intelligence" : [name.trim(), model.trim()].filter(Boolean).join(" · ") || "Not set up yet"}
+                  </Text>
+                </View>
+                <ChevronRight size={18} color={t.textTertiary} />
+              </Pressable>
+
               {/* Model behavior knobs — live-apply (desktop quick-settings parity). */}
               <Text style={styles.sectionLabel}>Model settings</Text>
               <PresetStepperRow

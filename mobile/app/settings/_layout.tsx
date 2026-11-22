@@ -26,6 +26,7 @@ export default function SettingsLayout() {
       >
         <Stack.Screen name="index" options={{ title: "Settings" }} />
         <Stack.Screen name="ai" options={{ title: "AI settings" }} />
+        <Stack.Screen name="model" options={{ title: "Provider & model" }} />
         <Stack.Screen name="providers" options={{ title: "AI Providers" }} />
         <Stack.Screen name="tools" options={{ title: "Tools & Services" }} />
         <Stack.Screen name="appearance" options={{ title: "Appearance" }} />
