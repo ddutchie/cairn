@@ -70,7 +70,7 @@ export default function CalendarScreen() {
           },
         ] : []}
       />
-      <SidePreviewLayout state={sp} onChanged={load} bodyStyle={{ backgroundColor: t.surface }}>
+      <SidePreviewLayout state={sp} onChanged={load} bodyStyle={{ backgroundColor: t.background }}>
       <CalendarView
         cards={cards}
         showProject
