@@ -20,7 +20,7 @@ const PEOPLE_TOOL_ARGS: Readonly<Record<string, readonly string[]>> = {
 };
 
 const q = vi.hoisted(() => ({
-  getNote: vi.fn(), getNoteForAgent: vi.fn(), getNoteRange: vi.fn(), getCard: vi.fn(),
+  getCardSnapshot: vi.fn(), getNote: vi.fn(), getNoteForAgent: vi.fn(), getNoteRange: vi.fn(), getCard: vi.fn(),
   listColumns: vi.fn(), listCards: vi.fn(), listProjects: vi.fn((): Record<string, unknown>[] => []), searchTasks: vi.fn((): Record<string, unknown>[] => []),
   listReadyCards: vi.fn((): Record<string, unknown>[] => []), listCardsWithDueDates: vi.fn((): Record<string, unknown>[] => []),
   patchNote: vi.fn(() => ({ ok: true })), appendToNote: vi.fn(() => true),
@@ -100,6 +100,28 @@ describe("mobile consolidated tools route to the right queries", () => {
     expect(q.moveCardToColumn).toHaveBeenCalledWith("c1", "doing");
     expect(q.updateTask).toHaveBeenCalledWith("c1", { priority: "high" });
     expect(res.error).toMatch(/missing: Task not found/);
+  });
+
+  it("update_tasks reports the fields it changed, and nothing for a no-op", async () => {
+    const snap = (over: Record<string, unknown>) => ({ title: "A", columnId: "todo", columnName: "Todo", priority: "low", dueDate: "", assignee: "", archived: "", blockedBy: [], blockedByIds: [], ...over });
+    q.getCard.mockReturnValue({ id: "c1", title: "A", project_id: "p", column_id: "todo" });
+    q.listColumns.mockReturnValue([{ id: "todo", type: "todo" }, { id: "doing", type: "in_progress" }]);
+    q.getCardSnapshot.mockReturnValueOnce(snap({})).mockReturnValueOnce(snap({ columnId: "doing", columnName: "Doing", priority: "high" }));
+    const res = await run("update_tasks", { cardIds: ["c1"], columnType: "in_progress", priority: "high" });
+    expect(res.changes).toEqual([
+      { id: "c1", title: "A", field: "column", from: "Todo", to: "Doing" },
+      { id: "c1", title: "A", field: "priority", from: "low", to: "high" },
+    ]);
+    q.getCardSnapshot.mockReturnValue(snap({}));
+    expect((await run("update_tasks", { cardIds: ["c1"], priority: "low" })).changes).toEqual([]);
+    // Tags are not measured, so an empty list would claim a no-op that may not be one.
+    expect((await run("update_tasks", { cardIds: ["c1"], tagNames: ["x"] })).changes).toBeUndefined();
+  });
+
+  it("update_notes reports a rename's old and new title", async () => {
+    q.getNote.mockReturnValueOnce({ id: "n1", title: "Old" }).mockReturnValue({ id: "n1", title: "New" });
+    const res = await run("update_notes", { noteIds: ["n1"], title: "New" });
+    expect(res.changes).toEqual([{ id: "n1", title: "New", field: "title", from: "Old", to: "New" }]);
   });
 
   it("create_task defaults to the backlog column and applies due date, tags and links", async () => {
