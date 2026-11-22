@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { AppState, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack, useRouter, type Href } from "expo-router";
 import { EmptyState } from "@/components/EmptyState";
 import { PressableScale } from "@/components/PressableScale";
@@ -24,6 +24,15 @@ export function TodayScreen() {
   const [today, setToday] = useState<LocalToday | null>(null);
   const load = useCallback(() => setToday(loadLocalToday()), []);
   useRefreshOnFocus(load);
+  // Reload when the local day rolls over while the screen stays open, and when the app comes back to the
+  // foreground (a timer does not fire while suspended).
+  useEffect(() => {
+    const next = new Date();
+    next.setHours(24, 0, 0, 0);
+    const timer = setTimeout(load, next.getTime() - Date.now() + 1000);
+    const sub = AppState.addEventListener("change", (s) => { if (s === "active") load(); });
+    return () => { clearTimeout(timer); sub.remove(); };
+  }, [load, today?.date]);
 
   const task = (id: string) => router.push({ pathname: "/card/[id]", params: { id } } as Href);
   const person = (id: string) => router.push({ pathname: "/workspace/people/[id]", params: { id } } as Href);
@@ -79,6 +88,6 @@ function makeStyles(t: Theme) {
     body: { flex: 1, gap: 2 },
     title: { ...typeScale.control, color: t.textPrimary },
     line: { ...typeScale.caption, color: t.textTertiary },
-    chevron: { fontSize: 20, color: t.textTertiary },
+    chevron: { ...typeScale.title, color: t.textTertiary },
   });
 }

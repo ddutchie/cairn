@@ -34,21 +34,27 @@ beforeEach(() => {
 });
 
 describe("listOpenDueTasks", () => {
-  it("returns open, dated, live tasks due on or before the day, oldest first", () => {
+  it("returns open, dated, live tasks due up to a day past the date (the caller classifies by local day), oldest first", () => {
     card("late", "2026-11-20", "todo");
     card("today", "2026-11-22", "todo");
     card("iso", "2026-11-22T09:00:00.000Z", "todo");
-    card("future", "2026-11-23", "todo");
+    card("future", "2026-11-23", "todo"); // inside the one-day slack
+    card("far", "2026-11-24", "todo");
     card("done", "2026-11-20", "done");
     card("nodue", null, "todo");
     card("arch", "2026-11-20", "todo", "2026-11-21");
-    expect(listOpenDueTasks("2026-11-22").map((t) => t.id)).toEqual(["late", "today", "iso"]);
+    expect(listOpenDueTasks("2026-11-22").map((t) => t.id)).toEqual(["late", "today", "iso", "future"]);
   });
 
-  it("honours the limit", () => {
-    card("a", "2026-11-20", "todo");
-    card("b", "2026-11-21", "todo");
-    expect(listOpenDueTasks("2026-11-22", 1).map((t) => t.id)).toEqual(["a"]);
+  it("keeps a timestamp that is still the day in a zone west of UTC, and does not cap the list", () => {
+    // 2026-11-23T07:00Z is Nov 22 at UTC-8: the caller classifies it, the query must not drop it.
+    card("west", "2026-11-23T07:00:00.000Z", "todo");
+    card("beyond", "2026-11-25", "todo");
+    for (let i = 0; i < 80; i++) card(`t${i}`, "2026-11-01", "todo");
+    const ids = listOpenDueTasks("2026-11-22").map((t) => t.id);
+    expect(ids).toContain("west");
+    expect(ids).not.toContain("beyond");
+    expect(ids).toHaveLength(81);
   });
 });
 
@@ -58,7 +64,8 @@ describe("listMeetingsBetween", () => {
     meeting("early", "2026-11-22T08:00:00.000Z");
     meeting("edge", "2026-11-23T00:00:00.000Z");
     meeting("before", "2026-11-21T23:59:59.000Z");
+    meeting("offset", "2026-11-22T23:30:00+02:00"); // 21:30Z: inside the day though its text sorts after the bound
     meeting("gone", "2026-11-22T09:00:00.000Z", NOW);
-    expect(listMeetingsBetween("2026-11-22T00:00:00.000Z", "2026-11-23T00:00:00.000Z").map((m) => m.id)).toEqual(["early", "late"]);
+    expect(listMeetingsBetween("2026-11-22T00:00:00.000Z", "2026-11-23T00:00:00.000Z").map((m) => m.id)).toEqual(["early", "late", "offset"]);
   });
 });

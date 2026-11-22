@@ -429,8 +429,15 @@ export function listDueTasks(limit = 8, onDate?: string): { id: string; title: s
   );
 }
 
-/** Open tasks due on or before `day` (local `YYYY-MM-DD`), oldest first, with their project's name. Feeds Today. */
-export function listOpenDueTasks(day: string, limit = 60): { id: string; title: string; due_date: string; priority: string | null; project_name: string | null }[] {
+/**
+ * Open tasks due on or before `day` (local `YYYY-MM-DD`), oldest first, with their project's name. Feeds Today.
+ *
+ * `due_date` can be a bare date (a local calendar day) or a timestamp (whose local day depends on the
+ * time zone), and SQLite cannot compare both by local day. So this is a deliberate superset: it keeps
+ * everything whose stored date text is up to a day past `day` (no zone is more than a day off), and the
+ * caller classifies each row by local calendar day (`getDueDateStatus`). No limit, so counts are complete.
+ */
+export function listOpenDueTasks(day: string): { id: string; title: string; due_date: string; priority: string | null; project_name: string | null }[] {
   return getDb().getAllSync<{ id: string; title: string; due_date: string; priority: string | null; project_name: string | null }>(
     `SELECT c.id AS id, c.title AS title, c.due_date AS due_date, c.priority AS priority, p.name AS project_name
      FROM task_cards c
@@ -438,19 +445,18 @@ export function listOpenDueTasks(day: string, limit = 60): { id: string; title: 
      LEFT JOIN projects p ON p.id = c.project_id
      WHERE c.deleted_at IS NULL AND c.archived_at IS NULL AND c.due_date IS NOT NULL
        AND (col.id IS NULL OR col.type != 'done' OR col.deleted_at IS NOT NULL)
-       AND date(c.due_date) <= date(?)
-     ORDER BY c.due_date ASC LIMIT ?`,
+       AND substr(c.due_date, 1, 10) <= date(?, '+1 day')
+     ORDER BY c.due_date ASC`,
     day,
-    limit,
   );
 }
 
-/** Live meetings that start in `[startIso, endIso)`, earliest first. Feeds Today's day strip. */
+/** Live meetings that start in `[startIso, endIso)`, earliest first. Compares instants, so a stored `+02:00` offset still lands on the right day. Feeds Today's day strip. */
 export function listMeetingsBetween(startIso: string, endIso: string): { id: string; title: string; starts_at: string; ends_at: string | null }[] {
   return getDb().getAllSync<{ id: string; title: string; starts_at: string; ends_at: string | null }>(
     `SELECT id, title, starts_at, ends_at FROM meetings
-     WHERE deleted_at IS NULL AND starts_at >= ? AND starts_at < ?
-     ORDER BY starts_at ASC`,
+     WHERE deleted_at IS NULL AND julianday(starts_at) >= julianday(?) AND julianday(starts_at) < julianday(?)
+     ORDER BY julianday(starts_at) ASC`,
     startIso,
     endIso,
   );
