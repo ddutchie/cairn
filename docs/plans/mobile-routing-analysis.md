@@ -280,3 +280,10 @@ The spike in step 4 answered the open question: `router.push` of a shared href s
 Not yet checked on a device: opening a note from Search, link taps from Graph, People and Chat, the Duo (including the settings modal against the side rail), the iPad Projects tab bar, Android (modal presentation and back behaviour; the decisions require it before merge), and back-button titles.
 
 Follow-ups: Chat's "Configure" button (no provider) opens the AI hub and probably wants `/settings/model`; temperature and max steps now appear in both the chat chip panel and the AI hub (same stored values).
+
+### Fixes after step 4 (found on a device)
+
+- **Workspace tab stuck on the screen you opened.** Each tab layout exports `unstable_settings = { anchor: "<tab>/index" }`, and every cross-tab push into a tab (side rail, pinned tool, sidebar, People links) passes `{ withAnchor: true }`, so the tab's stack is always created with its home screen under the target. Pushes to `/workspace/*` from inside Workspace screens need no flag: the stack already exists. Open check: a warm deep link to `/workspace/people` before the tab was ever visited (Expo Router handles warm links without `withAnchor`).
+- **Widget links opened in the Calendar tab.** A bare `/project/<id>` URL resolves to the first group alphabetically, which is `(calendar)`. `app/+native-intent.ts` rewrites bare `/project|note|card/<id>` links to `/(projects)/...` through `redirectDetailLink` (`src/lib/deep-link.ts`, tested). `/card/new` and `/note/new` are the root create modals and are left alone.
+- **Lock-screen Quick capture showed "Please adopt containerBackground".** Every widget family needs a `containerBackground(..., "widget")` fill. The circular lock-screen branch of `capture-widget.tsx` first used a fully transparent colour, which was not enough; it now uses the accent. Confirmed on a device.
+
