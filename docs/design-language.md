@@ -2,6 +2,8 @@
 
 Where to start when you design or restyle a view. It describes what the **Today** and **Overview** pages already do, because those two are the reference implementations. If this document and those pages disagree, fix whichever is wrong and tell the next person.
 
+The phone app has its own companion, [`design-language-mobile.md`](design-language-mobile.md): same ideas, translated to React Native and iOS.
+
 Mechanical rules (colour tokens, the type scale, elevation, primitives, lint) live in [`AGENTS.md`](../AGENTS.md#styling-rules). This document covers the layer above them: how the pieces are composed so every view looks like the same product.
 
 ## The idea
