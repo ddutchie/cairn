@@ -8,6 +8,7 @@ import {
   AppState,
   useWindowDimensions,
   Platform,
+  ActionSheetIOS,
 } from "react-native";
 import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useKeyboardState, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
@@ -27,7 +28,7 @@ import { redactValue } from "@cairn/shared/chat/redaction";
 import { hasProvider, resolveProvider } from "@/chat/providers";
 import { resetAppleSession } from "@/chat/providers/apple";
 import { getOpenAIModel, getProviderPref, getActiveProvider, getChatPersonalityId, setChatPersonalityId } from "@/chat/ai-config";
-import { getCachedPersonalitiesManifest } from "@/chat/personalities-registry";
+import { fetchPersonalitiesManifest, getCachedPersonalitiesManifest } from "@/chat/personalities-registry";
 import { getModelInfo, getModelCatalogVersion, subscribeModelCatalog } from "@/chat/models-dev";
 import { supportsImageInput } from "@cairn/shared/models/model-catalog";
 import { type UIMessage, type ChatUsage, msgId } from "@/chat/providers/types";
@@ -300,6 +301,14 @@ export default function ChatScreen() {
       let alive = true;
       refreshConfigured();
       setPersonalityId(getChatPersonalityId());
+      // Keep the `+` panel's personality list current (a conditional GET; the cache is
+      // what the panel reads). A personality the registry dropped is cleared, as AI
+      // settings does.
+      void fetchPersonalitiesManifest().then(({ manifest }) => {
+        const id = getChatPersonalityId();
+        if (manifest && id && !manifest.personalities.some((p) => p.id === id)) setChatPersonalityId("");
+        setPersonalityId(getChatPersonalityId());
+      });
       void fetchManifest(false).then(() => setRegistryRevision((revision) => revision + 1));
       resolveProvider()
         .then((p) => {
@@ -644,16 +653,31 @@ export default function ChatScreen() {
           Icon: Sparkles,
           value: personalityName ?? "None",
           more: true,
-          // No catalogue fetched yet (or Android): AI settings lists and fetches them.
-          onPress: () => router.push("/settings/ai"),
-          choices:
-            personalities.length > 0
-              ? [{ id: "", label: "None", selected: !personalityName }, ...personalities.map((p) => ({ id: p.id, label: p.definition.name, selected: p.id === personalityId }))]
-              : undefined,
-          onChoose: (id: string) => {
-            haptics.selection();
-            setChatPersonalityId(id);
-            setPersonalityId(id);
+          // iOS: the system's action sheet lists them (the panel has closed by then). No
+          // catalogue yet, or Android: AI settings lists and fetches them.
+          onPress: () => {
+            if (Platform.OS !== "ios" || personalities.length === 0) {
+              router.push("/settings/ai");
+              return;
+            }
+            const options = [...personalities.map((p) => p.definition.name), "None", "Cancel"];
+            const current = personalities.findIndex((p) => p.id === personalityId);
+            ActionSheetIOS.showActionSheetWithOptions(
+              {
+                title: "Personality",
+                options,
+                cancelButtonIndex: options.length - 1,
+                // Shows which one is on; "None" when no personality is picked.
+                disabledButtonIndices: [current >= 0 ? current : options.length - 2],
+              },
+              (i) => {
+                if (i === options.length - 1) return;
+                const id = i === options.length - 2 ? "" : personalities[i].id;
+                haptics.selection();
+                setChatPersonalityId(id);
+                setPersonalityId(id);
+              },
+            );
           },
         },
         { key: "tools", label: "Tools & services", Icon: Wrench, more: true, onPress: () => router.push("/settings/tools") },

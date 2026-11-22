@@ -39,8 +39,8 @@ export interface CairnAttachmentHostProps {
   /** False when the model can't read images: the attach rows and recent photos are hidden. */
   allowImages: boolean;
   /**
-   * The rows under the attach group (session settings, chat actions). The panel
-   * closes before a row's `onPress` or `onChoose` runs.
+   * The rows under the attach group (session settings, AI settings). The panel
+   * closes before a row's `onPress` runs.
    */
   groups: MenuGroup[];
   /** Left edge of the composer in book pose (see CairnMorphComposer); 0 spans the window. */
@@ -279,12 +279,6 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
           ? () => {
               dismiss();
               row.onPress?.();
-            }
-          : undefined,
-        onChoose: row.onChoose
-          ? (id: string) => {
-              row.onChoose?.(id);
-              dismiss();
             }
           : undefined,
       })),

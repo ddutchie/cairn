@@ -1,9 +1,7 @@
 import { Image } from "expo-image";
 import { Fragment, useRef } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChevronRight, type LucideIcon } from "lucide-react-native";
-import { Button as SUIButton } from "@expo/ui/swift-ui";
-import { GlassMenu } from "@/components/GlassMenu";
 import { MENU, menuThumbSize, type Frame } from "./constants";
 import { useTheme, withAlpha, useIsDark } from "@/theme";
 import { LIQUID_GLASS } from "./glass";
@@ -22,11 +20,12 @@ export interface MenuRow {
   more?: boolean;
   destructive?: boolean;
   disabled?: boolean;
-  /** Tap. With `choices` this is the fallback where there's no native menu (Android). */
+  /**
+   * Tap. The panel closes first. Native SwiftUI views (menus) don't draw inside the
+   * panel, which sits in its own window over the keyboard, so a row offering choices
+   * opens its picker from here, after the panel has gone.
+   */
   onPress?: () => void;
-  /** iOS: the row opens a native menu of these instead of calling `onPress`. */
-  choices?: { id: string; label: string; selected: boolean }[];
-  onChoose?: (id: string) => void;
 }
 
 export interface MenuGroup {
@@ -86,15 +85,6 @@ export function AttachmentMenu({
   };
 
   const renderRow = (row: MenuRow) => {
-    if (row.choices && Platform.OS === "ios" && !row.disabled) {
-      return (
-        <GlassMenu key={row.key} trigger={rowBody(row)} accessibilityLabel={row.value ? `${row.label}: ${row.value}` : row.label} hitSlop={0}>
-          {row.choices.map((c) => (
-            <SUIButton key={c.id} label={c.label} systemImage={c.selected ? "checkmark" : undefined} onPress={() => row.onChoose?.(c.id)} />
-          ))}
-        </GlassMenu>
-      );
-    }
     return (
       <Pressable
         key={row.key}
