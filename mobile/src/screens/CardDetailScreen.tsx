@@ -17,9 +17,8 @@ import { newSheetResultKey, registerSheetResult } from "@/lib/sheet-result";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 /**
- * Task detail / editor. A leaf screen — it only navigates back — so both its
- * routes (root `app/card/[id]` and Projects-tab `app/(tabs)/projects/card/[id]`)
- * render it unchanged; the containing stack decides whether the tab bar shows.
+ * Task detail / editor. A leaf screen — it only navigates back. Its one route is
+ * shared by every tab stack (`app/(tabs)/(…)/card/[id]`).
  */
 export function CardDetailScreen({
   cardId,
@@ -33,10 +32,9 @@ export function CardDetailScreen({
   /** Split-view column: the task was saved, archived or deleted. */
   onChanged?: () => void;
 } = {}) {
-  const params = useLocalSearchParams<{ id: string; back?: string }>();
+  const params = useLocalSearchParams<{ id: string }>();
   const embedded = cardId != null;
   const id = cardId ?? params.id;
-  const back = embedded ? undefined : params.back;
   const router = useRouter();
   const close = () => {
     onChanged?.();
@@ -155,11 +153,6 @@ export function CardDetailScreen({
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScreenChrome
         title="Edit Task"
-        // Root-stack pushes over the tab navigator can't infer the origin
-        // tab's title (the back target is the whole `(tabs)` group), so
-        // callers pass an explicit `back` label (Graph/Calendar/Search). The
-        // in-tab Board flow omits it and gets iOS's default previous-title.
-        back={back}
         right={[
           {
             kind: "menu",

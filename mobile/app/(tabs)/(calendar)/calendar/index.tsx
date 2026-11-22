@@ -81,7 +81,7 @@ export default function CalendarScreen() {
         unscheduled={unscheduled}
         onReschedule={reschedule}
         onOpenCard={(id) =>
-          sp.open ? sp.open({ kind: "card", id }) : router.push({ pathname: "/card/[id]", params: { id, back: "Calendar" } })
+          sp.open ? sp.open({ kind: "card", id }) : router.push({ pathname: "/card/[id]", params: { id } })
         }
       />
       </SidePreviewLayout>

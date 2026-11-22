@@ -1,6 +1,6 @@
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 
-// Root-stack per-project calendar (reached from the root project screen).
+// Projects-tab per-project calendar — nested so the tab bar stays visible.
 export default function Screen() {
   return <ProjectCalendarScreen />;
 }

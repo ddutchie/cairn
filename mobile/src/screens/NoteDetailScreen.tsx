@@ -40,28 +40,21 @@ import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, useIsDark, useFont, type as typeScale, type Theme } from "@/theme";
 
 /**
- * Note viewer / editor. A leaf screen (navigates only back), so both its routes
- * (root `app/note/[id]` and Projects-tab `app/(tabs)/projects/note/[id]`) render it
- * unchanged; the containing stack decides whether the tab bar stays visible.
- *
- * `nested` = rendered inside the Projects tab (tab bar visible), so the read
- * view adds tab-bar bottom padding; root-stack copies (Search/Graph/Conflicts)
- * pass it false.
+ * Note viewer / editor. A leaf screen (navigates only back). Its one route is
+ * shared by every tab stack (`app/(tabs)/(…)/note/[id]`), so the tab bar stays
+ * visible and back returns to the screen it was opened from.
  */
 export function NoteDetailScreen({
-  nested = false,
   noteId,
   onClose,
 }: {
-  nested?: boolean;
   /** Split-view column: the note to show (instead of the route param). */
   noteId?: string;
   /** Split-view column: called instead of popping the route (e.g. after delete). */
   onClose?: () => void;
 }) {
-  const params = useLocalSearchParams<{ id: string; back?: string }>();
+  const params = useLocalSearchParams<{ id: string }>();
   const id = noteId ?? params.id;
-  const back = noteId != null ? undefined : params.back;
   const router = useRouter();
   const close = useCallback(() => (onClose ? onClose() : router.back()), [onClose, router]);
   // While editing, Cancel (drop the edits, stay on the note) is the one
@@ -303,10 +296,6 @@ export function NoteDetailScreen({
         // Read mode leaves the bar title empty: the page already shows the note's
         // title as its heading, so repeating it in the bar showed it twice.
         title={editing ? "Edit note" : ""}
-        // Callers reaching this over the tab navigator (Graph/Search/Conflicts)
-        // pass an explicit `back` label since the root stack can't infer the
-        // origin tab's title; the in-tab Projects flow omits it.
-        back={back}
         left={
           editing
             ? [{ kind: "button", key: "cancel", label: "Cancel", icon: ICON_CLOSE, onPress: toolbarPress(onCancel) }]
@@ -346,7 +335,7 @@ export function NoteDetailScreen({
           // Nested in the Projects tab the container already stops above the tab bar /
           // bottom safe area, so the toolbar adds no home-indicator padding of its own
           // (it doubled the inset, leaving an empty band under the formatting row).
-          bottomInset={nested ? 0 : insets.bottom}
+          bottomInset={0}
         />
       ) : (
         <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: viewBottomPad }]}>
@@ -369,7 +358,7 @@ export function NoteDetailScreen({
           </View>
           <RelatedNotes
             noteId={note.id}
-            onOpen={(nid) => router.push({ pathname: "/note/[id]", params: { id: nid, back: "Note" } })}
+            onOpen={(nid) => router.push({ pathname: "/note/[id]", params: { id: nid } })}
           />
         </ScrollView>
       )}
@@ -379,7 +368,7 @@ export function NoteDetailScreen({
           A glass pill bottom-right. `insets.bottom` already reserves the native
           tab bar's area (the bar extends into the home-indicator inset), so we
           add only a small fixed gap — NOT TAB_BAR_BASE, which would double-count
-          in the nested (tab-bar-visible) flow and float the button too high.
+          on a tab screen and float the button too high.
           With a side rail there is no bottom bar, so railLift halves the inset.
           In a split-view column / preview pane the SwiftUI host already keeps
           its content clear of the bottom edge, so the inset would apply twice. */}

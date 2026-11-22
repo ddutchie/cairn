@@ -60,7 +60,7 @@ export function PersonScreen() {
   if (!page) return <View style={s.root} />;
 
   const { person } = page;
-  const openNote = (noteId: string) => router.push({ pathname: "/note/[id]", params: { id: noteId, back: person.name } });
+  const openNote = (noteId: string) => router.push({ pathname: "/note/[id]", params: { id: noteId } });
   const tick = (item: OpenItem) => {
     haptics.selection();
     // A false result (the note changed since it was listed) just reloads the list.

@@ -303,7 +303,7 @@ export function SidePreviewPane({
         <NavigationStack>
           {shown.kind === "note" ? (
             <ChromeColumn key={`note:${shown.id}`} leading={[close]} slot="secondary">
-              <NoteDetailScreen nested noteId={shown.id} onClose={onClose} />
+              <NoteDetailScreen noteId={shown.id} onClose={onClose} />
             </ChromeColumn>
           ) : shown.kind === "card" ? (
             <ChromeColumn key={`card:${shown.id}`} leading={[close]} slot="secondary">
@@ -316,7 +316,6 @@ export function SidePreviewPane({
             // the Projects tab, which has the full tree | view | item layout.
             <ChromeColumn key={`project:${shown.id}`} leading={[close]} slot="secondary">
               <ProjectScreen
-                nested
                 projectId={shown.id}
                 view="overview"
                 onSelectView={(next) => {

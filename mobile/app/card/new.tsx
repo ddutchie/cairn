@@ -24,10 +24,8 @@ export default function NewCard() {
         projectId={project ?? ""}
         column={column}
         back={back}
-        // Replace this modal with the new card's detail. Forward `back` (the
-        // project name) so the card's header shows "< {Project}" instead of the
-        // raw route group name ("(tabs)").
-        onSaved={(id) => router.replace({ pathname: "/card/[id]", params: { id, ...(back ? { back } : {}) } })}
+        // Replace this modal with the new card's detail (it opens in the tab you were in).
+        onSaved={(id) => router.replace({ pathname: "/card/[id]", params: { id } })}
       />
     </ModalSafeView>
   );

@@ -168,7 +168,7 @@ export default function ProjectsScreen() {
         renderItem={({ item }) => (
           <PressableScale
             style={[styles.row, { backgroundColor: t.surface, borderColor: t.border }, elevation.sm]}
-            onPress={() => router.push({ pathname: "/projects/project/[id]", params: { id: item.id } })}
+            onPress={() => router.push({ pathname: "/project/[id]", params: { id: item.id } })}
           >
             <View style={[styles.iconWrap, { backgroundColor: t.accentDim }]}>
               <ProjectIcon name={item.icon} size={18} color={t.accent} />

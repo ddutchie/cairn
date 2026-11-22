@@ -37,7 +37,7 @@ export default function TabsLayout() {
           bar floating over the top of the screen (no effect on iPhone/Duo). */}
       <NativeTabs tintColor={t.accent} minimizeBehavior="onScrollDown" sidebarAdaptable>
         <NativeTabs.Trigger
-          name="projects"
+          name="(projects)"
           listeners={{
             tabPress: () => {
               if (onProjects) resetProjectsSelection();
@@ -48,12 +48,12 @@ export default function TabsLayout() {
           <NativeTabs.Trigger.Label>Projects</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
-        <NativeTabs.Trigger name="calendar">
+        <NativeTabs.Trigger name="(calendar)">
           <NativeTabs.Trigger.Icon sf="calendar" md="calendar_month" />
           <NativeTabs.Trigger.Label>Calendar</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
-        <NativeTabs.Trigger name="chat">
+        <NativeTabs.Trigger name="(chat)">
           <NativeTabs.Trigger.Icon sf="bubble.left.and.bubble.right.fill" md="chat" />
           <NativeTabs.Trigger.Label>Chat</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
@@ -61,14 +61,14 @@ export default function TabsLayout() {
         {/* Workspace is a home, not a "More" list: People, the graph and
             settings, each with a live line. Five tabs including Search fit
             without iOS folding any into More. */}
-        <NativeTabs.Trigger name="workspace">
+        <NativeTabs.Trigger name="(workspace)">
           <NativeTabs.Trigger.Icon sf="square.grid.2x2.fill" md="apps" />
           <NativeTabs.Trigger.Label>Workspace</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
         {/* Search last so it sits on the far right — matches the iOS search-tab
             convention and keeps it out of the primary nav flow. */}
-        <NativeTabs.Trigger name="search" role="search">
+        <NativeTabs.Trigger name="(search)" role="search">
           <NativeTabs.Trigger.Icon sf="magnifyingglass" md="search" />
           <NativeTabs.Trigger.Label>Search</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>

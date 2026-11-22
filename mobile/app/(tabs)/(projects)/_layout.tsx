@@ -12,11 +12,7 @@ import { TabStack } from "@/components/TabStack";
 export default function ProjectsLayout() {
   return (
     <TabStack>
-      <Stack.Screen name="index" options={{ title: "Projects" }} />
-      <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
-      <Stack.Screen name="project/calendar" options={{ title: "Calendar" }} />
-      <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
-      <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
+      <Stack.Screen name="projects/index" options={{ title: "Projects" }} />
     </TabStack>
   );
 }

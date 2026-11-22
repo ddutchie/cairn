@@ -499,8 +499,8 @@ export default function SearchScreen() {
                 onPress={() =>
                   openResult(
                     item.kind === "card"
-                      ? { pathname: "/card/[id]", params: { id: item.noteId, back: "Search" } }
-                      : { pathname: "/note/[id]", params: { id: item.noteId, back: "Search" } },
+                      ? { pathname: "/card/[id]", params: { id: item.noteId } }
+                      : { pathname: "/note/[id]", params: { id: item.noteId } },
                   )
                 }
               />
@@ -522,8 +522,8 @@ export default function SearchScreen() {
                 onPress={() =>
                   openResult(
                     item.kind === "card"
-                      ? { pathname: "/card/[id]", params: { id: item.id, back: "Search" } }
-                      : { pathname: "/note/[id]", params: { id: item.id, back: "Search" } },
+                      ? { pathname: "/card/[id]", params: { id: item.id } }
+                      : { pathname: "/note/[id]", params: { id: item.id } },
                   )
                 }
               />

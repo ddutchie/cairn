@@ -117,15 +117,15 @@ export default function GraphScreen() {
       switch (node.type) {
         case "note":
           if (openPreview) openPreview({ kind: "note", id: node.id });
-          else router.push({ pathname: "/note/[id]", params: { id: node.id, back: "Graph" } });
+          else router.push({ pathname: "/note/[id]", params: { id: node.id } });
           break;
         case "card":
           if (openPreview) openPreview({ kind: "card", id: node.id });
-          else router.push({ pathname: "/card/[id]", params: { id: node.id, back: "Graph" } });
+          else router.push({ pathname: "/card/[id]", params: { id: node.id } });
           break;
         case "project":
           if (openPreview) openPreview({ kind: "project", id: node.id });
-          else router.push({ pathname: "/project/[id]", params: { id: node.id, back: "Graph" } });
+          else router.push({ pathname: "/project/[id]", params: { id: node.id } });
           break;
         // tags have no detail screen — ignore.
       }

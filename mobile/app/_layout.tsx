@@ -251,13 +251,9 @@ function RootNavigator({
         name="(tabs)"
         options={{ headerShown: false, contentStyle: { backgroundColor } }}
       />
-      <Stack.Screen name="project/[id]" />
-      <Stack.Screen name="project/calendar" />
       <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal", contentStyle: cardStyle }} />
-      <Stack.Screen name="note/[id]" />
       <Stack.Screen name="capture" options={{ title: "Capture", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal", contentStyle: cardStyle }} />
-      <Stack.Screen name="card/[id]" />
       {/* Settings is one modal with its own stack (app/settings/_layout.tsx): hub, AI, tools, appearance, sync. */}
       <Stack.Screen name="settings" options={{ headerShown: false, presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
