@@ -137,46 +137,6 @@ export function listAllTags(): TagRow[] {
   );
 }
 
-/** Tags with how many live notes and tasks use each, alphabetical (the Settings, Tags list). */
-export function listTagsWithUsage(): (TagRow & { uses: number })[] {
-  const db = getDb();
-  const tags = listAllTags();
-  const counts = new Map<string, number>();
-  const rows = [
-    ...db.getAllSync<{ tag_ids: string }>("SELECT tag_ids FROM notes WHERE deleted_at IS NULL AND tag_ids != '[]'"),
-    ...db.getAllSync<{ tag_ids: string }>("SELECT tag_ids FROM task_cards WHERE deleted_at IS NULL AND tag_ids != '[]'"),
-  ];
-  for (const r of rows) for (const id of parseIds(r.tag_ids)) counts.set(id, (counts.get(id) ?? 0) + 1);
-  return tags.map((t) => ({ ...t, uses: counts.get(t.id) ?? 0 }));
-}
-
-/** Rename and/or recolour a tag. A plain UPDATE, so the capture triggers stage it for sync. */
-export function updateTag(id: string, patch: { name?: string; color?: string }): void {
-  const name = patch.name?.trim();
-  getDb().runSync(
-    "UPDATE tags SET name = COALESCE(?, name), color = COALESCE(?, color), updated_at = ? WHERE id = ?",
-    name || null,
-    patch.color ?? null,
-    new Date().toISOString(),
-    id,
-  );
-  notifyLocalWrite();
-}
-
-/** Soft-delete a tag. Notes and tasks keep the stale id, which every reader skips (`tagsForIds`). */
-export function softDeleteTag(id: string): void {
-  const now = new Date().toISOString();
-  getDb().runSync("UPDATE tags SET deleted_at = ?, updated_at = ? WHERE id = ?", now, now, id);
-  notifyLocalWrite();
-}
-
-/** Live row counts for the Settings, Data page. */
-export function dataCounts(): { projects: number; notes: number; tasks: number; tags: number; people: number } {
-  const n = (table: string) =>
-    getDb().getFirstSync<{ c: number }>(`SELECT COUNT(*) AS c FROM ${table} WHERE deleted_at IS NULL`)?.c ?? 0;
-  return { projects: n("projects"), notes: n("notes"), tasks: n("task_cards"), tags: n("tags"), people: n("people") };
-}
-
 /**
  * Write a note's tag set. Stored as a JSON id array (matching desktop's
  * tag_ids). Plain UPDATE so the capture triggers stage it for sync.

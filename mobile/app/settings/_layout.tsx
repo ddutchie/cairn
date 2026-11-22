@@ -31,9 +31,6 @@ export default function SettingsLayout() {
         <Stack.Screen name="tools" options={{ title: "Tools & Services" }} />
         <Stack.Screen name="appearance" options={{ title: "Appearance" }} />
         <Stack.Screen name="sync" options={{ title: "Sync" }} />
-        <Stack.Screen name="tags" options={{ title: "Tags" }} />
-        <Stack.Screen name="style" options={{ title: "Writing style" }} />
-        <Stack.Screen name="data" options={{ title: "Data" }} />
       </Stack>
     </ThemeProvider>
   );

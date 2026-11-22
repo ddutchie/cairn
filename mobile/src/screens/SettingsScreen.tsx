@@ -2,7 +2,7 @@ import { useMemo, type ReactNode } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import Constants from "expo-constants";
-import { Database, Info, PenLine, Palette, RefreshCw, Sparkles, Tags, Wrench } from "lucide-react-native";
+import { Info, Palette, RefreshCw, Sparkles, Wrench } from "lucide-react-native";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
@@ -13,22 +13,9 @@ type Group = { title: string; rows: Row[] };
 /** Same groups, same names and same order as the desktop Settings rail (App, AI, Extensions, Data). */
 const GROUPS: Group[] = [
   { title: "App", rows: [{ key: "appearance", title: "Appearance", line: "Theme and text size", href: "/settings/appearance" as Href, icon: Palette }] },
-  {
-    title: "AI",
-    rows: [
-      { key: "ai", title: "AI settings", line: "Provider, model and keys", href: "/settings/ai" as Href, icon: Sparkles },
-      { key: "style", title: "Writing style", line: "How chat drafts in your voice", href: "/settings/style" as Href, icon: PenLine },
-    ],
-  },
+  { title: "AI", rows: [{ key: "ai", title: "AI settings", line: "Provider, model and keys", href: "/settings/ai" as Href, icon: Sparkles }] },
   { title: "Extensions", rows: [{ key: "tools", title: "Tools and services", line: "Connectors the assistant can use", href: "/settings/tools" as Href, icon: Wrench }] },
-  {
-    title: "Data",
-    rows: [
-      { key: "tags", title: "Tags", line: "Rename, recolour and delete", href: "/settings/tags" as Href, icon: Tags },
-      { key: "data", title: "Data", line: "Storage and counts on this phone", href: "/settings/data" as Href, icon: Database },
-      { key: "sync", title: "Sync", line: "Devices and the shared folder", href: "/settings/sync" as Href, icon: RefreshCw },
-    ],
-  },
+  { title: "Data", rows: [{ key: "sync", title: "Sync", line: "Devices and the shared folder", href: "/settings/sync" as Href, icon: RefreshCw }] },
 ];
 
 /** The one home for settings on mobile: the first screen of the settings modal (`app/settings`). */
