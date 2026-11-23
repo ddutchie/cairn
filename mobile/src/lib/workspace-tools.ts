@@ -4,9 +4,11 @@ import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { usePathname, type Href } from "expo-router";
 import { getMeta, setMeta } from "@/db";
 import { loadPeople, loadTeams } from "@/db/people";
+import { loadLocalToday } from "@/lib/local-today";
+import { localTodayLine } from "@cairn/shared/today/local";
 
 /** Where the Workspace tab sends you, and what the pinned accessory can show. */
-export type ToolId = "people" | "graph" | "usage" | "sync";
+export type ToolId = "today" | "people" | "graph" | "usage" | "sync";
 
 export interface WorkspaceTool {
   id: ToolId;
@@ -17,6 +19,7 @@ export interface WorkspaceTool {
 }
 
 export const WORKSPACE_TOOLS: Record<ToolId, WorkspaceTool> = {
+  today: { id: "today", title: "Today", href: "/workspace/today" as Href, blurb: "What needs you today" },
   people: { id: "people", title: "People", href: "/workspace/people" as Href, blurb: "Who you work with, and their teams" },
   graph: { id: "graph", title: "Knowledge graph", href: "/workspace/graph" as Href, blurb: "Projects, notes and tasks as a map" },
   usage: { id: "usage", title: "Usage", href: "/workspace/usage" as Href, blurb: "AI tokens and cost" },
@@ -26,11 +29,12 @@ export const WORKSPACE_TOOLS: Record<ToolId, WorkspaceTool> = {
 /** Space the pinned accessory takes above the tab bar, so screens end above it. */
 export const ACCESSORY_HEIGHT = 56;
 
-export const PINNABLE: ToolId[] = ["people", "graph", "usage"];
+export const PINNABLE: ToolId[] = ["today", "people", "graph", "usage"];
 
 /** One live line for a tool, or its blurb when there is nothing to count. Cheap, synchronous SQLite. */
 export function liveLine(id: ToolId): string {
   try {
+    if (id === "today") return localTodayLine(loadLocalToday());
     if (id === "people") {
       const people = loadPeople().length;
       const teams = loadTeams().length;
@@ -95,6 +99,7 @@ export function usePinnedToolForRail(): ToolId | null {
 }
 
 export const TOOL_SYMBOL = {
+  today: "sun.max",
   people: "person.2",
   graph: "point.3.connected.trianglepath.dotted",
   usage: "chart.bar",

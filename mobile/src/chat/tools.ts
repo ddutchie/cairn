@@ -22,6 +22,7 @@ import { peopleTool, setCardOwnerArg, setNoteAttendees, type PeopleToolContext }
 import { agentHiddenNoteIds } from "@cairn/shared/people/queries";
 import { CADENCES, LINK_KINDS, PEOPLE_STATUSES, RELATIONSHIP_TYPES, TEAM_KINDS } from "@cairn/shared/types/people";
 import { peopleDb, peopleWorkspaceId } from "@/db/people";
+import { loadLocalToday } from "@/lib/local-today";
 import { cardChanges, type ToolChange } from "@cairn/shared/conversation/tool-view";
 import { notifyLocalWrite } from "@/sync/write-signal";
 
@@ -481,6 +482,25 @@ const BASE_TOOLS: ToolDef[] = [
       else if (a.type === "task") q.deleteCard(str(a.id));
       else return { error: `Unknown delete type "${str(a.type)}"` };
       return { ok: true, deleted: str(a.id) };
+    },
+  },
+  {
+    name: "get_today",
+    description:
+      "What needs the user today, from this phone's synced data: overdue tasks, tasks due today, today's meetings, and people they are overdue to meet. Read-only. This is not the desktop's AI brief (that does not sync), so say so if asked for it.",
+    params: "{}",
+    jsonSchema: obj({}),
+    run: () => {
+      const d = loadLocalToday();
+      const task = (x: (typeof d.overdue)[number]) => ({ id: x.id, title: x.title, dueDate: x.dueDate, project: x.projectName ?? null, priority: x.priority ?? null });
+      return {
+        today: "local",
+        date: d.date,
+        overdue: d.overdue.map(task),
+        dueToday: d.dueToday.map(task),
+        meetings: d.meetings.map((m) => ({ id: m.id, title: m.title, startsAt: m.startsAt, endsAt: m.endsAt ?? null })),
+        peopleDue: d.peopleDue.map((p) => ({ id: p.id, name: p.name, daysOverCadence: p.daysOver })),
+      };
     },
   },
   {

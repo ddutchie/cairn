@@ -118,6 +118,8 @@ export function humanizeToolCall(
       const name = kind === "note" ? noteName(lookup, id) : taskName(lookup, id);
       return `Deleted ${kind} ${name}`;
     }
+    case "get_today":
+      return "Read today";
     case "get_user_writing_style":
       return "Read writing style";
     case "update_user_writing_style":

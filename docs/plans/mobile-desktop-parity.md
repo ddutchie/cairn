@@ -18,7 +18,7 @@ Legend: **Yes** = same job done; **Partial** = some of it; **No** = not on mobil
 | Insights (8 canvases) | No | | Low: one or two that read well on a phone (for example the bullet or ridgeline chart) |
 | Automations | No | Run in the desktop app | Maybe: a read-only list of runs plus the notification feed |
 | Usage | Yes | Workspace tab (a tool, with the tab bar) | done |
-| Today | **No** | Still no screen, route or tab; `get_today` is also missing on mobile (confirmed 2026-11-22). Desktop has it as a view; the desktop sidebar lists it above Automations | **Yes, high**: the biggest gap. Note: the desktop *brief* is a file under the automation output folder and does not sync; the tasks, meetings and people it draws on do. See `docs/plans/mobile-today.md`. Decided 2026-11-22: a Workspace tool (`/workspace/today`), pinnable to the accessory; build a local Today from synced data first, the synced brief second |
+| Today | **Partial** (local version, no AI brief) | A Workspace tool at `/workspace/today` (pinnable) built from synced tasks, meetings and people, plus a local `get_today` tool. Missing: the desktop's AI brief (Need you / Prepared lanes, drafts, marks), which is a file that does not sync. Desktop has it as a view; the desktop sidebar lists it above Automations | **Yes, high**: the natural phone home screen, and the data already syncs. Candidate home for it: the first tab or the top of Projects, with the Workspace tab keeping the tools |
 | Search | Yes | Own tab | done |
 | Chat | Partial | See Chat. The model chip panel now covers provider, model, temperature and max steps in the chat box | see Chat |
 
@@ -50,7 +50,7 @@ Legend: **Yes** = same job done; **Partial** = some of it; **No** = not on mobil
 | Model providers, keys | Yes: Provider & model, Providers | done |
 | Subagents, goals, jobs, terminals, LSP | n/a | no |
 
-Tool gaps (desktop tool, absent on mobile): `get_today`, `task_progress`, `upsert_project`, `get_idea_flow`, `edit_idea_flow`, `get_graph`, `codebase_query`, `codebase_reindex`, `ask_questions`, `suggest_connections`, `spawn_tasks_from_note`. Codebase tools are n/a. `get_today`, `task_progress` and `upsert_project` are worth adding; `get_graph` follows if the phone gets a graph summary.
+Tool gaps (desktop tool, absent on mobile): `task_progress`, `upsert_project`, `get_idea_flow`, `edit_idea_flow`, `get_graph`, `codebase_query`, `codebase_reindex`, `ask_questions`, `suggest_connections`, `spawn_tasks_from_note`. Codebase tools are n/a. `get_today`, `task_progress` and `upsert_project` are worth adding; `get_graph` follows if the phone gets a graph summary.
 
 ## Settings (desktop groups: App, AI, Extensions, Data)
 
@@ -104,7 +104,7 @@ Planned, not built: share extension and a lock-screen capture control (`mobile-c
 
 ## Suggested order
 
-1. Today screen and the `get_today` tool: biggest gap, best fit for a phone. Planned in `docs/plans/mobile-today.md` (Workspace tool, local first).
+1. Today: local version shipped (Workspace tool + `get_today`); next, publish the desktop brief so the phone can show it.
 2. People: a reporting-line Org chart (needs `network.ts` moved to `shared/`).
 3. Settings: Tags, Data (storage and reset), Writing style page, Commands and a `/` picker in Chat, About.
 4. Tools: `task_progress`, `upsert_project`.
