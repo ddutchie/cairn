@@ -5,7 +5,7 @@ vi.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemAsy
 vi.mock("expo-web-browser", () => ({}));
 vi.mock("@modelcontextprotocol/sdk/client/auth.js", () => ({ auth: async () => "AUTHORIZED" }));
 
-const { SecureStoreOAuthProvider } = await import("./mcp-oauth");
+const { SecureStoreOAuthProvider, friendlyAuthError } = await import("./mcp-oauth");
 
 describe("SecureStoreOAuthProvider", () => {
   it("uses CIMD and the https bounce page by default", async () => {
@@ -25,5 +25,17 @@ describe("SecureStoreOAuthProvider", () => {
     const p = new SecureStoreOAuthProvider("s", "M365", undefined, { clientId: "abc", redirectUri: "cairn://oauth/callback" });
     expect(p.redirectUrl).toBe("cairn://oauth/callback");
     expect(p.clientMetadata.redirect_uris).toEqual(["cairn://oauth/callback"]);
+  });
+});
+
+describe("friendlyAuthError", () => {
+  it("names an admin redirect allowlist and the way out, instead of calling it desktop only", () => {
+    const e = friendlyAuthError("Glean", "HTTP 403: redirect_uri https://x is not permitted by administrator policy.");
+    expect(e.error).toMatch(/administrator/);
+    expect(e.error).toContain("https://gerardbuilds.com/cairn/oauth");
+    expect(e.error).toMatch(/client ID/);
+  });
+  it("keeps the generic wording for other registration failures", () => {
+    expect(friendlyAuthError("X", "invalid_redirect_uri").error).toMatch(/desktop/);
   });
 });

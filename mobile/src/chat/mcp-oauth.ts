@@ -217,8 +217,16 @@ export type AuthStartResult =
  * can suggest desktop sign-in. Everything else gets a clean generic message
  * (the raw SDK text is often a JSON-parse error on the provider's non-JSON body).
  */
-function friendlyAuthError(serverName: string, raw: string): { error: string; desktopOnly: boolean } {
+export function friendlyAuthError(serverName: string, raw: string): { error: string; desktopOnly: boolean } {
   const r = raw.toLowerCase();
+  // An admin-managed allowlist of redirect addresses (Glean, some Microsoft and Okta tenants): the way out
+  // is to have the admin allow Cairn's address, or to use an app they registered (Add your own, client ID).
+  if (r.includes("administrator policy") || r.includes("not permitted") || r.includes("not allowed by")) {
+    return {
+      error: `${serverName}'s administrator only allows certain sign-in addresses, and Cairn's isn't one of them. Ask them to allow ${HTTPS_REDIRECT_URI}, or to register an app for you and use its client ID under Add your own.`,
+      desktopOnly: true,
+    };
+  }
   const looksDesktopOnly =
     r.includes("invalid_redirect_uri") ||
     r.includes("redirect uri") ||
