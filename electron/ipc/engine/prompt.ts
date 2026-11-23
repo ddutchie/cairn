@@ -15,6 +15,8 @@ import type { Profile } from "../../agent/loop";
 import { buildToolset, skillCatalog } from "../../agent/tools/index";
 import { createHooks } from "../../agent/hooks";
 import { getEngineHost, getJobRegistry, getLsp, getTerminals } from "./host";
+import { maybeTitleChat } from "./chat-title";
+import type { LLMConfig } from "../../lib/llm";
 import { createHostStore, getSandboxMode, isScheduleEnabled } from "../../agent/host-store";
 import { listSessionIdsForWorkspace } from "../../db/workspace-queries";
 import { indexSessions, runtimeEmbed, searchSessionsSemantic, type SessionIndexDeps } from "../../agent/session-search";
@@ -255,6 +257,11 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
       maxSteps: a.llmConfig.maxSteps,
     });
     broadcastEvent("db:changed", null);
+    // Name a chat thread from its first exchange (best effort, off the turn's path).
+    if (chat && !a.noHooks && !a.usageSource && a.sessionId.startsWith("chat-")) {
+      void maybeTitleChat(h, a.sessionId, a.llmConfig as LLMConfig, { workspaceId: a.workspaceId, projectId: a.projectId, cwd: a.cwd })
+        .catch((err) => console.warn("[chat] title skipped:", err instanceof Error ? err.message : err));
+    }
     // Keep the meaning index current for search_sessions; best effort and off the critical path.
     const idx = a.workspaceId && !a.noHooks && role !== "automation-dev" ? await sessionIndexDeps(a.ctx.db, a.workspaceId) : undefined;
     if (idx) void indexSessions(idx, [a.sessionId]).catch((err) => console.warn("[agent] session index skipped:", err instanceof Error ? err.message : err));

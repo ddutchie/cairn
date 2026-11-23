@@ -51,6 +51,8 @@ export function humanizeToolCall(
   args: Args = {},
   ref?: HumanizeRef | null,
   lookup: HumanizeLookup = {},
+  /** The tool's result text, when it has one (a cancelled delete reads "Kept …"). */
+  output?: string,
 ): string {
   switch (tool) {
     case "get_context": {
@@ -110,13 +112,23 @@ export function humanizeToolCall(
       if (args.archived === true) return `Archived ${one}`;
       return `Updated ${one}`;
     }
+    case "upsert_project": {
+      const name = str(args.name).trim();
+      const id = str(args.projectId).trim();
+      if (!id) return `Created project ${name || "a project"}`;
+      return `Updated project ${name || lookup.projectName?.(id) || "a project"}`;
+    }
     case "delete": {
       const kind = args.type === "task" || ref?.kind === "card" ? "task"
         : args.type === "note" || ref?.kind === "note" ? "note" : undefined;
       const id = str(args.id).trim() || ref?.id;
       if (!kind || !id) return "Deleted item";
       const name = kind === "note" ? noteName(lookup, id) : taskName(lookup, id);
-      return `Deleted ${kind} ${name}`;
+      return /"cancelled"\s*:\s*true/.test(output ?? "") ? `Kept ${kind} ${name}` : `Deleted ${kind} ${name}`;
+    }
+    case "ask_questions": {
+      const n = Array.isArray(args.questions) ? args.questions.length : 0;
+      return n === 1 ? "Asked a question" : n > 1 ? `Asked ${n} questions` : "Asked questions";
     }
     case "get_today":
       return "Read today";

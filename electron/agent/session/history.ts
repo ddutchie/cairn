@@ -60,8 +60,50 @@ export function foldState(records: readonly SessionRecord[]): SessionState {
   return records.reduce(reduce, initialState());
 }
 
-/** The last explicit title, else the first user message, trimmed. */
+/** The title a person set, if any (a rename; records without a source predate auto titles and count as one). */
+export function userTitle(records: readonly SessionRecord[]): string | undefined {
+  for (let i = records.length - 1; i >= 0; i--) {
+    const e = records[i].event;
+    if (e.type === "session/title" && e.source !== "auto") return e.title;
+  }
+  return undefined;
+}
+
+/** Whether any title, set by a person or by the model, has been recorded. */
+export function hasTitle(records: readonly SessionRecord[]): boolean {
+  return records.some((r) => r.event.type === "session/title");
+}
+
+/** What naming a session needs: the first messages a person typed, the first reply, and the titles so far. */
+export interface TitleInputs {
+  /** Prompts a person typed, oldest first (goal rounds, reminders and blocked prompts left out). */
+  humanMessages: string[];
+  /** The text of the first assistant message. */
+  firstReply?: string;
+  /** Auto titles recorded so far. */
+  autoTitles: number;
+  /** A title a person set (rename). */
+  userTitle?: string;
+}
+
+export function titleInputs(records: readonly SessionRecord[]): TitleInputs {
+  const humanMessages: string[] = [];
+  let firstReply: string | undefined;
+  let autoTitles = 0;
+  for (const { event } of records) {
+    if (event.type === "user/message" && !event.blocked && !event.synthetic && !event.agentAuthored && event.content.trim()) humanMessages.push(event.content);
+    else if (event.type === "assistant/message" && firstReply === undefined) {
+      const text = event.message.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+      if (text) firstReply = text;
+    } else if (event.type === "session/title" && event.source === "auto") autoTitles++;
+  }
+  return { humanMessages, firstReply, autoTitles, userTitle: userTitle(records) };
+}
+
+/** The latest title a person set, else the latest auto title, else the first user message, trimmed. */
 export function deriveTitle(records: readonly SessionRecord[], max = 60): string | undefined {
+  const pinned = userTitle(records);
+  if (pinned) return pinned;
   for (let i = records.length - 1; i >= 0; i--) {
     const e = records[i].event;
     if (e.type === "session/title") return e.title;

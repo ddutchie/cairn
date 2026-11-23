@@ -238,6 +238,16 @@ export function ProjectsTreeSidebar({
                 />
               ))}
             </Section>
+            <Section title="Projects">
+              <Button
+                label="New project"
+                systemImage="folder.badge.plus"
+                onPress={() => {
+                  haptics.selection();
+                  router.push("/project-form" as Href);
+                }}
+              />
+            </Section>
             <Section title="People">
               <Button
                 label="People"

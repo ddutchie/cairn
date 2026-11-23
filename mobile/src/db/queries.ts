@@ -3,7 +3,8 @@
  * All queries exclude tombstoned (deleted_at) and archived rows.
  */
 
-import { getDb, getEngine } from "./index";
+import { getDb, getEngine, getActiveSource } from "./index";
+import { DEFAULT_COLUMNS } from "@cairn/shared/projects/defaults";
 import { LIVE, NOT_CONFLICT } from "./sql";
 import { parseIds } from "./row-helpers";
 import { inspectConflict, cleanConflictTitle } from "@cairn/shared/sync/conflict";
@@ -317,6 +318,94 @@ export function getProject(id: string): ProjectRow | null {
       id,
     ) ?? null
   );
+}
+
+/** The fields the project form edits. */
+export interface ProjectFields {
+  name: string;
+  description: string;
+  icon: string | null;
+  status: string;
+  priority: string;
+}
+
+/** A live project's editable fields, or null. */
+export function getProjectFields(id: string): (ProjectFields & { id: string }) | null {
+  const row = getDb().getFirstSync<{ id: string; name: string; description: string | null; icon: string | null; status: string; priority: string }>(
+    `SELECT id, name, description, icon, status, priority FROM projects WHERE id = ? AND ${LIVE}`,
+    id,
+  );
+  return row ? { ...row, description: row.description ?? "" } : null;
+}
+
+/**
+ * Create a project in the active workspace with the default board columns, the
+ * same as desktop (`upsert_project`). Plain INSERTs, so the capture triggers
+ * stage the project and its columns for sync. Returns the new id.
+ */
+export function createProject(input: Partial<ProjectFields> & { name: string }): string {
+  const name = input.name.trim();
+  if (!name) throw new Error("A project needs a name");
+  // The active source, else the first workspace row (as People does).
+  const workspaceId =
+    getActiveSource() ??
+    getDb().getFirstSync<{ id: string }>("SELECT id FROM workspaces WHERE deleted_at IS NULL ORDER BY created_at LIMIT 1")?.id;
+  if (!workspaceId) throw new Error("No workspace is open");
+  const id = genId();
+  const now = new Date().toISOString();
+  const db = getDb();
+  db.withTransactionSync(() => {
+    db.runSync(
+      `INSERT INTO projects (id, workspace_id, name, description, icon, status, priority, tag_ids, project_settings, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '{}', ?, ?)`,
+      id,
+      workspaceId,
+      name,
+      input.description?.trim() || null,
+      input.icon ?? null,
+      input.status ?? "active",
+      input.priority ?? "medium",
+      now,
+      now,
+    );
+    for (const col of DEFAULT_COLUMNS) {
+      db.runSync(
+        `INSERT INTO board_columns (id, project_id, workspace_id, name, type, "order", created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        genId(),
+        id,
+        workspaceId,
+        col.name,
+        col.type,
+        col.order,
+        now,
+        now,
+      );
+    }
+  });
+  notifyLocalWrite();
+  return id;
+}
+
+/** Change a project's name, description, icon, status or priority; only given fields change. */
+export function updateProject(id: string, patch: Partial<ProjectFields>): void {
+  if (!getProjectFields(id)) throw new Error(`Project ${id} not found`);
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (patch.name !== undefined) {
+    const name = patch.name.trim();
+    if (!name) throw new Error("A project needs a name");
+    sets.push("name = ?"); vals.push(name);
+  }
+  if (patch.description !== undefined) { sets.push("description = ?"); vals.push(patch.description.trim() || null); }
+  if (patch.icon !== undefined) { sets.push("icon = ?"); vals.push(patch.icon); }
+  if (patch.status !== undefined) { sets.push("status = ?"); vals.push(patch.status); }
+  if (patch.priority !== undefined) { sets.push("priority = ?"); vals.push(patch.priority); }
+  if (sets.length === 0) return;
+  sets.push("updated_at = ?"); vals.push(new Date().toISOString());
+  vals.push(id);
+  getDb().runSync(`UPDATE projects SET ${sets.join(", ")} WHERE id = ?`, ...(vals as never[]));
+  notifyLocalWrite();
 }
 
 /** Note + card counts per project, for the projects list. */

@@ -38,6 +38,8 @@ describe("humanizeToolCall", () => {
       .toBe("Moved Ship it to done");
     expect(humanizeToolCall("delete", { type: "note", id: "gone" }, undefined, lookup))
       .toBe("Deleted note gone");
+    expect(humanizeToolCall("delete", { type: "note", id: "gone" }, undefined, lookup, '{"cancelled":true,"note":"…"}'))
+      .toBe("Kept note gone");
   });
 
   it("keeps the prettified raw name for unknown and connector tools", () => {

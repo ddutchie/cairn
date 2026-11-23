@@ -6,15 +6,10 @@
 import type { ColumnType, Priority, ProjectStatus } from "@/types";
 import type { AIConfig, AgentConfig } from "@/store";
 import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from "../../shared/models/defaults";
+import { DEFAULT_COLUMNS as SHARED_DEFAULT_COLUMNS } from "../../shared/projects/defaults";
 
-/** Default board columns created with every new project (renderer-side copy). */
-export const DEFAULT_COLUMNS = [
-  { name: "Backlog",     type: "backlog"     as ColumnType, order: 0 },
-  { name: "Todo",        type: "todo"        as ColumnType, order: 1 },
-  { name: "In Progress", type: "in_progress" as ColumnType, order: 2 },
-  { name: "Review",      type: "review"      as ColumnType, order: 3 },
-  { name: "Done",        type: "done"        as ColumnType, order: 4 },
-] as const;
+/** Default board columns created with every new project (defined in shared/, used by main and mobile too). */
+export const DEFAULT_COLUMNS: readonly { name: string; type: ColumnType; order: number }[] = SHARED_DEFAULT_COLUMNS;
 
 /**
  * Tag colours offered in Settings → Tags. Stored on the tag as a hex value

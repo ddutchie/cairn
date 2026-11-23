@@ -118,7 +118,11 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   unreadThreadIds: [],
 
   setProjectedTitle(threadId, title) {
-    set((s) => ({ projectedTitles: { ...s.projectedTitles, [threadId]: title } }));
+    set((s) => ({
+      projectedTitles: { ...s.projectedTitles, [threadId]: title },
+      // Lists read the thread's own title, so a title named after the turn shows at once.
+      chatThreads: title ? s.chatThreads.map((t) => (t.id === threadId && t.title !== title ? { ...t, title } : t)) : s.chatThreads,
+    }));
   },
 
   setActiveChatThreadId(threadId) {
@@ -205,7 +209,10 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
           const mem = memById.get(t.id);
           const restoredUsage = usageByThreadId.get(t.id) as ChatThread["lastUsage"];
           const finalUsage = restoredUsage ?? mem?.lastUsage ?? t.lastUsage;
-          return finalUsage ? { ...t, lastUsage: finalUsage } : t;
+          // The session log's title (a rename, else the model's name for it) wins over the row's.
+          const title = titleByThreadId.get(t.id) || t.title;
+          const withTitle = title !== t.title ? { ...t, title } : t;
+          return finalUsage ? { ...withTitle, lastUsage: finalUsage } : withTitle;
         }),
         ...s.chatThreads.filter((t) => !dbThreadIds.has(t.id)),
       ];

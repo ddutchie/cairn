@@ -21,6 +21,10 @@ import { EmptyState } from "@/components/EmptyState";
 import { railToolbar, useTightSideRail } from "@/components/screen-chrome";
 import { useTheme, withAlpha, type as typeScale, type Theme, KEYBOARD_OPEN_GAP } from "@/theme";
 import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/agent";
+import { skipQuestions, usePendingQuestions } from "@/chat/questions-store";
+import { QuestionCard } from "@/components/chat/QuestionCard";
+import { cancelConfirm, usePendingConfirm } from "@/chat/confirm-store";
+import { ConfirmCard } from "@/components/chat/ConfirmCard";
 import { haptics, toolbarPress } from "@/haptics";
 import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, recordChatUsage, type ToolCall } from "@/db/chat-store";
 import { redactValue } from "@cairn/shared/chat/redaction";
@@ -117,6 +121,12 @@ const CHAT_PAGE_SIZE = 40;
 export default function ChatScreen() {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
+  // An ask_questions card the running turn is waiting on (rendered at the end of the transcript).
+  const pendingQuestions = usePendingQuestions();
+  // A card left open when the chat screen goes away is skipped, so the turn can finish.
+  // A delete the running turn is waiting on the user to confirm.
+  const pendingConfirm = usePendingConfirm();
+  useEffect(() => () => { skipQuestions(); cancelConfirm(); }, []);
   const router = useRouter();
   const tightRail = useTightSideRail();
 
@@ -201,6 +211,15 @@ export default function ChatScreen() {
     scrollToEndSoon,
     scrollToEndIfFollowing,
   } = useChatScroll(messages.length);
+  // Bring a new questions or delete card into view.
+  const pendingQuestionsId = pendingQuestions?.id;
+  useEffect(() => {
+    if (pendingQuestionsId != null) scrollToEndSoon();
+  }, [pendingQuestionsId, scrollToEndSoon]);
+  const pendingConfirmId = pendingConfirm?.id;
+  useEffect(() => {
+    if (pendingConfirmId != null) scrollToEndSoon();
+  }, [pendingConfirmId, scrollToEndSoon]);
 
   // Morph composer springs (strip + plusOut) + attachment host
   const strip = useSharedValue(0);
@@ -599,6 +618,8 @@ export default function ChatScreen() {
         style: "destructive",
         onPress: () => {
           haptics.warning();
+          skipQuestions();
+          cancelConfirm();
           clearChatHistory();
           conversation.current = [];
           setMessages([]);
@@ -990,6 +1011,8 @@ export default function ChatScreen() {
                   </Pressable>
                 ) : null}
                 {visibleMessages.map((m) => <MessageBubble key={m.id} m={m} />)}
+                {pendingQuestions ? <QuestionCard key={pendingQuestions.id} pending={pendingQuestions} onFocusAnswer={followEnd} /> : null}
+                {pendingConfirm ? <ConfirmCard key={pendingConfirm.id} pending={pendingConfirm} /> : null}
                 {queued.map((q) => (
                   <View key={q.id} style={styles.queuedRow}>
                     <View style={styles.queuedBubble}>

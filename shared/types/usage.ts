@@ -17,7 +17,8 @@ export type UsageSource =
   | "summary"
   | "tool-builder"
   | "writing-style"
-  | "today";
+  | "today"
+  | "chat-title";
 
 /** Human label for a source, used by the renderer (kept here so it never drifts). */
 export const USAGE_SOURCE_LABELS: Record<UsageSource, string> = {
@@ -35,6 +36,7 @@ export const USAGE_SOURCE_LABELS: Record<UsageSource, string> = {
   "tool-builder": "Tool builder",
   "writing-style": "Writing style",
   today: "Today brief",
+  "chat-title": "Chat title",
 };
 
 export interface UsageTotals {

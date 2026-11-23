@@ -31,6 +31,8 @@ const q = vi.hoisted(() => ({
   ensureNote: vi.fn((): string => "n-new"), findNoteByTitle: vi.fn((): { id: string } | null => null),
   workspaceIdForPerson: vi.fn((): string | undefined => undefined),
   searchNotes: vi.fn((): Record<string, unknown>[] => []), listNotes: vi.fn((): Record<string, unknown>[] => []),
+  createProject: vi.fn((): string => "p-new"), updateProject: vi.fn(),
+  getProjectFields: vi.fn((id: string) => ({ id, name: "Garden" })),
 }));
 // The People layer: a real SQLite database (the mobile schema) behind the shared queries.
 const people = vi.hoisted(() => ({ db: null as unknown }));
@@ -84,6 +86,28 @@ describe("mobile consolidated tools route to the right queries", () => {
     expect(q.getNoteRange).toHaveBeenCalledWith("n1", 3, 9);
     expect(await run("get_item", { id: "c1" })).toMatchObject({ type: "task", title: "Card" });
     expect((await run("get_item", { id: "zz" })).error).toMatch(/No note or task/);
+  });
+
+  it("upsert_project creates with a name, updates only given fields, and needs a name to create", async () => {
+    q.listColumns.mockReturnValue([{ id: "col1", name: "Backlog", type: "backlog" }]);
+    expect(await run("upsert_project", { name: "Garden", priority: "high" })).toMatchObject({ id: "p-new", created: true, columns: [{ id: "col1" }] });
+    expect(q.createProject).toHaveBeenCalledWith({ name: "Garden", priority: "high" });
+    expect(await run("upsert_project", { projectId: "p1", status: "on_hold" })).toMatchObject({ id: "p1", updated: true });
+    expect(q.updateProject).toHaveBeenCalledWith("p1", { status: "on_hold" });
+    expect((await run("upsert_project", { description: "x" })).error).toMatch(/name is required/);
+  });
+
+  it("ask_questions waits for the card and returns the answers, or a skip", async () => {
+    const store = await import("./questions-store");
+    const asked = run("ask_questions", { questions: [{ id: "who", label: "Audience", prompt: "Who is it for?" }] }) as Promise<Record<string, unknown>>;
+    await Promise.resolve();
+    expect(store.answerQuestions({ who: "Designers" })).toBe(true);
+    expect(await asked).toEqual({ answers: "**Audience:** Designers" });
+    const skipped = run("ask_questions", { questions: [{ id: "x", label: "X", prompt: "?" }] }) as Promise<Record<string, unknown>>;
+    await Promise.resolve();
+    store.skipQuestions();
+    expect(await skipped).toMatchObject({ skipped: true });
+    expect((await run("ask_questions", { questions: [] })).error).toBeTruthy();
   });
 
   it("edit_note patches with oldString and appends without it", async () => {
@@ -143,11 +167,27 @@ describe("mobile consolidated tools route to the right queries", () => {
     expect(res.map((c) => c.id)).toEqual(["late"]);
   });
 
-  it("delete routes by type", async () => {
-    await run("delete", { type: "note", id: "n1" });
+  it("delete waits for the Delete / Cancel card and routes by type", async () => {
+    const store = await import("./confirm-store");
+    q.getNote.mockReturnValue({ id: "n1", title: "Plan" });
+    q.getCard.mockReturnValue({ id: "c1", title: "Ship" });
+    const note = run("delete", { type: "note", id: "n1" });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(q.softDeleteNote).not.toHaveBeenCalled();
+    expect(store.confirmPending()).toBe(true);
+    expect(await note).toEqual({ ok: true, deleted: "n1" });
     expect(q.softDeleteNote).toHaveBeenCalledWith("n1");
-    await run("delete", { type: "task", id: "c1" });
-    expect(q.deleteCard).toHaveBeenCalledWith("c1");
+
+    const task = run("delete", { type: "task", id: "c1" });
+    await Promise.resolve();
+    await Promise.resolve();
+    store.cancelConfirm();
+    expect(await task).toMatchObject({ cancelled: true });
+    expect(q.deleteCard).not.toHaveBeenCalled();
+
+    q.getCard.mockReturnValue(null);
+    expect((await run("delete", { type: "task", id: "gone" })).error).toMatch(/No task/);
   });
 });
 

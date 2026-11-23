@@ -27,7 +27,7 @@ import {
   type ProjectOverviewData,
 } from "@/db/queries";
 import { newSheetResultKey, registerSheetResult } from "@/lib/sheet-result";
-import { ICON_ADD, ICON_CALENDAR } from "@/components/toolbar-icons";
+import { ICON_ADD, ICON_CALENDAR, ICON_EDIT } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { DraggableBoard } from "@/components/DraggableBoard";
 import { toast } from "@/components/Toast";
@@ -380,6 +380,14 @@ export function ProjectScreen({
                   ),
                 },
               ]),
+          {
+            kind: "button",
+            key: "edit-project",
+            label: "Edit project",
+            icon: ICON_EDIT,
+            onPress: toolbarPress(() => id && router.push(`/project-form?id=${encodeURIComponent(id)}` as Href)),
+            priority: "low",
+          },
           {
             kind: "button",
             key: "add",

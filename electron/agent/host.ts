@@ -22,7 +22,7 @@ import { createRuleStore, type GrantKind, type Rule, type RuleStore } from "./ru
 import { createAdapter, failedTurnEnd } from "./session/adapter";
 import { createTraceAdapter } from "./session/trace";
 import type { AgentTool } from "./tool-types";
-import { deriveTitle, foldGoal, foldSchedules, foldState } from "./session/history";
+import { deriveTitle, foldGoal, foldSchedules, foldState, titleInputs, userTitle, type TitleInputs } from "./session/history";
 import { listSessions, openSession, readSession, sessionDir, type SessionWriter } from "./session/log";
 import { replayFromRecords } from "./session/replay";
 import type { SessionRecord } from "./session/format";
@@ -521,8 +521,23 @@ export class AgentHost {
   async rename(sessionId: string, title: string, cwd = ""): Promise<string> {
     const clean = title.trim();
     if (!clean) throw new Error("title must be non-empty");
-    await this.record(await this.open(sessionId, cwd), { type: "session/title", title: clean });
+    await this.record(await this.open(sessionId, cwd), { type: "session/title", title: clean, source: "user" });
     return clean;
+  }
+
+  /** What naming this session needs (see `titleInputs`). */
+  async titleInputs(sessionId: string, cwd = ""): Promise<TitleInputs> {
+    return titleInputs((await this.open(sessionId, cwd)).records);
+  }
+
+  /** Record a title the model picked, unless a person has named the session meanwhile. */
+  async autoTitle(sessionId: string, title: string, cwd = ""): Promise<boolean> {
+    const clean = title.trim();
+    if (!clean) return false;
+    const session = await this.open(sessionId, cwd);
+    if (userTitle(session.records)) return false;
+    await this.record(session, { type: "session/title", title: clean, source: "auto" });
+    return true;
   }
 
   // ── reads ─────────────────────────────────────────────────────────────
