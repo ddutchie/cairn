@@ -255,6 +255,14 @@ function RootNavigator({
       <Stack.Screen name="capture" options={{ title: "Capture", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="project-form" options={{ title: "Project", presentation: "modal", contentStyle: cardStyle }} />
+      <Stack.Screen name="person-form" options={{ title: "Add person", presentation: "modal", contentStyle: cardStyle }} />
+      <Stack.Screen name="team-form" options={{ title: "New team", presentation: "modal", contentStyle: cardStyle }} />
+      <Stack.Screen name="person-details" options={{ title: "Details", presentation: "modal", contentStyle: cardStyle }} />
+      <Stack.Screen name="person-relationship" options={{ title: "Relationship", presentation: "modal", contentStyle: cardStyle }} />
+      <Stack.Screen name="person-team" options={{ title: "Team", presentation: "modal", contentStyle: cardStyle }} />
+      <Stack.Screen name="team-details" options={{ title: "Team details", presentation: "modal", contentStyle: cardStyle }} />
+      <Stack.Screen name="team-members" options={{ title: "Members", presentation: "modal", contentStyle: cardStyle }} />
+      <Stack.Screen name="attendee-picker" options={{ title: "Add attendees", presentation: "modal", contentStyle: cardStyle }} />
       {/* Settings is one modal with its own stack (app/settings/_layout.tsx): hub, AI, tools, appearance, sync. */}
       <Stack.Screen name="settings" options={{ headerShown: false, presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />

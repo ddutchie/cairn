@@ -3,7 +3,7 @@ import { View, Text, SectionList, RefreshControl, StyleSheet } from "react-nativ
 import { useRouter, type Href } from "expo-router";
 import { ScreenChrome } from "@/components/screen-chrome";
 import { SegmentedControl } from "@/components/SegmentedControl";
-import { NewTeamSheet } from "@/screens/NewTeamSheet";
+import { newSheetResultKey, registerSheetResult } from "@/lib/sheet-result";
 import { TeamsList } from "@/screens/TeamsList";
 import { RhythmList } from "./RhythmList";
 import { ZonesList } from "./ZonesList";
@@ -48,7 +48,6 @@ export function PeopleScreen() {
   // Location and Last met read the clock, so the grouping is redone when the screen reloads.
   const [now, setNow] = useState(() => new Date());
   const [mode, setMode] = useState<"people" | "teams" | "map" | "rhythm" | "zones">("people");
-  const [newTeam, setNewTeam] = useState(false);
   // Zones reads the clock, so it ticks while that view is open (the others only reload on focus or sync).
   useEffect(() => {
     if (mode !== "zones") return;
@@ -69,6 +68,23 @@ export function PeopleScreen() {
     }
   }, []);
   useRefreshOnFocus(load);
+
+  // The add forms are native modal routes (like the project form). Each hands back the new id once it has closed.
+  const openAddPerson = () => {
+    const key = newSheetResultKey();
+    registerSheetResult<string>(key, (id) => {
+      load();
+      router.push({ pathname: "/workspace/people/[id]", params: { id } } as Href);
+    });
+    router.push({ pathname: "/person-form", params: { resultKey: key } } as Href);
+  };
+  const openNewTeam = () => {
+    const key = newSheetResultKey();
+    registerSheetResult<string>(key, (id) => {
+      router.push({ pathname: "/workspace/people/team/[id]", params: { id } } as Href);
+    });
+    router.push({ pathname: "/team-form", params: { resultKey: key } } as Href);
+  };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -112,8 +128,8 @@ export function PeopleScreen() {
       <ScreenChrome
         title="People"
         right={mode === "map" || mode === "rhythm" || mode === "zones" ? [] : mode === "teams"
-          ? [{ kind: "button", key: "new-team", label: "New team", icon: ICON_ADD, onPress: toolbarPress(() => setNewTeam(true)) }]
-          : [{
+          ? [{ kind: "button", key: "new-team", label: "New team", icon: ICON_ADD, onPress: toolbarPress(openNewTeam) }]
+          : [{ kind: "button", key: "add-person", label: "Add person", icon: ICON_ADD, onPress: toolbarPress(openAddPerson) }, {
             kind: "menu",
             key: "group",
             label: "Group people",
@@ -180,14 +196,6 @@ export function PeopleScreen() {
         )}
       />
       )}
-      <NewTeamSheet
-        visible={newTeam}
-        onClose={() => setNewTeam(false)}
-        onCreated={(id) => {
-          setNewTeam(false);
-          router.push({ pathname: "/workspace/people/team/[id]", params: { id } } as Href);
-        }}
-      />
     </View>
   );
 }

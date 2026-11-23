@@ -20,11 +20,15 @@ import { createExpoSyncDb } from "./expo-sync-db";
 import { notifyLocalWrite } from "@/sync/write-signal";
 import { LIVE, NOT_CONFLICT } from "./sql";
 import * as pq from "@cairn/shared/people/queries";
+// Registers the city data behind place search and place-to-zone lookups (the desktop imports it too).
+import "@cairn/shared/people/place-data";
+import { cleanProfileFieldWithPlaces, zoneForPlace } from "@cairn/shared/people/place-zone";
+import type { ProfileField } from "@cairn/shared/people/parse";
 import { captureNoteMeeting, loadCandidates, meetingLinkPending } from "@cairn/shared/people/capture";
 import { getPersonPage, listPersonSummaries } from "@cairn/shared/people/view-queries";
 import { ownedItemsIn, setItemDone } from "@cairn/shared/people/action-items";
 import type {
-  AddMemberInput, Cadence, MeetingAttendee, PeopleStatus, Person, Relationship, Team, TeamCreateInput, TeamMembership, TeamPatch,
+  AddMemberInput, Cadence, MeetingAttendee, PeopleStatus, Person, PersonCreateInput, Relationship, Team, TeamCreateInput, TeamMembership, TeamPatch,
 } from "@cairn/shared/types/people";
 import type { PersonPage, PersonSummary } from "@cairn/shared/types/people-view";
 import { updateNote } from "./queries";
@@ -115,6 +119,33 @@ export function loadPastTeams(personId: string, current: readonly { teamId: stri
     .filter((m) => m.personId === personId && m.endedAt && !now.has(m.teamId) && byId.has(m.teamId))
     .map((m) => ({ team: byId.get(m.teamId)!, endedAt: m.endedAt! }))
     .sort((a, b) => b.endedAt.localeCompare(a.endedAt));
+}
+
+export type NewPersonInput = Pick<PersonCreateInput, "name" | "relationship" | "title" | "team" | "location" | "timezone" | "isMe">;
+
+/**
+ * Add a person to the active workspace, as the desktop's Add person does. Role, team, location and time zone are
+ * checked the same way the person page checks them; a location that names a zone fills an empty time zone.
+ * Throws with a sentence to show when there is no name or a field is refused.
+ */
+export function createPerson(input: NewPersonInput): Person {
+  const ws = peopleWorkspaceId();
+  if (!ws) throw new Error("There is no workspace to add the person to.");
+  const clean = (field: ProfileField, raw: string | undefined): string | undefined => {
+    const out = cleanProfileFieldWithPlaces(field, raw);
+    if (out.error) throw new Error(out.error);
+    return out.value;
+  };
+  const location = clean("location", input.location);
+  const timezone = clean("timezone", input.timezone) ?? (location ? zoneForPlace(location) ?? undefined : undefined);
+  return write((db) => pq.createPerson(db, {
+    ...input,
+    workspaceId: ws,
+    title: clean("title", input.title),
+    team: clean("team", input.team),
+    location,
+    timezone,
+  }));
 }
 
 /** Make a team in the active workspace. Throws (with a sentence to show) when the name is taken or empty. */
