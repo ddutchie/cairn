@@ -4,19 +4,24 @@ import { useRouter, type Href } from "expo-router";
 import { PressableScale } from "@/components/PressableScale";
 import { EmptyState } from "@/components/EmptyState";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
-import { buildZoneModel, formatDiff, type ZonePerson } from "@cairn/shared/people/zones";
+import { WORK_END, WORK_START, buildZoneModel, formatDiff, type ZonePerson } from "@cairn/shared/people/zones";
 import type { PersonSummary } from "@cairn/shared/types/people-view";
 
 type Bucket = "work" | "edge" | "asleep";
 const TITLES: Record<Bucket, string> = { work: "Working now", edge: "Early or late", asleep: "Asleep" };
 
 const bucketOf = (z: ZonePerson): Bucket => (z.atWork ? "work" : z.asleep ? "asleep" : "edge");
+const AXIS = [0, 6, 12, 18, 24];
+const pct = (h: number) => `${(h / 24) * 100}%` as const;
 const cityOf = (tz: string) => (tz.split("/").pop() ?? tz).replace(/_/g, " ");
 
 /**
  * The Time zones segment of People: who is in working hours right now, who is
  * at the edges of their day and who is asleep, each with their local time and
- * how many working hours you share. People with no known zone are listed last.
+ * how many working hours you share. Under each person a 24-hour strip, in your own
+ * local hours as on the computer, shows when they work (bright where it overlaps your
+ * 9 to 5, grey where it doesn't) and a line marks now. People with no known zone are
+ * listed last, and tap through to their page.
  */
 export function ZonesList({ people, now }: { people: readonly PersonSummary[]; now: Date }) {
   const t = useTheme();
@@ -48,7 +53,16 @@ export function ZonesList({ people, now }: { people: readonly PersonSummary[]; n
       ListEmptyComponent={
         <EmptyState title="No time zones yet" subtitle="Add a location or time zone to someone's page and where they are in their day shows up here." />
       }
-      renderSectionHeader={({ section }) => <Text style={s.header}>{section.title}</Text>}
+      renderSectionHeader={({ section }) => (
+        <View>
+          <Text style={s.header}>{section.title}</Text>
+          <View style={s.axis} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            {AXIS.map((h) => (
+              <Text key={h} style={[s.tick, { left: pct(h) }, h === 24 ? s.tickEnd : h === 0 ? s.tickStart : null]}>{String(h % 24).padStart(2, "0")}</Text>
+            ))}
+          </View>
+        </View>
+      )}
       renderItem={({ item }) => (
         <PressableScale
           style={s.row}
@@ -56,14 +70,23 @@ export function ZonesList({ people, now }: { people: readonly PersonSummary[]; n
           accessibilityRole="button"
           accessibilityLabel={`${item.person.name}, ${item.localTime} in ${cityOf(item.timezone)}, ${formatDiff(item.diffMinutes)}`}
         >
-          <View style={[s.dot, { backgroundColor: tone(bucketOf(item)) }]} />
-          <View style={s.body}>
-            <Text style={s.name} numberOfLines={1}>{item.person.name}</Text>
-            <Text style={s.meta} numberOfLines={1}>
-              {[cityOf(item.timezone), formatDiff(item.diffMinutes), item.overlap > 0 ? `${item.overlap}h shared` : "no shared hours"].join(" · ")}
-            </Text>
+          <View style={s.top}>
+            <View style={[s.dot, { backgroundColor: tone(bucketOf(item)) }]} />
+            <View style={s.body}>
+              <Text style={s.name} numberOfLines={1}>{item.person.name}</Text>
+              <Text style={s.meta} numberOfLines={1}>
+                {[cityOf(item.timezone), formatDiff(item.diffMinutes), item.overlap > 0 ? `${item.overlap}h shared` : "no shared hours"].join(" · ")}
+              </Text>
+            </View>
+            <Text style={s.time}>{item.localTime}</Text>
           </View>
-          <Text style={s.time}>{item.localTime}</Text>
+          <View style={s.track} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <View style={[s.mine, { left: pct(WORK_START), width: pct(WORK_END - WORK_START) }]} />
+            {item.spans.map(([from, to]) => (
+              <View key={from} style={[s.span, { left: pct(from), width: pct(to - from), backgroundColor: item.overlap > 0 ? t.accent : t.textTertiary }]} />
+            ))}
+            <View style={[s.now, { left: pct(model.nowHour) }]} />
+          </View>
         </PressableScale>
       )}
       ListFooterComponent={
@@ -81,9 +104,18 @@ function makeStyles(t: Theme) {
     note: { ...typeScale.caption, color: t.textTertiary, marginLeft: 4, marginTop: 4 },
     header: { ...typeScale.overline, color: t.textTertiary, marginTop: 16, marginBottom: 6, marginLeft: 4 },
     row: {
-      flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 14,
+      gap: 10, paddingVertical: 12, paddingHorizontal: 14,
       borderRadius: 12, backgroundColor: t.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border, marginBottom: 6,
     },
+    top: { flexDirection: "row", alignItems: "center", gap: 12 },
+    axis: { height: 14, marginHorizontal: 15, marginBottom: 4 },
+    tick: { ...typeScale.caption, position: "absolute", width: 20, marginLeft: -10, textAlign: "center", color: t.textTertiary, fontVariant: ["tabular-nums"] },
+    tickStart: { marginLeft: 0, textAlign: "left" },
+    tickEnd: { marginLeft: -20, textAlign: "right" },
+    track: { height: 14, borderRadius: 4, backgroundColor: t.surface2, overflow: "hidden" },
+    mine: { position: "absolute", top: 0, bottom: 0, backgroundColor: t.accentDim },
+    span: { position: "absolute", top: 3, bottom: 3, borderRadius: 2 },
+    now: { position: "absolute", top: 0, bottom: 0, width: 1.5, marginLeft: -0.75, backgroundColor: t.textPrimary },
     dot: { width: 10, height: 10, borderRadius: 5 },
     body: { flex: 1, gap: 2 },
     name: { ...typeScale.control, color: t.textPrimary },
