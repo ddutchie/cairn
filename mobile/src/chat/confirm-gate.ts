@@ -1,4 +1,6 @@
-import { confirmsByDefault } from "@cairn/shared/agent/tool-risk";
+import { approvalPreview, confirmsByDefault, isConnectorTool } from "@cairn/shared/agent/tool-risk";
+import { parseToolName } from "@cairn/shared/chat/mcp-namespace";
+import { parseServiceToolName } from "@cairn/shared/chat/service-exec";
 import type { ConfirmRequest } from "./confirm-store";
 
 /**
@@ -10,6 +12,8 @@ export interface ConfirmLookup {
   noteTitle: (id: string) => string | undefined;
   taskTitle: (id: string) => string | undefined;
   personName: (id: string) => string | undefined;
+  /** The installed server or service a namespaced connector tool belongs to. */
+  connectorName?: (toolName: string) => string | undefined;
 }
 
 /** What a cancelled call returns to the model. */
@@ -25,6 +29,7 @@ const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
  * target is missing runs without a card, so the tool reports it as not found.
  */
 export function confirmRequestFor(name: string, args: Record<string, unknown>, lookup: ConfirmLookup): ConfirmRequest | undefined {
+  if (isConnectorTool(name)) return connectorRequest(name, args, lookup);
   if (!confirmsByDefault(name, args)) return undefined;
   if (name === "delete") {
     const id = str(args.id);
@@ -66,4 +71,24 @@ export function confirmRequestFor(name: string, args: Record<string, unknown>, l
     default:
       return { title: "Allow this change?", confirmLabel: "Allow" };
   }
+}
+
+/**
+ * A call to a connector (an MCP server or an HTTP service) leaves the phone, so it asks like desktop does,
+ * whether the connector came from the registry or was added by hand. Shows what is sent.
+ */
+function connectorRequest(name: string, args: Record<string, unknown>, lookup: ConfirmLookup): ConfirmRequest {
+  const mcp = parseToolName(name);
+  const svc = mcp ? null : parseServiceToolName(name);
+  const id = mcp?.serverId ?? svc?.serviceId ?? "";
+  const op = mcp?.toolName ?? svc?.toolName ?? name;
+  const who = lookup.connectorName?.(name) ?? id;
+  const sent = approvalPreview(name, args);
+  return {
+    title: `Let ${who} run “${op}”?`,
+    detail: sent ? `This sends:\n${sent}` : "It takes no inputs.",
+    confirmLabel: "Allow",
+    tone: "neutral",
+    rememberKey: name,
+  };
 }

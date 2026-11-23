@@ -203,6 +203,33 @@ describe("mobile consolidated tools route to the right queries", () => {
     expect(await people.run({ action: "upsert", name: "Ana" })).toEqual({ ok: true });
     expect(inner).toHaveBeenCalledTimes(1);
   });
+
+  it("guardConfirm asks before a connector call and stops asking after Always allow, until cleared", async () => {
+    const { guardConfirm } = await import("./tools");
+    const store = await import("./confirm-store");
+    const inner = vi.fn(() => ({ ok: true }));
+    const lookup = { noteTitle: () => undefined, taskTitle: () => undefined, personName: () => undefined };
+    const tool = guardConfirm({ name: "mcp__s1__lookup", description: "", params: "", jsonSchema: {}, run: inner }, lookup);
+    const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
+
+    const first = tool.run({ q: "a" });
+    await flush();
+    expect(inner).not.toHaveBeenCalled();
+    store.allowForSession("mcp__s1__lookup");
+    store.confirmPending();
+    expect(await first).toEqual({ ok: true });
+
+    inner.mockClear();
+    expect(await tool.run({ q: "b" })).toEqual({ ok: true }); // no card this time
+    expect(inner).toHaveBeenCalledTimes(1);
+
+    store.clearSessionAllows();
+    const again = tool.run({ q: "c" });
+    await flush();
+    expect(inner).toHaveBeenCalledTimes(1); // waiting on the card again
+    store.cancelConfirm();
+    expect(await again).toMatchObject({ cancelled: true });
+  });
 });
 
 

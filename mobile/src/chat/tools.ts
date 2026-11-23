@@ -10,11 +10,12 @@
 import * as q from "@/db/queries";
 import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, type SemanticHit } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
-import { serviceToolDefs } from "./services";
+import { listInstalledServices, serviceToolDefs } from "./services";
 import { isToolEnabled } from "./tool-toggles";
 import { getCachedMcpToolDefs, getInstalledMcpServer, toRuntimeConfig } from "./mcp-store";
 import * as mcpClient from "./mcp-client";
 import { parseToolName } from "@cairn/shared/chat/mcp-namespace";
+import { parseServiceToolName } from "@cairn/shared/chat/service-exec";
 import { isOverdue, isDueWithin } from "@cairn/shared/notes/due";
 import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_PARAM_DESCRIPTIONS as PD, PEOPLE_TOOL_DESCRIPTION } from "@cairn/shared/agent/people-tools";
 import { isReadCall, refusesHiddenNoteWrite, scrubHidden } from "@cairn/shared/agent/people-privacy";
@@ -27,7 +28,7 @@ import { cardChanges, type ToolChange } from "@cairn/shared/conversation/tool-vi
 import { notifyLocalWrite } from "@/sync/write-signal";
 import { parseQuestions, formatAnswers } from "@cairn/shared/chat/questions";
 import { askQuestions } from "./questions-store";
-import { askConfirm } from "./confirm-store";
+import { askConfirm, isAllowedForSession } from "./confirm-store";
 import { CANCELLED_RESULT, confirmRequestFor, type ConfirmLookup } from "./confirm-gate";
 
 export interface ToolDef {
@@ -716,6 +717,12 @@ const CONFIRM_LOOKUP: ConfirmLookup = {
   noteTitle: (id) => q.getNote(id)?.title ?? undefined,
   taskTitle: (id) => q.getCard(id)?.title ?? undefined,
   personName: (id) => getPerson(peopleDb(), id)?.name,
+  connectorName: (tool) => {
+    const mcp = parseToolName(tool);
+    if (mcp) return getInstalledMcpServer(mcp.serverId)?.name;
+    const svc = parseServiceToolName(tool);
+    return svc ? listInstalledServices().find((x) => x.id === svc.serviceId)?.name : undefined;
+  },
 };
 
 /**
@@ -729,7 +736,7 @@ export function guardConfirm(t: ToolDef, lookup: ConfirmLookup = CONFIRM_LOOKUP)
     ...t,
     run: async (args) => {
       const req = confirmRequestFor(t.name, args, lookup);
-      if (req && !(await askConfirm(req))) return CANCELLED_RESULT;
+      if (req && !(req.rememberKey && isAllowedForSession(req.rememberKey)) && !(await askConfirm(req))) return CANCELLED_RESULT;
       return t.run(args);
     },
   };
