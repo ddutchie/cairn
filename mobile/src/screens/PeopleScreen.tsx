@@ -15,9 +15,10 @@ import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { requestSync } from "@/sync/controller";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
-import { loadGrouping, loadPeople, saveGrouping, setPersonStatus } from "@/db/people";
+import { loadGrouping, loadPeople, loadZoneView, saveGrouping, saveZoneView, setPersonStatus } from "@/db/people";
 import { ICON_ADD, ICON_GROUP_BY } from "@/components/toolbar-icons";
 import { RELATIONSHIP_LABELS } from "@cairn/shared/people/model";
+import { ZONE_GROUPINGS } from "@cairn/shared/people/zones";
 import { LIST_GROUPINGS, groupPeopleBy, type ListGrouping } from "@cairn/shared/people/list-groups";
 import { formatRelative } from "@cairn/shared/format/date";
 import type { PersonSummary } from "@cairn/shared/types/people-view";
@@ -54,6 +55,11 @@ export function PeopleScreen() {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
   }, [mode]);
+  const [zoneView, setZoneViewState] = useState(loadZoneView);
+  const setZoneView = (next: typeof zoneView) => {
+    setZoneViewState(next);
+    saveZoneView(next);
+  };
   const setGrouping = (g: ListGrouping) => {
     setGroupingState(g);
     saveGrouping(g);
@@ -127,7 +133,18 @@ export function PeopleScreen() {
     <View style={s.root}>
       <ScreenChrome
         title="People"
-        right={mode === "map" || mode === "rhythm" || mode === "zones" ? [] : mode === "teams"
+        right={mode === "map" || mode === "rhythm" ? [] : mode === "zones"
+          ? [{
+            kind: "menu",
+            key: "zone-view",
+            label: "Arrange time zones",
+            icon: ICON_GROUP_BY,
+            actions: [
+              ...ZONE_GROUPINGS.map((g) => ({ label: g.label, isOn: g.value === zoneView.grouping, onPress: toolbarPress(() => setZoneView({ ...zoneView, grouping: g.value })) })),
+              { label: "Available now", isOn: zoneView.availableOnly, onPress: toolbarPress(() => setZoneView({ ...zoneView, availableOnly: !zoneView.availableOnly })) },
+            ],
+          }]
+          : mode === "teams"
           ? [{ kind: "button", key: "new-team", label: "New team", icon: ICON_ADD, onPress: toolbarPress(openNewTeam) }]
           : [{ kind: "button", key: "add-person", label: "Add person", icon: ICON_ADD, onPress: toolbarPress(openAddPerson) }, {
             kind: "menu",
@@ -139,7 +156,7 @@ export function PeopleScreen() {
       />
       {/* One switcher above every segment, outside the scroll views, so toggling never moves it. */}
       <View style={s.bar}>{switcher}</View>
-      {mode === "map" ? <PeopleMap people={people.filter((p) => p.status === "confirmed")} /> : mode === "rhythm" ? <RhythmList people={people.filter((p) => p.status === "confirmed")} now={now} /> : mode === "zones" ? <ZonesList people={people.filter((p) => p.status === "confirmed")} now={now} /> : mode === "teams" ? <TeamsList /> : (
+      {mode === "map" ? <PeopleMap people={people.filter((p) => p.status === "confirmed")} /> : mode === "rhythm" ? <RhythmList people={people.filter((p) => p.status === "confirmed")} now={now} /> : mode === "zones" ? <ZonesList people={people.filter((p) => p.status === "confirmed")} now={now} grouping={zoneView.grouping} availableOnly={zoneView.availableOnly} /> : mode === "teams" ? <TeamsList /> : (
       <SectionList
         sections={sections}
         keyExtractor={(p, i) => `${p.id}-${i}`}

@@ -36,6 +36,7 @@ import * as tq from "@cairn/shared/people/team-queries";
 import { mergePeople as mergePeopleShared, type MergeResult } from "@cairn/shared/people/merge";
 import { flattenTeams, groupByTeam, teamForest, type TeamGroup, type TeamNode } from "@cairn/shared/people/teams";
 import { LIST_GROUPINGS, type ListGrouping } from "@cairn/shared/people/list-groups";
+import { DEFAULT_ZONE_GROUPING, ZONE_GROUPINGS, type ZoneGrouping } from "@cairn/shared/people/zones";
 
 /** The portable handle over the active source's database. */
 export function peopleDb(): SyncDb {
@@ -230,6 +231,31 @@ export function loadGrouping(): ListGrouping {
 export function saveGrouping(by: ListGrouping): void {
   try {
     setMeta(GROUPING_KEY, by);
+  } catch {
+    // A per-device convenience: not remembered is fine.
+  }
+}
+
+const ZONE_GROUPING_KEY = "people.zoneGrouping";
+const ZONE_AVAILABLE_KEY = "people.zoneAvailableOnly";
+
+/** How this device arranges the Time zones segment (kept per device). Closest unless chosen otherwise. */
+export function loadZoneView(): { grouping: ZoneGrouping; availableOnly: boolean } {
+  try {
+    const v = getMeta(ZONE_GROUPING_KEY);
+    return {
+      grouping: ZONE_GROUPINGS.find((g) => g.value === v)?.value ?? DEFAULT_ZONE_GROUPING,
+      availableOnly: getMeta(ZONE_AVAILABLE_KEY) === "1",
+    };
+  } catch {
+    return { grouping: DEFAULT_ZONE_GROUPING, availableOnly: false };
+  }
+}
+
+export function saveZoneView(view: { grouping: ZoneGrouping; availableOnly: boolean }): void {
+  try {
+    setMeta(ZONE_GROUPING_KEY, view.grouping);
+    setMeta(ZONE_AVAILABLE_KEY, view.availableOnly ? "1" : "0");
   } catch {
     // A per-device convenience: not remembered is fine.
   }
