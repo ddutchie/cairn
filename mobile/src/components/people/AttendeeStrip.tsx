@@ -1,18 +1,16 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, ScrollView, StyleSheet, Alert } from "react-native";
 import { Check, X, Plus } from "lucide-react-native";
 import { useRouter, type Href } from "expo-router";
 import { PressableScale } from "@/components/PressableScale";
-import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { haptics } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import {
-  addNoteAttendee, attendeeCandidates, confirmNoteAttendee, loadNoteMeeting, removeNoteAttendee,
+  confirmNoteAttendee, loadNoteMeeting, removeNoteAttendee,
   type NoteMeetingStrip, type StripAttendee,
 } from "@/db/people";
 import { formatDate } from "@cairn/shared/format/date";
-import type { Person } from "@cairn/shared/types/people";
 
 /**
  * Who was at this note's meeting, above the note body (People layer, flag on).
@@ -30,7 +28,6 @@ export function AttendeeStrip({ noteId, addRequest }: { noteId: string; addReque
   const s = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
   const [strip, setStrip] = useState<NoteMeetingStrip>({ meetingId: null, startsAt: null, attendees: [] });
-  const [candidates, setCandidates] = useState<Person[]>([]);
 
   const load = useCallback(() => {
     try {
@@ -41,24 +38,16 @@ export function AttendeeStrip({ noteId, addRequest }: { noteId: string; addReque
   }, [noteId]);
   useRefreshOnFocus(load);
 
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const refreshCandidates = useCallback(() => {
-    try {
-      setCandidates(attendeeCandidates(noteId));
-    } catch {
-      setCandidates([]);
-    }
-  }, [noteId]);
+  // The picker is a native modal; the parent's "Add attendees" bumps `addRequest` to open it.
   const openPicker = useCallback(() => {
-    refreshCandidates();
-    setPickerOpen(true);
-  }, [refreshCandidates]);
-  // The parent's "Add attendees" bumps `addRequest`; react to the change while rendering (no effect needed).
-  const [lastRequest, setLastRequest] = useState(addRequest);
-  if (addRequest !== lastRequest) {
-    setLastRequest(addRequest);
+    router.push({ pathname: "/attendee-picker", params: { noteId } } as Href);
+  }, [router, noteId]);
+  const lastRequest = useRef(addRequest);
+  useEffect(() => {
+    if (addRequest === lastRequest.current) return;
+    lastRequest.current = addRequest;
     openPicker();
-  }
+  }, [addRequest, openPicker]);
 
   const act = (fn: () => void) => {
     haptics.selection();
@@ -68,12 +57,11 @@ export function AttendeeStrip({ noteId, addRequest }: { noteId: string; addReque
       Alert.alert("Couldn't update attendees", e instanceof Error ? e.message : String(e));
     }
     load();
-    refreshCandidates();
   };
 
   const open = (a: StripAttendee) => router.push({ pathname: "/workspace/people/[id]", params: { id: a.personId } } as Href, { withAnchor: true });
 
-  if (!strip.meetingId && !pickerOpen) return null;
+  if (!strip.meetingId) return null;
 
   return (
     <>
@@ -114,25 +102,6 @@ export function AttendeeStrip({ noteId, addRequest }: { noteId: string; addReque
         </View>
       ) : null}
 
-      <BottomSheet visible={pickerOpen} onClose={() => setPickerOpen(false)} maxHeight="70%">
-        <BottomSheetHeader title="Add attendees" onCancel={() => setPickerOpen(false)} />
-        <ScrollView style={s.pickerList}>
-          {candidates.length === 0 ? (
-            <Text style={s.empty}>Everyone you know is already here. To add someone new, add them on desktop.</Text>
-          ) : (
-            candidates.map((p) => (
-              <PressableScale
-                key={p.id}
-                style={s.pickerRow}
-                onPress={() => act(() => { addNoteAttendee(noteId, p.id); })}
-                accessibilityLabel={`Add ${p.name}`}
-              >
-                <Text style={s.pickerName}>{p.name}</Text>
-              </PressableScale>
-            ))
-          )}
-        </ScrollView>
-      </BottomSheet>
     </>
   );
 }
@@ -150,9 +119,5 @@ function makeStyles(t: Theme) {
     suggested: { borderStyle: "dashed", backgroundColor: "transparent" },
     suggestedName: { ...typeScale.caption, color: t.textSecondary },
     add: { paddingHorizontal: 10 },
-    pickerList: { maxHeight: 420 },
-    pickerRow: { paddingVertical: 12, paddingHorizontal: 18 },
-    pickerName: { ...typeScale.control, color: t.textPrimary },
-    empty: { ...typeScale.body, color: t.textTertiary, padding: 18 },
   });
 }

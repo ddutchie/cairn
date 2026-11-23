@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { ICON_EDIT, ICON_PEOPLE } from "@/components/toolbar-icons";
@@ -8,8 +8,8 @@ import { NotFound } from "@/components/NotFound";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
-import { createTeam, deleteTeam, loadTeamsView, mergeTeams, type TeamsView } from "@/db/people";
-import { TeamDetailsSheet, TeamMembersSheet } from "@/screens/TeamSheets";
+import { createTeam, loadTeamsView, mergeTeams, type TeamsView } from "@/db/people";
+import { newSheetResultKey, registerSheetResult } from "@/lib/sheet-result";
 import { KIND_LABEL, peopleCount } from "@/lib/team-labels";
 import { foldTeamName } from "@cairn/shared/people/team-queries";
 import { RELATIONSHIP_LABELS } from "@cairn/shared/people/model";
@@ -31,7 +31,6 @@ export function TeamScreen() {
   const { id, open } = useLocalSearchParams<{ id: string; open?: string }>();
   const [view, setView] = useState<TeamsView | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [sheet, setSheet] = useState<"details" | "members" | null>(open === "details" || open === "members" ? open : null);
 
   const load = useCallback(() => {
     try {
@@ -47,6 +46,29 @@ export function TeamScreen() {
     if (!view || !id) return null;
     return view.nodes.find((n) => n.group.key === id) ?? view.nodes.find((n) => foldTeamName(n.group.team) === foldTeamName(id.replace(/^name:/, ""))) ?? null;
   }, [view, id]);
+
+  /** Open the details or members form (a native modal) for a team that has its row; they report back what happened. */
+  const openForm = (which: "details" | "members", teamId: string) => {
+    const key = newSheetResultKey();
+    registerSheetResult<{ keepId?: string } | string>(key, (result) => {
+      if (result === "deleted") return router.back();
+      haptics.selection();
+      const keepId = typeof result === "object" ? result.keepId : undefined;
+      if (keepId) router.replace({ pathname: "/workspace/people/team/[id]", params: { id: keepId } } as Href);
+      else load();
+    });
+    router.push({ pathname: which === "details" ? "/team-details" : "/team-members", params: { id: teamId, resultKey: key } } as Href);
+  };
+
+  // Arriving from "Add details" on a name-only team: open the form once the new team's row is here.
+  const autoOpened = useRef(false);
+  const infoId = node?.group.info?.id;
+  useEffect(() => {
+    if (autoOpened.current || !infoId || (open !== "details" && open !== "members")) return;
+    autoOpened.current = true;
+    openForm(open, infoId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [infoId, open]);
 
   if (loaded && !node) return <NotFound label="Team" />;
   if (!view || !node) return <View style={s.root} />;
@@ -81,22 +103,16 @@ export function TeamScreen() {
   const openTeam = (key: string) => router.push({ pathname: "/workspace/people/team/[id]", params: { id: key } } as Href);
   const openPerson = (personId: string) => router.push({ pathname: "/workspace/people/[id]", params: { id: personId } } as Href);
 
-  // A team that is only a name on people gets its row now, so the details have somewhere to live;
-  // the page then reopens on the new id with the sheet showing.
+  // A team that is only a name on people gets its row now, so the form has somewhere to live;
+  // the page then reopens on the new id with the form showing.
   const start = (which: "details" | "members") => {
-    if (info) return setSheet(which);
+    if (info) return openForm(which, info.id);
     try {
       const made = createTeam({ name: group.team });
       router.replace({ pathname: "/workspace/people/team/[id]", params: { id: made.id, open: which } } as Href);
     } catch (e) {
       Alert.alert("Couldn't add details", e instanceof Error ? e.message : String(e));
     }
-  };
-
-  const saved = () => {
-    haptics.selection();
-    setSheet(null);
-    load();
   };
 
   const mergeTwin = () => {
@@ -228,39 +244,6 @@ export function TeamScreen() {
         ) : null}
       </ScrollView>
 
-      {info ? (
-        <>
-          <TeamDetailsSheet
-            visible={sheet === "details"}
-            node={node}
-            nodes={view.nodes}
-            people={view.people}
-            onClose={() => setSheet(null)}
-            onSaved={saved}
-            onMerge={(keepId) => {
-              try {
-                mergeTeams(keepId, info.id);
-              } catch (e) {
-                Alert.alert("Couldn't merge", e instanceof Error ? e.message : String(e));
-                return;
-              }
-              setSheet(null);
-              router.replace({ pathname: "/workspace/people/team/[id]", params: { id: keepId } } as Href);
-            }}
-            onDelete={() => {
-              try {
-                deleteTeam(info.id);
-              } catch (e) {
-                Alert.alert("Couldn't delete", e instanceof Error ? e.message : String(e));
-                return;
-              }
-              setSheet(null);
-              router.back();
-            }}
-          />
-          <TeamMembersSheet visible={sheet === "members"} node={node} people={view.people} onClose={() => setSheet(null)} onSaved={saved} />
-        </>
-      ) : null}
     </View>
   );
 }

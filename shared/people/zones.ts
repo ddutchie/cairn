@@ -5,6 +5,7 @@
  * unknown one is treated as unset.
  */
 import type { PersonSummary } from "../types/people-view";
+import { PEOPLE_GROUPS, groupKeysFor } from "./model";
 
 export const WORK_START = 9;
 export const WORK_END = 17;
@@ -97,6 +98,8 @@ export interface ZoneModel {
   me: { timezone: string; fromProfile: boolean };
   /** Sorted from furthest behind you to furthest ahead, then by name. */
   rows: ZonePerson[];
+  /** You, on the same strip (offset zero, your own working day), or null when no person is marked as you. */
+  meRow: ZonePerson | null;
   /** People with no zone, or one this runtime doesn't know. */
   unset: PersonSummary[];
   /** Viewer's current hour of day (fractional), for the "now" marker. */
@@ -127,7 +130,18 @@ export function buildZoneModel(people: readonly PersonSummary[], me: PersonSumma
   }
   rows.sort((a, b) => a.diffMinutes - b.diffMinutes || a.person.name.localeCompare(b.person.name));
   unset.sort((a, b) => a.name.localeCompare(b.name));
-  return { me: { timezone: myZone, fromProfile: myZone === me?.timezone }, rows, unset, nowHour: hourIn(myOffset) };
+  let meRow: ZonePerson | null = null;
+  if (me) {
+    const minuteOfDay = (((Math.floor(now.getTime() / 60_000) + myOffset) % 1440) + 1440) % 1440;
+    const h = hourIn(myOffset);
+    meRow = {
+      person: me, timezone: myZone, diffMinutes: 0,
+      localTime: `${String(Math.floor(minuteOfDay / 60)).padStart(2, "0")}:${String(minuteOfDay % 60).padStart(2, "0")}`,
+      localHour: h, atWork: h >= WORK_START && h < WORK_END, asleep: h >= 22 || h < 7,
+      spans: workSpans(0), overlap: overlapHours(0),
+    };
+  }
+  return { me: { timezone: myZone, fromProfile: myZone === me?.timezone }, rows, meRow, unset, nowHour: hourIn(myOffset) };
 }
 
 /** "+2h", "-5h 30m", "same time". */
@@ -137,4 +151,94 @@ export function formatDiff(diffMinutes: number): string {
   const abs = Math.abs(diffMinutes);
   const h = Math.floor(abs / 60); const m = abs % 60;
   return `${sign}${h ? `${h}h` : ""}${h && m ? " " : ""}${m ? `${m}m` : ""}`;
+}
+
+// ── Grouping ─────────────────────────────────
+
+/** Ways to arrange the Time zones view. "Closest" is the default: the people you work with most, nearest first. */
+export const ZONE_GROUPINGS = [
+  { value: "closest", label: "Closest" },
+  { value: "zone", label: "Time zone" },
+  { value: "availability", label: "Availability" },
+  { value: "team", label: "Team" },
+] as const;
+export type ZoneGrouping = (typeof ZONE_GROUPINGS)[number]["value"];
+export const DEFAULT_ZONE_GROUPING: ZoneGrouping = "closest";
+
+export interface ZoneGroup {
+  key: string;
+  label: string;
+  /** A quiet line beside the label: the offset for a time zone. */
+  note?: string;
+  rows: ZonePerson[];
+}
+
+const byName = (a: ZonePerson, b: ZonePerson) => a.person.name.localeCompare(b.person.name, undefined, { sensitivity: "base" });
+const cityOf = (tz: string) => (tz.split("/").pop() ?? tz).replace(/_/g, " ");
+const norm = (s: string | undefined) => (s ?? "").trim().replace(/\s+/g, " ");
+
+/** Who you keep closest first: on a 1:1 cadence, then met most recently, then by name. */
+function closerFirst(a: ZonePerson, b: ZonePerson): number {
+  return Number(!!b.person.cadence) - Number(!!a.person.cadence)
+    || (b.person.lastMetAt ?? "").localeCompare(a.person.lastMetAt ?? "")
+    || byName(a, b);
+}
+
+/** The relationship group that ranks first among the ones a person belongs to (people are listed once here). */
+function closestGroupKey(p: PersonSummary): string {
+  const keys = new Set<string>(groupKeysFor(p.relationship));
+  return PEOPLE_GROUPS.find((g) => keys.has(g.key))?.key ?? "other";
+}
+
+/**
+ * Arrange the rows (you are not among them: see `ZoneModel.meRow`). Each person lands in one group.
+ * `closest`: relationship groups in list order, nearest first inside each. `zone`: one group per zone,
+ * furthest behind you first. `availability`: working, early or late, asleep. `team`: by home team.
+ * `availableOnly` drops anyone asleep.
+ */
+export function groupZoneRows(rows: readonly ZonePerson[], by: ZoneGrouping, opts: { availableOnly?: boolean } = {}): ZoneGroup[] {
+  const list = opts.availableOnly ? rows.filter((r) => !r.asleep) : [...rows];
+  const bucket = (keyOf: (r: ZonePerson) => { key: string; label: string; note?: string }, sort: (a: ZonePerson, b: ZonePerson) => number): Map<string, ZoneGroup> => {
+    const map = new Map<string, ZoneGroup>();
+    for (const r of list) {
+      const k = keyOf(r);
+      const g = map.get(k.key) ?? { key: k.key, label: k.label, note: k.note, rows: [] };
+      g.rows.push(r);
+      map.set(k.key, g);
+    }
+    for (const g of map.values()) g.rows.sort(sort);
+    return map;
+  };
+  switch (by) {
+    case "closest": {
+      const map = bucket((r) => {
+        const key = closestGroupKey(r.person);
+        return { key, label: PEOPLE_GROUPS.find((g) => g.key === key)!.label };
+      }, closerFirst);
+      return PEOPLE_GROUPS.map((g) => map.get(g.key)).filter((g): g is ZoneGroup => !!g);
+    }
+    case "zone": {
+      const map = bucket((r) => ({ key: r.timezone, label: cityOf(r.timezone), note: formatDiff(r.diffMinutes) }), closerFirst);
+      return [...map.values()].sort((a, b) => a.rows[0].diffMinutes - b.rows[0].diffMinutes || a.label.localeCompare(b.label));
+    }
+    case "availability": {
+      const labels = { work: "Working now", edge: "Early or late", asleep: "Asleep" } as const;
+      const map = bucket((r) => {
+        const key = r.atWork ? "work" : r.asleep ? "asleep" : "edge";
+        return { key, label: labels[key] };
+      }, closerFirst);
+      return (["work", "edge", "asleep"] as const).map((k) => map.get(k)).filter((g): g is ZoneGroup => !!g);
+    }
+    case "team": {
+      const map = bucket((r) => {
+        const home = r.person.teams?.[0];
+        const name = norm(home?.name ?? r.person.team);
+        return name ? { key: home?.teamId ?? name.toLowerCase(), label: name } : { key: "_none", label: "No team" };
+      }, closerFirst);
+      return [...map.values()].sort((a, b) => {
+        if ((a.key === "_none") !== (b.key === "_none")) return a.key === "_none" ? 1 : -1;
+        return b.rows.length - a.rows.length || a.label.localeCompare(b.label);
+      });
+    }
+  }
 }

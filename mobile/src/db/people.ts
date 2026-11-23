@@ -20,11 +20,15 @@ import { createExpoSyncDb } from "./expo-sync-db";
 import { notifyLocalWrite } from "@/sync/write-signal";
 import { LIVE, NOT_CONFLICT } from "./sql";
 import * as pq from "@cairn/shared/people/queries";
+// Registers the city data behind place search and place-to-zone lookups (the desktop imports it too).
+import "@cairn/shared/people/place-data";
+import { cleanProfileFieldWithPlaces, zoneForPlace } from "@cairn/shared/people/place-zone";
+import type { ProfileField } from "@cairn/shared/people/parse";
 import { captureNoteMeeting, loadCandidates, meetingLinkPending } from "@cairn/shared/people/capture";
 import { getPersonPage, listPersonSummaries } from "@cairn/shared/people/view-queries";
 import { ownedItemsIn, setItemDone } from "@cairn/shared/people/action-items";
 import type {
-  AddMemberInput, Cadence, MeetingAttendee, PeopleStatus, Person, Relationship, Team, TeamCreateInput, TeamMembership, TeamPatch,
+  AddMemberInput, Cadence, MeetingAttendee, PeopleStatus, Person, PersonCreateInput, Relationship, Team, TeamCreateInput, TeamMembership, TeamPatch,
 } from "@cairn/shared/types/people";
 import type { PersonPage, PersonSummary } from "@cairn/shared/types/people-view";
 import { updateNote } from "./queries";
@@ -32,6 +36,7 @@ import * as tq from "@cairn/shared/people/team-queries";
 import { mergePeople as mergePeopleShared, type MergeResult } from "@cairn/shared/people/merge";
 import { flattenTeams, groupByTeam, teamForest, type TeamGroup, type TeamNode } from "@cairn/shared/people/teams";
 import { LIST_GROUPINGS, type ListGrouping } from "@cairn/shared/people/list-groups";
+import { DEFAULT_ZONE_GROUPING, ZONE_GROUPINGS, type ZoneGrouping } from "@cairn/shared/people/zones";
 
 /** The portable handle over the active source's database. */
 export function peopleDb(): SyncDb {
@@ -117,6 +122,33 @@ export function loadPastTeams(personId: string, current: readonly { teamId: stri
     .sort((a, b) => b.endedAt.localeCompare(a.endedAt));
 }
 
+export type NewPersonInput = Pick<PersonCreateInput, "name" | "relationship" | "title" | "team" | "location" | "timezone" | "isMe">;
+
+/**
+ * Add a person to the active workspace, as the desktop's Add person does. Role, team, location and time zone are
+ * checked the same way the person page checks them; a location that names a zone fills an empty time zone.
+ * Throws with a sentence to show when there is no name or a field is refused.
+ */
+export function createPerson(input: NewPersonInput): Person {
+  const ws = peopleWorkspaceId();
+  if (!ws) throw new Error("There is no workspace to add the person to.");
+  const clean = (field: ProfileField, raw: string | undefined): string | undefined => {
+    const out = cleanProfileFieldWithPlaces(field, raw);
+    if (out.error) throw new Error(out.error);
+    return out.value;
+  };
+  const location = clean("location", input.location);
+  const timezone = clean("timezone", input.timezone) ?? (location ? zoneForPlace(location) ?? undefined : undefined);
+  return write((db) => pq.createPerson(db, {
+    ...input,
+    workspaceId: ws,
+    title: clean("title", input.title),
+    team: clean("team", input.team),
+    location,
+    timezone,
+  }));
+}
+
 /** Make a team in the active workspace. Throws (with a sentence to show) when the name is taken or empty. */
 export function createTeam(input: Omit<TeamCreateInput, "workspaceId">): Team {
   const ws = peopleWorkspaceId();
@@ -142,6 +174,24 @@ export function mergeTeams(keepId: string, dropId: string): Team {
 /** Put someone on a team, or change their role there (`role: null` clears it). Never takes them off another team. */
 export function addTeamMember(input: AddMemberInput): TeamMembership {
   return write((db) => tq.addMember(db, input));
+}
+
+export interface MemberChanges {
+  teamId: string;
+  /** Taken off the team (kept as history). */
+  end: string[];
+  /** Added, or given a role: `role` null clears one. */
+  set: { personId: string; role: string | null }[];
+}
+
+/** A team's member edits from the Members form, committed together: if one fails, none are saved. */
+export function saveTeamMembers(changes: MemberChanges): void {
+  const db = peopleDb();
+  db.transaction(() => {
+    for (const personId of changes.end) tq.endMember(db, changes.teamId, personId);
+    for (const m of changes.set) tq.addMember(db, { teamId: changes.teamId, personId: m.personId, role: m.role });
+  })();
+  notifyLocalWrite();
 }
 
 /** Take someone off a team, keeping the stint as history. */
@@ -181,6 +231,31 @@ export function loadGrouping(): ListGrouping {
 export function saveGrouping(by: ListGrouping): void {
   try {
     setMeta(GROUPING_KEY, by);
+  } catch {
+    // A per-device convenience: not remembered is fine.
+  }
+}
+
+const ZONE_GROUPING_KEY = "people.zoneGrouping";
+const ZONE_AVAILABLE_KEY = "people.zoneAvailableOnly";
+
+/** How this device arranges the Time zones segment (kept per device). Closest unless chosen otherwise. */
+export function loadZoneView(): { grouping: ZoneGrouping; availableOnly: boolean } {
+  try {
+    const v = getMeta(ZONE_GROUPING_KEY);
+    return {
+      grouping: ZONE_GROUPINGS.find((g) => g.value === v)?.value ?? DEFAULT_ZONE_GROUPING,
+      availableOnly: getMeta(ZONE_AVAILABLE_KEY) === "1",
+    };
+  } catch {
+    return { grouping: DEFAULT_ZONE_GROUPING, availableOnly: false };
+  }
+}
+
+export function saveZoneView(view: { grouping: ZoneGrouping; availableOnly: boolean }): void {
+  try {
+    setMeta(ZONE_GROUPING_KEY, view.grouping);
+    setMeta(ZONE_AVAILABLE_KEY, view.availableOnly ? "1" : "0");
   } catch {
     // A per-device convenience: not remembered is fine.
   }
@@ -258,6 +333,11 @@ export function loadOpenItems(person: Person): OpenItems {
     }
   }
   return out;
+}
+
+/** Just the person (no timeline or open items), or null when they are gone: what the edit forms read. */
+export function loadPerson(personId: string): Person | null {
+  return pq.getPerson(peopleDb(), personId);
 }
 
 /** Everything the person page shows, or null when the person is gone. */

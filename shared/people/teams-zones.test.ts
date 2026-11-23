@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { PersonSummary } from "../types/people-view";
 import { NO_TEAM, groupByTeam, peopleUnder, teamForest } from "./teams";
 import type { Team } from "../types/people";
-import { buildZoneModel, formatDiff, overlapHours, sameZone, workSpans, zoneOffsetMinutes } from "./zones";
+import { buildZoneModel, formatDiff, groupZoneRows, overlapHours, sameZone, workSpans, zoneOffsetMinutes } from "./zones";
 
 const p = (id: string, name: string, extra: Partial<PersonSummary> = {}): PersonSummary => ({
   id, workspaceId: "w", name, aliases: [], emails: [], relationship: [], status: "confirmed", provenance: "explicit",
@@ -85,6 +85,43 @@ describe("zones", () => {
       const m = buildZoneModel([me, p("1", "A", { timezone: "UTC" })], me, at);
       expect(m.rows[0].localTime).toBe(`12:${String(min).padStart(2, "0")}`);
     }
+  });
+});
+
+describe("zone rows: you and grouping", () => {
+  const winter = new Date(Date.UTC(2026, 0, 15, 12, 0));
+  const rel = (type: "direct_report" | "peer" | "manager" | "buddy") => [{ type, provenance: "explicit" as const }];
+  const me = p("me", "Me", { isMe: true, timezone: "Europe/London" });
+  const people = [
+    me,
+    p("a", "Ann", { timezone: "Europe/Paris", relationship: rel("peer"), lastMetAt: "2026-01-01T00:00:00Z" }),
+    p("b", "Bob", { timezone: "America/New_York", relationship: rel("direct_report"), cadence: "weekly" }),
+    p("c", "Cy", { timezone: "Asia/Kolkata", relationship: rel("peer"), cadence: "weekly", lastMetAt: "2025-06-01T00:00:00Z" }),
+    p("d", "Di", { timezone: "Europe/Paris", relationship: rel("buddy"), team: "Sync" }),
+    p("e", "Ed", { timezone: "Europe/Paris" }),
+  ];
+  const m = buildZoneModel(people, me, winter);
+
+  it("gives you a row on the same strip, never among the others", () => {
+    expect(m.meRow).toMatchObject({ diffMinutes: 0, localTime: "12:00", atWork: true, spans: [[9, 17]], overlap: 8 });
+    expect(m.rows.some((r) => r.person.isMe)).toBe(false);
+    expect(buildZoneModel([p("1", "A", { timezone: "UTC" })], null, winter).meRow).toBeNull();
+  });
+  it("closest: relationship groups in list order, cadence then recent meetings first, each person once", () => {
+    const g = groupZoneRows(m.rows, "closest");
+    expect(g.map((x) => [x.label, x.rows.map((r) => r.person.name)])).toEqual([
+      ["Direct reports", ["Bob"]], ["Peers", ["Cy", "Ann"]], ["Other", ["Di", "Ed"]],
+    ]);
+  });
+  it("zone: one group per zone, furthest behind you first", () => {
+    const g = groupZoneRows(m.rows, "zone");
+    expect(g.map((x) => [x.label, x.note])).toEqual([["New York", "-5h"], ["Paris", "+1h"], ["Kolkata", "+5h 30m"]]);
+  });
+  it("availability and team, and available-only drops anyone asleep", () => {
+    expect(groupZoneRows(m.rows, "availability").map((x) => x.label)).toEqual(["Working now", "Early or late"]);
+    expect(groupZoneRows(m.rows, "team").map((x) => x.label)).toEqual(["Sync", "No team"]);
+    const night = buildZoneModel(people, me, new Date(Date.UTC(2026, 0, 15, 3, 0)));
+    expect(groupZoneRows(night.rows, "zone", { availableOnly: true }).flatMap((x) => x.rows.map((r) => r.person.name))).toEqual(["Cy"]);
   });
 });
 

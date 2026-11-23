@@ -3,7 +3,7 @@ import { View, Text, SectionList, RefreshControl, StyleSheet } from "react-nativ
 import { useRouter, type Href } from "expo-router";
 import { ScreenChrome } from "@/components/screen-chrome";
 import { SegmentedControl } from "@/components/SegmentedControl";
-import { NewTeamSheet } from "@/screens/NewTeamSheet";
+import { newSheetResultKey, registerSheetResult } from "@/lib/sheet-result";
 import { TeamsList } from "@/screens/TeamsList";
 import { RhythmList } from "./RhythmList";
 import { ZonesList } from "./ZonesList";
@@ -15,9 +15,10 @@ import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { requestSync } from "@/sync/controller";
 import { haptics, toolbarPress } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
-import { loadGrouping, loadPeople, saveGrouping, setPersonStatus } from "@/db/people";
+import { loadGrouping, loadPeople, loadZoneView, saveGrouping, saveZoneView, setPersonStatus } from "@/db/people";
 import { ICON_ADD, ICON_GROUP_BY } from "@/components/toolbar-icons";
 import { RELATIONSHIP_LABELS } from "@cairn/shared/people/model";
+import { ZONE_GROUPINGS } from "@cairn/shared/people/zones";
 import { LIST_GROUPINGS, groupPeopleBy, type ListGrouping } from "@cairn/shared/people/list-groups";
 import { formatRelative } from "@cairn/shared/format/date";
 import type { PersonSummary } from "@cairn/shared/types/people-view";
@@ -48,13 +49,17 @@ export function PeopleScreen() {
   // Location and Last met read the clock, so the grouping is redone when the screen reloads.
   const [now, setNow] = useState(() => new Date());
   const [mode, setMode] = useState<"people" | "teams" | "map" | "rhythm" | "zones">("people");
-  const [newTeam, setNewTeam] = useState(false);
   // Zones reads the clock, so it ticks while that view is open (the others only reload on focus or sync).
   useEffect(() => {
     if (mode !== "zones") return;
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
   }, [mode]);
+  const [zoneView, setZoneViewState] = useState(loadZoneView);
+  const setZoneView = (next: typeof zoneView) => {
+    setZoneViewState(next);
+    saveZoneView(next);
+  };
   const setGrouping = (g: ListGrouping) => {
     setGroupingState(g);
     saveGrouping(g);
@@ -69,6 +74,23 @@ export function PeopleScreen() {
     }
   }, []);
   useRefreshOnFocus(load);
+
+  // The add forms are native modal routes (like the project form). Each hands back the new id once it has closed.
+  const openAddPerson = () => {
+    const key = newSheetResultKey();
+    registerSheetResult<string>(key, (id) => {
+      load();
+      router.push({ pathname: "/workspace/people/[id]", params: { id } } as Href);
+    });
+    router.push({ pathname: "/person-form", params: { resultKey: key } } as Href);
+  };
+  const openNewTeam = () => {
+    const key = newSheetResultKey();
+    registerSheetResult<string>(key, (id) => {
+      router.push({ pathname: "/workspace/people/team/[id]", params: { id } } as Href);
+    });
+    router.push({ pathname: "/team-form", params: { resultKey: key } } as Href);
+  };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -111,9 +133,20 @@ export function PeopleScreen() {
     <View style={s.root}>
       <ScreenChrome
         title="People"
-        right={mode === "map" || mode === "rhythm" || mode === "zones" ? [] : mode === "teams"
-          ? [{ kind: "button", key: "new-team", label: "New team", icon: ICON_ADD, onPress: toolbarPress(() => setNewTeam(true)) }]
-          : [{
+        right={mode === "map" || mode === "rhythm" ? [] : mode === "zones"
+          ? [{
+            kind: "menu",
+            key: "zone-view",
+            label: "Arrange time zones",
+            icon: ICON_GROUP_BY,
+            actions: [
+              ...ZONE_GROUPINGS.map((g) => ({ label: g.label, isOn: g.value === zoneView.grouping, onPress: toolbarPress(() => setZoneView({ ...zoneView, grouping: g.value })) })),
+              { label: "Available now", isOn: zoneView.availableOnly, onPress: toolbarPress(() => setZoneView({ ...zoneView, availableOnly: !zoneView.availableOnly })) },
+            ],
+          }]
+          : mode === "teams"
+          ? [{ kind: "button", key: "new-team", label: "New team", icon: ICON_ADD, onPress: toolbarPress(openNewTeam) }]
+          : [{ kind: "button", key: "add-person", label: "Add person", icon: ICON_ADD, onPress: toolbarPress(openAddPerson) }, {
             kind: "menu",
             key: "group",
             label: "Group people",
@@ -123,7 +156,7 @@ export function PeopleScreen() {
       />
       {/* One switcher above every segment, outside the scroll views, so toggling never moves it. */}
       <View style={s.bar}>{switcher}</View>
-      {mode === "map" ? <PeopleMap people={people.filter((p) => p.status === "confirmed")} /> : mode === "rhythm" ? <RhythmList people={people.filter((p) => p.status === "confirmed")} now={now} /> : mode === "zones" ? <ZonesList people={people.filter((p) => p.status === "confirmed")} now={now} /> : mode === "teams" ? <TeamsList /> : (
+      {mode === "map" ? <PeopleMap people={people.filter((p) => p.status === "confirmed")} /> : mode === "rhythm" ? <RhythmList people={people.filter((p) => p.status === "confirmed")} now={now} /> : mode === "zones" ? <ZonesList people={people.filter((p) => p.status === "confirmed")} now={now} grouping={zoneView.grouping} availableOnly={zoneView.availableOnly} /> : mode === "teams" ? <TeamsList /> : (
       <SectionList
         sections={sections}
         keyExtractor={(p, i) => `${p.id}-${i}`}
@@ -180,14 +213,6 @@ export function PeopleScreen() {
         )}
       />
       )}
-      <NewTeamSheet
-        visible={newTeam}
-        onClose={() => setNewTeam(false)}
-        onCreated={(id) => {
-          setNewTeam(false);
-          router.push({ pathname: "/workspace/people/team/[id]", params: { id } } as Href);
-        }}
-      />
     </View>
   );
 }

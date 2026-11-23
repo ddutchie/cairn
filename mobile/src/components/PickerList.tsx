@@ -1,25 +1,20 @@
 import { useMemo, useState } from "react";
 import { FlatList, StyleSheet, Text, View } from "react-native";
 import { Check } from "lucide-react-native";
-import { BottomSheetHeader } from "@/components/BottomSheet";
 import { PressableScale } from "@/components/PressableScale";
 import { SearchField } from "@/components/SearchField";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
-/** A choice in a picker page. */
+/** A choice in a picker list. */
 export interface PickerOption {
   value: string;
   label: string;
   note?: string;
 }
 
-/**
- * A searchable list that stands in for a nested sheet: a `BottomSheet` shows it instead of its
- * form, with Cancel as the way back (a sheet over a sheet is a modal over a modal, which iOS
- * handles badly).
- */
-export function PickerPage({ title, options, selected, onPick, onBack, empty }: {
-  title: string; options: PickerOption[]; selected?: string; onPick: (value: string) => void; onBack: () => void; empty?: string;
+/** A searchable list of choices, the body of a picker page inside a `ModalForm` (`scroll={false}`). */
+export function PickerList({ options, selected, onPick, empty }: {
+  options: PickerOption[]; selected?: string; onPick: (value: string) => void; empty?: string;
 }) {
   const t = useTheme();
   const s = useMemo(() => makeStyles(t), [t]);
@@ -28,7 +23,6 @@ export function PickerPage({ title, options, selected, onPick, onBack, empty }: 
   const shown = q ? options.filter((o) => o.label.toLowerCase().includes(q) || o.note?.toLowerCase().includes(q)) : options;
   return (
     <>
-      <BottomSheetHeader title={title} onCancel={onBack} />
       <View style={s.search}>
         <SearchField value={query} onChangeText={setQuery} placeholder="Search" />
       </View>
@@ -56,7 +50,7 @@ function makeStyles(t: Theme) {
   return StyleSheet.create({
     flex: { flex: 1 },
     search: { paddingHorizontal: 14, paddingTop: 10 },
-    list: { flexGrow: 0, maxHeight: 460 },
+    list: { flex: 1 },
     row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 11, paddingHorizontal: 18 },
     line: { ...typeScale.body, color: t.textPrimary },
     note: { ...typeScale.caption, color: t.textTertiary },
