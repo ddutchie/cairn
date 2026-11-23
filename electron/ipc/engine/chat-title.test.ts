@@ -59,4 +59,26 @@ describe("maybeTitleChat", () => {
     // The second request names the conversation from both messages.
     expect(JSON.stringify(run.mock.calls[1][0])).toContain("garden beds");
   });
+
+  it("still retries a greeting when a third turn also ended while the first request ran", async () => {
+    let inputs: TitleInputs = { humanMessages: ["hi"], firstReply: "Hello", autoTitles: 0 };
+    const host = {
+      titleInputs: vi.fn(async () => inputs),
+      autoTitle: vi.fn(async () => { inputs = { ...inputs, autoTitles: inputs.autoTitles + 1 }; return true; }),
+    };
+    let releaseFirst!: (v: string) => void;
+    const run = vi.fn()
+      .mockImplementationOnce(() => new Promise<string>((resolve) => { releaseFirst = resolve; }))
+      .mockImplementationOnce(async () => "Garden bed plan");
+    const first = maybeTitleChat(host, "chat-5", config, {}, run);
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    inputs = { humanMessages: ["hi", "Help me plan the garden beds"], firstReply: "Hello", autoTitles: 0 };
+    await maybeTitleChat(host, "chat-5", config, {}, run);
+    inputs = { humanMessages: ["hi", "Help me plan the garden beds", "and the shed"], firstReply: "Hello", autoTitles: 0 };
+    await maybeTitleChat(host, "chat-5", config, {}, run);
+    releaseFirst("Greeting");
+    await first;
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(run.mock.calls[1][0])).toContain("garden beds");
+  });
 });

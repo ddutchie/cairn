@@ -396,6 +396,18 @@ export default function ChatScreen() {
     }
   }, [input]);
 
+  const clearNow = useCallback(() => {
+    clearChatHistory();
+    conversation.current = [];
+    setMessages([]);
+    setVisibleCount(CHAT_PAGE_SIZE);
+    setUsage(null);
+    // Drop the on-device session so a new chat gets a fresh context window.
+    resetAppleSession();
+  }, []);
+  // Clear chosen while a turn was waiting on a card: the turn is closed out first, then this runs.
+  const clearAfterTurn = useRef(false);
+
   const send = useCallback(async () => {
     const queuedSend = pendingSendRef.current;
     pendingSendRef.current = null;
@@ -405,6 +417,9 @@ export default function ChatScreen() {
     // A turn is already running — queue this message instead of interrupting
     // it. The queue drains (FIFO) when the current reply finishes.
     if (busy) {
+      // A deferred Clear chat is waiting for this turn to end: don't queue into a chat about to be cleared.
+      // The draft stays in the composer to send afterwards.
+      if (clearAfterTurn.current) return;
       // The chips picked for this draft travel with it, so a later draft can't change who it means.
       const picks = pickedMentions.current; // captured now: the updater below runs later
       pickedMentions.current = new Map();
@@ -580,22 +595,16 @@ export default function ChatScreen() {
       saveChatMessage({ role: "assistant", content: msg, tools: toolTrail.length ? toolTrail : undefined });
       haptics.error(); // request failed
     } finally {
+      // Clear chat was chosen while this turn waited on a card: now that its reply is saved, clear.
+      // Done here, not in an effect, so it still happens if the screen was left mid-turn.
+      if (clearAfterTurn.current) {
+        clearAfterTurn.current = false;
+        clearNow();
+      }
       setBusy(false);
       setTimeout(() => scrollToEndIfFollowing(true), 50);
     }
-  }, [input, attachments, busy, followEnd, scrollToEndIfFollowing, streamStore]);
-
-  const clearNow = useCallback(() => {
-    clearChatHistory();
-    conversation.current = [];
-    setMessages([]);
-    setVisibleCount(CHAT_PAGE_SIZE);
-    setUsage(null);
-    // Drop the on-device session so a new chat gets a fresh context window.
-    resetAppleSession();
-  }, []);
-  // Clear chosen while a turn was waiting on a card: the turn is closed out first, then this runs.
-  const clearAfterTurn = useRef(false);
+  }, [input, attachments, busy, followEnd, scrollToEndIfFollowing, streamStore, clearNow]);
 
   // Drain the queue: when a turn finishes (busy went true → false), send the
   // next queued message. Keeps the queue on Stop and drains after errors too.
@@ -605,18 +614,13 @@ export default function ChatScreen() {
   useEffect(() => {
     const wasBusy = prevBusyRef.current;
     prevBusyRef.current = busy;
-    if (wasBusy && !busy && clearAfterTurn.current) {
-      clearAfterTurn.current = false;
-      clearNow();
-      return;
-    }
     if (wasBusy && !busy && queuedRef.current.length > 0) {
       const [next, ...rest] = queuedRef.current;
       setQueued(rest);
       pendingSendRef.current = { content: next.content, attachments: next.attachments, picks: next.picks };
       sendRef.current();
     }
-  }, [busy, clearNow]);
+  }, [busy]);
 
   const removeQueued = useCallback((qid: string) => {
     setQueued((prev) => prev.filter((q) => q.id !== qid));

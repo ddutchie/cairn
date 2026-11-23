@@ -34,7 +34,9 @@ describe("titleRequest", () => {
     expect(isVagueMessage("hi")).toBe(true);
     const again = titleRequest({ humanMessages: ["hi", "can you tidy my board for the garden project"], autoTitles: 1 })!;
     expect(again).toContain("tidy my board");
-    expect(titleRequest({ humanMessages: ["hi", "x", "y"], autoTitles: 1 })).toBeUndefined();
+    // More turns can pass before the retry gets to run; it still names from the first two messages.
+    expect(titleRequest({ humanMessages: ["hi", "can you tidy my board for the garden project", "and the shed"], autoTitles: 1 })).toContain("tidy my board");
+    expect(titleRequest({ humanMessages: ["hi", "x", "y"], autoTitles: 2 })).toBeUndefined();
   });
 
   it("never asks once a person has named the thread, or with nothing typed", () => {

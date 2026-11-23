@@ -72,8 +72,8 @@ export interface TitleState {
 
 /**
  * Whether to ask the model for a title now, and with what: once after the first
- * reply, and once more after the second message when the first was too thin to
- * name ("hi"). Returns the user prompt, or undefined to leave the title alone.
+ * reply, and once more once there is a second message when the first was too thin to
+ * name ("hi"), however many turns it takes to get there. Returns the user prompt, or undefined to leave the title alone.
  */
 export function titleRequest(s: TitleState): string | undefined {
   if (s.userTitle) return undefined;
@@ -83,7 +83,8 @@ export function titleRequest(s: TitleState): string | undefined {
     const message = isVagueMessage(first) && second ? `${first}\n${second}` : first;
     return titleUserPrompt(message, s.humanMessages.length === 1 ? s.firstReply : undefined);
   }
-  if (s.autoTitles === 1 && s.humanMessages.length === 2 && isVagueMessage(first) && second) {
+  // Still only the greeting's title after further turns (its request was pending, or failed): name it from the first two messages.
+  if (s.autoTitles === 1 && isVagueMessage(first) && second) {
     return titleUserPrompt(`${first}\n${second}`);
   }
   return undefined;

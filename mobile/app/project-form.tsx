@@ -93,7 +93,7 @@ export default function ProjectForm() {
         <ScreenChrome
           title={existing ? "Edit Project" : "New Project"}
           right={[
-            { kind: "button", key: "save", label: "Save", icon: ICON_CHECK, variant: "done", hidden: !canSave, onPress: toolbarPress(save, "confirm") },
+            { kind: "button", key: "save", label: "Save", icon: ICON_CHECK, variant: "done", hidden: !canSave, onPress: () => toolbarPress(save, "confirm")() },
           ]}
         />
         <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
