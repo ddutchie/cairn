@@ -4,7 +4,7 @@ import { useLocalSearchParams } from "expo-router";
 import { PROFILE_FIELDS, type ProfileField } from "@cairn/shared/people/parse";
 import { cleanProfileFieldWithPlaces, zoneForPlace } from "@cairn/shared/people/place-zone";
 import type { PersonSummary } from "@cairn/shared/types/people-view";
-import { loadPeople, loadPersonPage, mergePeople, saveProfile, type ProfileEdit } from "@/db/people";
+import { loadPeople, loadPerson, mergePeople, saveProfile, type ProfileEdit } from "@/db/people";
 import { ModalForm } from "@/components/ModalForm";
 import { PickerList } from "@/components/PickerList";
 import { PlaceField } from "@/components/PlaceField";
@@ -26,7 +26,7 @@ export default function PersonDetails() {
   const t = useTheme();
   const s = useMemo(() => makeFormStyles(t), [t]);
   const person = useMemo(() => {
-    try { return id ? loadPersonPage(id)?.person ?? null : null; } catch { return null; }
+    try { return id ? loadPerson(id) : null; } catch { return null; }
   }, [id]);
   const seed = useMemo<ProfileEdit>(
     () => ({ title: person?.title ?? "", team: person?.team ?? "", location: person?.location ?? "", timezone: person?.timezone ?? "", slackId: person?.slackId ?? "" }),
@@ -35,6 +35,8 @@ export default function PersonDetails() {
   const [vals, setVals] = useState<ProfileEdit>(seed);
   const [error, setError] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
+  // The time zone in the draft was filled in from a location, not typed: it is only a suggestion at Save.
+  const [tzInferred, setTzInferred] = useState(false);
   // Whoever this could be a duplicate of: anyone else but you (merging drops them, and "you" must stay).
   const others = useMemo<PersonSummary[]>(() => {
     try {
@@ -47,23 +49,34 @@ export default function PersonDetails() {
 
   const set = (key: keyof ProfileEdit) => (text: string) => {
     setVals((v) => ({ ...v, [key]: text }));
+    if (key === "timezone") setTzInferred(false);
     setError(null);
   };
   const save = () => {
-    // As on the desktop: a city is accepted as a time zone, and a changed location fills an empty time zone.
-    const next = { ...vals };
+    // Work out what the user changed first, then tidy only those fields: an untouched field is never rewritten,
+    // so a sync that landed while this was open isn't overwritten by a re-tidied copy of the old value.
+    const edited = (k: keyof ProfileEdit) => vals[k].trim() !== seed[k].trim();
+    const patch: Partial<ProfileEdit> = {};
     for (const f of PROFILE_FIELDS) {
-      const { value, error: err } = cleanProfileFieldWithPlaces(f, next[f]);
+      if (!edited(f) || (f === "timezone" && tzInferred)) continue;
+      const { value, error: err } = cleanProfileFieldWithPlaces(f, vals[f]);
       if (err) return setError(err);
-      next[f] = value ?? "";
+      patch[f] = value ?? ""; // a blank is an explicit clear
     }
-    if (next.slackId.trim() && !/^[A-Za-z0-9]{3,32}$/.test(next.slackId.trim())) return setError("A Slack id looks like U01ABCDEF.");
-    if (!next.timezone.trim() && next.location.trim() && next.location.trim() !== seed.location.trim()) next.timezone = zoneForPlace(next.location) ?? "";
-    const changed: Partial<ProfileEdit> = {};
-    for (const k of Object.keys(next) as (keyof ProfileEdit)[]) if (next[k].trim() !== seed[k].trim()) changed[k] = next[k];
+    if (edited("slackId")) {
+      if (vals.slackId.trim() && !/^[A-Za-z0-9]{3,32}$/.test(vals.slackId.trim())) return setError("A Slack id looks like U01ABCDEF.");
+      patch.slackId = vals.slackId.trim();
+    }
     try {
+      // As on the desktop, a changed location fills an empty time zone: a zone from the suggestion, or one worked out
+      // from the typed place. It is only a guess, so it is written only if the stored zone is still empty (sync may
+      // have set one meanwhile), and never when the user typed or cleared the time zone themselves.
+      const guess = tzInferred
+        ? cleanProfileFieldWithPlaces("timezone", vals.timezone).value
+        : !edited("timezone") && !seed.timezone.trim() && edited("location") && patch.location ? zoneForPlace(patch.location) : null;
+      if (guess && !loadPerson(person.id)?.timezone) patch.timezone = guess;
       // A team name that is a guild or project is refused (a home team is a team): say so and keep the form open.
-      saveProfile(person.id, changed);
+      saveProfile(person.id, patch);
     } catch (e) {
       return Alert.alert("Couldn't save", e instanceof Error ? e.message : String(e));
     }
@@ -110,7 +123,10 @@ export default function PersonDetails() {
           onChangeText={set(key)}
           onPick={(text, zone) => {
             // A place that names a zone fills an empty time zone, never one that is set.
-            setVals((v) => ({ ...v, [key]: text, ...(key === "location" && zone && !v.timezone.trim() ? { timezone: zone } : {}) }));
+            const fill = key === "location" && !!zone && !vals.timezone.trim();
+            setVals((v) => ({ ...v, [key]: text, ...(fill ? { timezone: zone } : {}) }));
+            if (key === "timezone") setTzInferred(false);
+            else if (fill) setTzInferred(true);
             setError(null);
           }}
         />

@@ -175,6 +175,24 @@ export function addTeamMember(input: AddMemberInput): TeamMembership {
   return write((db) => tq.addMember(db, input));
 }
 
+export interface MemberChanges {
+  teamId: string;
+  /** Taken off the team (kept as history). */
+  end: string[];
+  /** Added, or given a role: `role` null clears one. */
+  set: { personId: string; role: string | null }[];
+}
+
+/** A team's member edits from the Members form, committed together: if one fails, none are saved. */
+export function saveTeamMembers(changes: MemberChanges): void {
+  const db = peopleDb();
+  db.transaction(() => {
+    for (const personId of changes.end) tq.endMember(db, changes.teamId, personId);
+    for (const m of changes.set) tq.addMember(db, { teamId: changes.teamId, personId: m.personId, role: m.role });
+  })();
+  notifyLocalWrite();
+}
+
 /** Take someone off a team, keeping the stint as history. */
 export function endTeamMember(teamId: string, personId: string): void {
   write((db) => tq.endMember(db, teamId, personId));
@@ -289,6 +307,11 @@ export function loadOpenItems(person: Person): OpenItems {
     }
   }
   return out;
+}
+
+/** Just the person (no timeline or open items), or null when they are gone: what the edit forms read. */
+export function loadPerson(personId: string): Person | null {
+  return pq.getPerson(peopleDb(), personId);
 }
 
 /** Everything the person page shows, or null when the person is gone. */

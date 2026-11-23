@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import { Text, View } from "react-native";
+import { Alert, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { Check } from "lucide-react-native";
 import { CADENCE_LABELS, RELATIONSHIP_LABELS } from "@cairn/shared/people/model";
 import { CADENCES, RELATIONSHIP_TYPES, type Cadence, type Relationship, type RelationshipType } from "@cairn/shared/types/people";
-import { loadPersonPage, saveRelationship } from "@/db/people";
+import { loadPerson, saveRelationship } from "@/db/people";
 import { ModalForm } from "@/components/ModalForm";
 import { PressableScale } from "@/components/PressableScale";
 import { makeFormStyles } from "@/components/form-styles";
@@ -21,7 +21,7 @@ export default function PersonRelationship() {
   const t = useTheme();
   const s = useMemo(() => makeFormStyles(t), [t]);
   const person = useMemo(() => {
-    try { return id ? loadPersonPage(id)?.person ?? null : null; } catch { return null; }
+    try { return id ? loadPerson(id) : null; } catch { return null; }
   }, [id]);
   const opened = useMemo(() => ({ types: new Set<RelationshipType>((person?.relationship ?? []).map((r) => r.type)), cad: (person?.cadence ?? null) as Cadence | null }), [person]);
   const [types, setTypes] = useState<Set<RelationshipType>>(opened.types);
@@ -38,12 +38,18 @@ export default function PersonRelationship() {
   const save = () => {
     // Sync may have changed the person while this was open: remove only what the user unticked,
     // add only what they ticked, and keep the cadence they didn't touch.
-    const latest = loadPersonPage(person.id)?.person ?? person;
-    const removed = new Set([...opened.types].filter((x) => !types.has(x)));
-    const kept = latest.relationship.filter((r) => !removed.has(r.type));
-    const have = new Set(kept.map((r) => r.type));
-    const added: Relationship[] = [...types].filter((x) => !opened.types.has(x) && !have.has(x)).map((type) => ({ type, provenance: "explicit" }));
-    saveRelationship(person.id, [...kept, ...added], cad !== opened.cad ? cad : latest.cadence ?? null);
+    try {
+      const latest = loadPerson(person.id);
+      if (!latest) return Alert.alert("This person is gone", "They were merged into someone else or removed on another device. Close this and open their page again.");
+      const removed = new Set([...opened.types].filter((x) => !types.has(x)));
+      const kept = latest.relationship.filter((r) => !removed.has(r.type));
+      const have = new Set(kept.map((r) => r.type));
+      const added: Relationship[] = [...types].filter((x) => !opened.types.has(x) && !have.has(x)).map((type) => ({ type, provenance: "explicit" }));
+      saveRelationship(person.id, [...kept, ...added], cad !== opened.cad ? cad : latest.cadence ?? null);
+    } catch (e) {
+      // The draft stays, so they can try again.
+      return Alert.alert("Couldn't save", e instanceof Error ? e.message : String(e));
+    }
     finish("saved");
   };
 
@@ -52,7 +58,7 @@ export default function PersonRelationship() {
       <Text style={s.label}>Relationship to you</Text>
       <View style={s.chips}>
         {RELATIONSHIP_TYPES.map((type) => (
-          <PressableScale key={type} onPress={() => toggle(type)} style={[s.chip, types.has(type) && s.chipOn]} accessibilityLabel={RELATIONSHIP_LABELS[type]}>
+          <PressableScale key={type} onPress={() => toggle(type)} style={[s.chip, types.has(type) && s.chipOn]} accessibilityRole="checkbox" accessibilityState={{ checked: types.has(type) }} accessibilityLabel={RELATIONSHIP_LABELS[type]}>
             {types.has(type) ? <Check size={12} color={t.accent} /> : null}
             <Text style={[s.chipText, types.has(type) && { color: t.accent }]}>{RELATIONSHIP_LABELS[type]}</Text>
           </PressableScale>
@@ -61,7 +67,7 @@ export default function PersonRelationship() {
       <Text style={[s.label, { marginTop: 22 }]}>1:1 cadence</Text>
       <View style={s.chips}>
         {([null, ...CADENCES] as (Cadence | null)[]).map((c) => (
-          <PressableScale key={c ?? "none"} onPress={() => setCad(c)} style={[s.chip, cad === c && s.chipOn]} accessibilityLabel={c ? CADENCE_LABELS[c] : "No cadence"}>
+          <PressableScale key={c ?? "none"} onPress={() => setCad(c)} style={[s.chip, cad === c && s.chipOn]} accessibilityRole="radio" accessibilityState={{ checked: cad === c }} accessibilityLabel={c ? CADENCE_LABELS[c] : "No cadence"}>
             <Text style={[s.chipText, cad === c && { color: t.accent }]}>{c ? CADENCE_LABELS[c] : "None"}</Text>
           </PressableScale>
         ))}

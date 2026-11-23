@@ -89,11 +89,11 @@ export default function PersonForm() {
 
           <Text style={s.label}>Relationship to you</Text>
           <View style={s.chips}>
-            <PressableScale onPress={() => setRel(null)} style={[s.chip, rel === null && s.chipOn]} accessibilityLabel="No relationship yet">
+            <PressableScale onPress={() => setRel(null)} style={[s.chip, rel === null && s.chipOn]} accessibilityRole="radio" accessibilityState={{ checked: rel === null }} accessibilityLabel="No relationship yet">
               <Text style={[s.chipText, rel === null && { color: t.accent }]}>No relationship yet</Text>
             </PressableScale>
             {RELATIONSHIP_TYPES.map((type) => (
-              <PressableScale key={type} onPress={() => setRel(type)} style={[s.chip, rel === type && s.chipOn]} accessibilityLabel={RELATIONSHIP_LABELS[type]}>
+              <PressableScale key={type} onPress={() => setRel(type)} style={[s.chip, rel === type && s.chipOn]} accessibilityRole="radio" accessibilityState={{ checked: rel === type }} accessibilityLabel={RELATIONSHIP_LABELS[type]}>
                 <Text style={[s.chipText, rel === type && { color: t.accent }]}>{RELATIONSHIP_LABELS[type]}</Text>
               </PressableScale>
             ))}

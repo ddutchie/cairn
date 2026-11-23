@@ -72,7 +72,7 @@ export default function TeamForm() {
           <Text style={[s.label, { marginTop: 18 }]}>Kind</Text>
           <View style={s.chips}>
             {TEAM_KINDS.map((k) => (
-              <PressableScale key={k} onPress={() => setKind(k)} style={[s.chip, kind === k && s.chipOn]} accessibilityLabel={KIND_LABEL[k]}>
+              <PressableScale key={k} onPress={() => setKind(k)} style={[s.chip, kind === k && s.chipOn]} accessibilityRole="radio" accessibilityState={{ checked: kind === k }} accessibilityLabel={KIND_LABEL[k]}>
                 <Text style={[s.chipText, kind === k && { color: t.accent }]}>{KIND_LABEL[k]}</Text>
               </PressableScale>
             ))}

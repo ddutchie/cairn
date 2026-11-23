@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Alert, Text, TextInput } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { addTeamMember, loadPeople, loadPersonPage, loadTeams, mergePeople, moveToTeam } from "@/db/people";
+import { addTeamMember, loadPeople, loadPerson, loadTeams, mergePeople, moveToTeam } from "@/db/people";
 import { ModalForm } from "@/components/ModalForm";
 import { PickerList } from "@/components/PickerList";
 import { makeFormStyles } from "@/components/form-styles";
@@ -20,7 +20,7 @@ export default function PersonTeam() {
   const t = useTheme();
   const s = useMemo(() => makeFormStyles(t), [t]);
   const person = useMemo(() => {
-    try { return id ? loadPersonPage(id)?.person ?? null : null; } catch { return null; }
+    try { return id ? loadPerson(id) : null; } catch { return null; }
   }, [id]);
   const [name, setName] = useState("");
   const teams = useMemo(() => {
@@ -30,6 +30,10 @@ export default function PersonTeam() {
     try { return loadPeople(["confirmed"]).filter((p) => p.id !== id); } catch { return []; }
   }, [id]);
   if (!person) return null;
+  // Only the three known actions, and "same" only for someone still waiting as a suggestion (never you): a stray
+  // link must not merge a confirmed person away or move someone off their teams.
+  if (mode !== "add" && mode !== "move" && mode !== "same") return null;
+  if (mode === "same" && (person.status !== "suggested" || person.isMe)) return null;
 
   const failed = (title: string, e: unknown) => Alert.alert(title, e instanceof Error ? e.message : String(e));
 

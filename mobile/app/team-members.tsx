@@ -3,7 +3,7 @@ import { Alert, Text, TextInput, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { X } from "lucide-react-native";
 import type { PersonSummary } from "@cairn/shared/types/people-view";
-import { addTeamMember, endTeamMember, loadTeamsView } from "@/db/people";
+import { loadTeamsView, saveTeamMembers } from "@/db/people";
 import { ModalForm } from "@/components/ModalForm";
 import { PickerList, type PickerOption as Option } from "@/components/PickerList";
 import { PressableScale } from "@/components/PressableScale";
@@ -47,12 +47,18 @@ export default function TeamMembers() {
   const options: Option[] = view.people.filter((p) => !taken.has(p.id)).map((p) => ({ value: p.id, label: p.name, note: p.team ? `On ${p.team}` : p.title }));
 
   const save = () => {
+    const role = (id: string) => (roles[id] ?? "").trim() || null;
     try {
-      for (const p of node.group.people) {
-        if (removed.has(p.id)) endTeamMember(team.id, p.id);
-        else if ((roles[p.id] ?? "").trim() !== (opened[p.id] ?? "").trim()) addTeamMember({ teamId: team.id, personId: p.id, role: (roles[p.id] ?? "").trim() || null });
-      }
-      for (const p of draft) if (!removed.has(p.id)) addTeamMember({ teamId: team.id, personId: p.id, role: (roles[p.id] ?? "").trim() || undefined });
+      // One commit: a person deleted by sync since the picker loaded must not leave half the edits saved.
+      saveTeamMembers({
+        teamId: team.id,
+        end: node.group.people.filter((p) => removed.has(p.id)).map((p) => p.id),
+        set: [
+          ...node.group.people.filter((p) => !removed.has(p.id) && (roles[p.id] ?? "").trim() !== (opened[p.id] ?? "").trim()).map((p) => ({ personId: p.id, role: role(p.id) })),
+          // An empty role clears a past stint's old one rather than bringing it back.
+          ...draft.filter((p) => !removed.has(p.id)).map((p) => ({ personId: p.id, role: role(p.id) })),
+        ],
+      });
     } catch (e) {
       Alert.alert("Couldn't save", e instanceof Error ? e.message : String(e));
       return;

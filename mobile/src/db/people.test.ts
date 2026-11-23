@@ -15,7 +15,7 @@ vi.mock("./queries", () => ({ updateNote: () => {} }));
 
 const {
   addNoteAttendee, setActionItemDone, loadOpenItems, saveProfile,
-  createTeam, updateTeam, deleteTeam, mergeTeams, loadTeams, loadMemberships, addTeamMember, endTeamMember, moveToTeam, mergePeople, loadPastTeams, loadTeamsView,
+  createTeam, updateTeam, deleteTeam, mergeTeams, loadTeams, loadMemberships, addTeamMember, endTeamMember, saveTeamMembers, moveToTeam, mergePeople, loadPastTeams, loadTeamsView,
 } = await import("./people");
 const NOW = "2026-11-18T10:00:00.000Z";
 const addNote = (id: string, content: string, extra = "") =>
@@ -104,6 +104,15 @@ describe("teams", () => {
     expect(loadMemberships()[0]).toMatchObject({ personId: "ana", role: undefined, endedAt: undefined });
     endTeamMember(team.id, "ana");
     expect(loadMemberships()[0].endedAt).toBeTruthy();
+  });
+
+  it("saves member edits together: one failing leaves none of them saved", () => {
+    const team = createTeam({ name: "Sync" });
+    addTeamMember({ teamId: team.id, personId: "ana" });
+    expect(() => saveTeamMembers({ teamId: team.id, end: ["ana"], set: [{ personId: "gone", role: null }] })).toThrow(/Person not found/);
+    expect(loadMemberships().find((m) => m.personId === "ana")?.endedAt).toBeUndefined();
+    saveTeamMembers({ teamId: team.id, end: ["ana"], set: [] });
+    expect(loadMemberships().find((m) => m.personId === "ana")?.endedAt).toBeTruthy();
   });
 
   it("moves someone to a new team, leaving the old one, and refuses a guild as a home team", () => {

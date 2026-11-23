@@ -161,7 +161,7 @@ export default function TeamDetails() {
       <Text style={[s.label, s.gap]}>Kind</Text>
       <View style={s.chips}>
         {TEAM_KINDS.map((k) => (
-          <PressableScale key={k} onPress={() => set("kind", k)} style={[s.chip, vals.kind === k && s.chipOn]} accessibilityLabel={KIND_LABEL[k]}>
+          <PressableScale key={k} onPress={() => set("kind", k)} style={[s.chip, vals.kind === k && s.chipOn]} accessibilityRole="radio" accessibilityState={{ checked: vals.kind === k }} accessibilityLabel={KIND_LABEL[k]}>
             <Text style={[s.chipText, vals.kind === k && { color: t.accent }]}>{KIND_LABEL[k]}</Text>
           </PressableScale>
         ))}

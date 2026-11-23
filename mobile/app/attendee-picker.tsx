@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Alert, Text } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import type { Person } from "@cairn/shared/types/people";
 import { addNoteAttendee, attendeeCandidates } from "@/db/people";
 import { ModalForm } from "@/components/ModalForm";
@@ -15,6 +15,7 @@ import { useTheme } from "@/theme";
  */
 export default function AttendeePicker() {
   const { noteId } = useLocalSearchParams<{ noteId: string }>();
+  const router = useRouter();
   const t = useTheme();
   const s = useMemo(() => makeFormStyles(t), [t]);
   const read = useCallback((): Person[] => {
@@ -22,7 +23,7 @@ export default function AttendeePicker() {
   }, [noteId]);
   const [candidates, setCandidates] = useState<Person[]>(read);
   return (
-    <ModalForm title="Add attendees" scroll={false}>
+    <ModalForm title="Add attendees" onBack={() => router.back()} scroll={false}>
       {candidates.length === 0 ? (
         <Text style={[s.empty, { padding: 18 }]}>Everyone you know is already here. To add someone new, add them in People.</Text>
       ) : (
