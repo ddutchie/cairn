@@ -58,7 +58,8 @@ export type AgentEvent =
   | { type: "retry"; attempt: number; maxAttempts: number; delayMs: number; error: string }
   | { type: "context/overflow" }
   | { type: "compaction"; summary: string; keepCount: number; tokensBefore: number; trigger: "threshold" | "overflow" | "manual" }
-  | { type: "session/title"; title: string }
+  /** `auto`: named by the model after the first reply; never replaces a `user` title. Absent = user (older logs). */
+  | { type: "session/title"; title: string; source?: "auto" | "user" }
   | { type: "goal/changed"; operation: "create" | "update" | "round" | "clear"; goal: GoalState | null }
   | { type: "schedule/changed"; operation: "add" | "fire" | "cancel"; schedule: ScheduleEntry }
   | { type: "error"; message: string }

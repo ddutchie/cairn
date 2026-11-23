@@ -524,7 +524,14 @@ export function renameProjectNotesDir(
   const oldDir = projectNotesDir(workspacePath, oldProjectName);
   const newDir = projectNotesDir(workspacePath, newProjectName);
   if (oldDir === newDir) return false; // same slug — nothing to do
+  // Names can arrive from another device, so never move a folder out of (or onto) the workspace itself.
+  const root = path.resolve(workspacePath);
+  const inside = (d: string) => path.dirname(path.resolve(d)) === root;
+  if (!inside(oldDir) || !inside(newDir)) return false;
   if (!fs.existsSync(oldDir)) return false; // no files on disk yet
+  // A folder at the destination name that is really a link elsewhere (a symlink, or one that resolves
+  // outside the workspace) is never merged into or renamed onto: the moves would write through it.
+  if (!isPlainFolderInside(root, newDir)) return false;
 
   try {
     if (!fs.existsSync(newDir)) {
@@ -545,13 +552,32 @@ export function renameProjectNotesDir(
   }
 }
 
-/** Recursively move entries from `src` into `dst`, skipping name collisions. */
+/** True when `p` doesn't exist yet, or is a real folder (not a symlink) whose resolved path is inside `root`. */
+function isPlainFolderInside(root: string, p: string): boolean {
+  let st: fs.Stats;
+  try {
+    st = fs.lstatSync(p);
+  } catch {
+    return true; // nothing there: the rename creates it
+  }
+  if (st.isSymbolicLink() || !st.isDirectory()) return false;
+  try {
+    const rel = path.relative(fs.realpathSync(root), fs.realpathSync(p));
+    return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+  } catch {
+    return false;
+  }
+}
+
+/** Recursively move entries from `src` into `dst`, skipping name collisions and symlinked folders. */
 function mergeDirInto(src: string, dst: string): void {
   fs.mkdirSync(dst, { recursive: true });
   for (const entry of fs.readdirSync(src)) {
     const from = path.join(src, entry);
     const to = path.join(dst, entry);
     const stat = fs.lstatSync(from);
+    // A link at the destination could lead outside the workspace: leave this entry where it is.
+    if (fs.existsSync(to) && fs.lstatSync(to).isSymbolicLink()) continue;
     if (stat.isDirectory()) {
       mergeDirInto(from, to);
       try { fs.rmdirSync(from); } catch { /* ignore */ }

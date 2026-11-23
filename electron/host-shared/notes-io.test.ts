@@ -16,7 +16,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { writeNoteFile, deleteProjectNotesDir, deleteNoteFile, hardDeleteNoteFile, setPathRemover, type NoteFileData, type PathRemover } from "./notes-io";
+import { toSlug } from "./text-utils";
+import { renameProjectNotesDir, writeNoteFile, deleteProjectNotesDir, deleteNoteFile, hardDeleteNoteFile, setPathRemover, type NoteFileData, type PathRemover } from "./notes-io";
 
 let tmpDir: string;
 
@@ -320,5 +321,47 @@ describe("hardDeleteNoteFile — sync delete that bypasses the OS-trash remover"
 
     expect(trashed).toEqual([]);            // trasher untouched
     expect(fs.existsSync(fp)).toBe(false);  // file gone synchronously
+  });
+});
+
+describe("project folder names from other devices", () => {
+  it("never slugs to the folder itself or its parent", () => {
+    for (const name of [".", "..", "...", " .. ", "/.."]) expect(toSlug(name)).toBe("Untitled");
+    expect(toSlug("v1.2")).toBe("v1.2");
+  });
+
+  it("keeps a folder inside the workspace when a project is renamed to ..", () => {
+    const ws = path.join(tmpDir, "ws");
+    fs.mkdirSync(path.join(ws, "A"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "A", "n.md"), "x");
+    expect(renameProjectNotesDir(ws, "A", "..")).toBe(true);
+    expect(fs.existsSync(path.join(ws, "Untitled", "n.md"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, "n.md"))).toBe(false);
+  });
+
+  it("won't merge into a destination folder that is a symlink out of the workspace", () => {
+    const ws = path.join(tmpDir, "ws");
+    const outside = path.join(tmpDir, "outside");
+    fs.mkdirSync(path.join(ws, "A"), { recursive: true });
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(ws, "A", "n.md"), "x");
+    fs.symlinkSync(outside, path.join(ws, "B"));
+    expect(renameProjectNotesDir(ws, "A", "B")).toBe(false);
+    expect(fs.existsSync(path.join(ws, "A", "n.md"))).toBe(true);
+    expect(fs.readdirSync(outside)).toEqual([]);
+  });
+
+  it("skips a symlinked subfolder inside a real destination", () => {
+    const ws = path.join(tmpDir, "ws2");
+    const outside = path.join(tmpDir, "outside2");
+    fs.mkdirSync(path.join(ws, "A", "sub"), { recursive: true });
+    fs.mkdirSync(path.join(ws, "B"), { recursive: true });
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(ws, "A", "sub", "n.md"), "x");
+    fs.writeFileSync(path.join(ws, "A", "top.md"), "y");
+    fs.symlinkSync(outside, path.join(ws, "B", "sub"));
+    renameProjectNotesDir(ws, "A", "B");
+    expect(fs.readdirSync(outside)).toEqual([]);
+    expect(fs.existsSync(path.join(ws, "B", "top.md"))).toBe(true);
   });
 });

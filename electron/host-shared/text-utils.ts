@@ -14,13 +14,14 @@ export function sanitizeFilename(name: string): string {
  * Preserves spaces as hyphens, strips characters illegal on any major OS.
  */
 export function toSlug(str: string): string {
-  return str
+  const slug = str
     .trim()
     .replace(/[/\\:*?"<>|]/g, "")   // strip filesystem-illegal chars
     .replace(/\s+/g, " ")           // normalise whitespace
     .slice(0, 100)                  // cap length
-    .trim()
-    || "Untitled";
+    .trim();
+  // "." and ".." (or any run of dots) name the folder itself or its parent, never a child.
+  return !slug || /^\.+$/.test(slug) ? "Untitled" : slug;
 }
 
 /**

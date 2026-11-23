@@ -19,12 +19,16 @@ import { isOverdue, isDueWithin } from "@cairn/shared/notes/due";
 import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_PARAM_DESCRIPTIONS as PD, PEOPLE_TOOL_DESCRIPTION } from "@cairn/shared/agent/people-tools";
 import { isReadCall, refusesHiddenNoteWrite, scrubHidden } from "@cairn/shared/agent/people-privacy";
 import { peopleTool, setCardOwnerArg, setNoteAttendees, type PeopleToolContext } from "@cairn/shared/people/tool";
-import { agentHiddenNoteIds } from "@cairn/shared/people/queries";
+import { agentHiddenNoteIds, getPerson } from "@cairn/shared/people/queries";
 import { CADENCES, LINK_KINDS, PEOPLE_STATUSES, RELATIONSHIP_TYPES, TEAM_KINDS } from "@cairn/shared/types/people";
 import { peopleDb, peopleWorkspaceId } from "@/db/people";
 import { loadLocalToday } from "@/lib/local-today";
 import { cardChanges, type ToolChange } from "@cairn/shared/conversation/tool-view";
 import { notifyLocalWrite } from "@/sync/write-signal";
+import { parseQuestions, formatAnswers } from "@cairn/shared/chat/questions";
+import { askQuestions } from "./questions-store";
+import { askConfirm } from "./confirm-store";
+import { CANCELLED_RESULT, confirmRequestFor, type ConfirmLookup } from "./confirm-gate";
 
 export interface ToolDef {
   name: string;
@@ -473,15 +477,48 @@ const BASE_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "upsert_project",
+    description: "Create or update a project. Omit projectId to create (in the open workspace, with the default board columns); provide projectId to change only the given fields.",
+    params: '{ "projectId"?: string, "name"?: string, "description"?: string, "icon"?: string, "status"?: "active"|"on_hold"|"completed"|"archived", "priority"?: "low"|"medium"|"high"|"urgent" }',
+    jsonSchema: obj({
+      projectId: S, name: S, description: S, icon: S,
+      status: { type: "string", enum: ["active", "on_hold", "completed", "archived"] },
+      priority: { type: "string", enum: ["low", "medium", "high", "urgent"] },
+    }, []),
+    run: (a) => {
+      const patch: Partial<q.ProjectFields> = {};
+      if (a.name !== undefined) patch.name = str(a.name);
+      if (a.description !== undefined) patch.description = str(a.description);
+      if (a.icon !== undefined) patch.icon = str(a.icon) || null;
+      if (a.status !== undefined) patch.status = str(a.status);
+      if (a.priority !== undefined) patch.priority = str(a.priority);
+      try {
+        const projectId = str(a.projectId);
+        if (projectId) {
+          q.updateProject(projectId, patch);
+          return { ...q.getProjectFields(projectId), updated: true };
+        }
+        if (!patch.name?.trim()) return { error: "name is required when creating a project" };
+        const id = q.createProject({ ...patch, name: patch.name });
+        return { ...q.getProjectFields(id), created: true, columns: q.listColumns(id).map((c) => ({ id: c.id, name: c.name, type: c.type })) };
+      } catch (e) {
+        return { error: (e as Error).message };
+      }
+    },
+  },
+  {
     name: "delete",
-    description: "Delete a note or task card by id (soft delete, synced as a tombstone). Confirm intent before calling.",
+    description: "Delete a note or task card by id (soft delete, synced as a tombstone). The user confirms on a Delete / Cancel card before anything is deleted; if they cancel, don't retry.",
     params: '{ "type": "note"|"task", "id": string }',
     jsonSchema: obj({ type: { type: "string", enum: ["note", "task"] }, id: S }, ["type", "id"]),
     run: (a) => {
-      if (a.type === "note") q.softDeleteNote(str(a.id));
-      else if (a.type === "task") q.deleteCard(str(a.id));
-      else return { error: `Unknown delete type "${str(a.type)}"` };
-      return { ok: true, deleted: str(a.id) };
+      const id = str(a.id);
+      if (a.type !== "note" && a.type !== "task") return { error: `Unknown delete type "${str(a.type)}"` };
+      // The confirmation card runs first (guardConfirm in allTools).
+      if (!(a.type === "note" ? q.getNote(id) : q.getCard(id))) return { error: `No ${a.type} with id "${id}"` };
+      if (a.type === "note") q.softDeleteNote(id);
+      else q.deleteCard(id);
+      return { ok: true, deleted: id };
     },
   },
   {
@@ -501,6 +538,25 @@ const BASE_TOOLS: ToolDef[] = [
         meetings: d.meetings.map((m) => ({ id: m.id, title: m.title, startsAt: m.startsAt, endsAt: m.endsAt ?? null })),
         peopleDue: d.peopleDue.map((p) => ({ id: p.id, name: p.name, daysOverCadence: p.daysOver })),
       };
+    },
+  },
+  {
+    name: "ask_questions",
+    description: "Ask the user 2–4 clarifying questions as a form in the chat; each gets its own answer box and they answer them together. Use this instead of asking in prose when you need several details before you act.",
+    params: '{ "questions": { "id": string, "label": string, "prompt": string }[] }',
+    jsonSchema: obj({
+      questions: {
+        type: "array",
+        description: "2–4 targeted questions",
+        items: obj({ id: { type: "string", description: "Short unique id, e.g. \"target_users\"" }, label: { type: "string", description: "Short label shown above the answer box" }, prompt: { type: "string", description: "The question, one sentence" } }, ["id", "label", "prompt"]),
+      },
+    }, ["questions"]),
+    run: async (a) => {
+      const parsed = parseQuestions(a.questions);
+      if ("error" in parsed) return { error: parsed.error };
+      const outcome = await askQuestions(parsed.questions);
+      if ("skipped" in outcome) return { skipped: true, note: "The user closed the questions without answering. Don't ask again; go on with reasonable assumptions and say what you assumed, or wait for their next message." };
+      return { answers: formatAnswers(parsed.questions, outcome.answers) };
     },
   },
   {
@@ -623,6 +679,7 @@ export const WRITE_TOOL_NAMES = new Set<string>([
   "update_notes",
   "create_task",
   "update_tasks",
+  "upsert_project",
   "delete",
   "update_user_writing_style",
   "people", // reads and writes (upsert/link); listed as a write so it sits with the tools that change data
@@ -650,7 +707,30 @@ export const WRITE_TOOL_NAMES = new Set<string>([
 export function allTools(): ToolDef[] {
   const services = serviceToolDefs().filter((t) => isToolEnabled(t.name));
   const mcp = mcpToolDefs().filter((t) => isToolEnabled(t.name));
-  return [...builtinTools(), ...services, ...mcp];
+  return [...builtinTools(), ...services, ...mcp].map((t) => guardConfirm(t));
+}
+
+const CONFIRM_LOOKUP: ConfirmLookup = {
+  noteTitle: (id) => q.getNote(id)?.title ?? undefined,
+  taskTitle: (id) => q.getCard(id)?.title ?? undefined,
+  personName: (id) => getPerson(peopleDb(), id)?.name,
+};
+
+/**
+ * Wrap a tool so the calls `confirmsByDefault` names (deletes, archives, merges)
+ * wait on the Confirm / Cancel card in the chat, and do nothing on Cancel. Every
+ * tool goes through here, built-in or connector, so a new rule in the shared
+ * policy needs no change in the tool itself.
+ */
+export function guardConfirm(t: ToolDef, lookup: ConfirmLookup = CONFIRM_LOOKUP): ToolDef {
+  return {
+    ...t,
+    run: async (args) => {
+      const req = confirmRequestFor(t.name, args, lookup);
+      if (req && !(await askConfirm(req))) return CANCELLED_RESULT;
+      return t.run(args);
+    },
+  };
 }
 
 /**

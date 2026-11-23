@@ -35,7 +35,7 @@ import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
 import { indexNotesPeople } from "./db/people-indexing";
 import { FrontmatterRetryQueue, meetingNotesForSync, refreshMeetingFrontmatter } from "./people-files";
-import { syncNotesFromDisk, writeNoteFile, deleteNoteFile, setPathRemover } from "./notes-files";
+import { syncNotesFromDisk, writeNoteFile, deleteNoteFile, setPathRemover, reconcileProjectFolders } from "./notes-files";
 import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies, reconcileInterruptedCodingSessions, changeFeedHead, recordOwnWrite, pruneChangeFeed, noteChangeBaseHead, discardNoteChangeBasesSince, pruneNoteChangeBases } from "./db/queries";
 import { recoverInterruptedRuns } from "./db/automation-queries";
 import { getProjectName } from "./ipc/result-helpers";
@@ -555,6 +555,17 @@ app.whenReady().then(async () => {
   // later ticks with growing gaps and never dropped (FrontmatterRetryQueue).
   const frontmatterRetries = new FrontmatterRetryQueue();
   desktopSync.setAppliedRowsHook((applied: readonly { entity: string; entity_id: string; op?: string }[]) => {
+    // A project renamed on another device (the phone edits projects too): the
+    // notes folder is keyed by the project name, so move it now rather than at
+    // the next launch. Same heal the rename handler and boot run; a no-op when
+    // every folder already matches.
+    if (applied.some((a) => a.entity === "projects" && a.op !== "delete")) {
+      try {
+        reconcileProjectFolders(ctx.db, ctx.workspacePath);
+      } catch (err) {
+        console.error("[sync] project folder reconcile failed:", err);
+      }
+    }
     // Notes pulled from other devices: index their mentions, owned checklist
     // items and body meeting lines (database rows only, nothing is rewritten, so
     // it can't echo back). No-op while the flag is off.

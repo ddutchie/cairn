@@ -51,7 +51,18 @@ export function humanizeToolCall(
   args: Args = {},
   ref?: HumanizeRef | null,
   lookup: HumanizeLookup = {},
+  /** The tool's result text, when it has one: a call cancelled on the confirmation card reads differently. */
+  output?: string,
 ): string {
+  const label = labelFor(tool, args, ref, lookup);
+  if (!/"cancelled"\s*:\s*true/.test(output ?? "")) return label;
+  if (label.startsWith("Deleted ")) return `Kept ${label.slice(8)}`;
+  if (label.startsWith("Archived ")) return `Didn't archive ${label.slice(9)}`;
+  if (label.startsWith("Merged ")) return `Didn't merge ${label.slice(7)}`;
+  return `Cancelled: ${label}`;
+}
+
+function labelFor(tool: string, args: Args, ref: HumanizeRef | null | undefined, lookup: HumanizeLookup): string {
   switch (tool) {
     case "get_context": {
       const projectId = str(args.projectId).trim();
@@ -110,6 +121,12 @@ export function humanizeToolCall(
       if (args.archived === true) return `Archived ${one}`;
       return `Updated ${one}`;
     }
+    case "upsert_project": {
+      const name = str(args.name).trim();
+      const id = str(args.projectId).trim();
+      if (!id) return `Created project ${name || "a project"}`;
+      return `Updated project ${name || lookup.projectName?.(id) || "a project"}`;
+    }
     case "delete": {
       const kind = args.type === "task" || ref?.kind === "card" ? "task"
         : args.type === "note" || ref?.kind === "note" ? "note" : undefined;
@@ -117,6 +134,17 @@ export function humanizeToolCall(
       if (!kind || !id) return "Deleted item";
       const name = kind === "note" ? noteName(lookup, id) : taskName(lookup, id);
       return `Deleted ${kind} ${name}`;
+    }
+    case "people": {
+      const who = str(args.name).trim() || "a person";
+      if (args.action === "archive") return args.remove === true ? `Restored ${who}` : `Archived ${who}`;
+      if (args.action === "merge") return "Merged two people";
+      if (args.action === "team_delete") return `Deleted team ${str(args.team).trim() || "a team"}`;
+      return prettifyToolLabel(tool, { prettifyBare: true });
+    }
+    case "ask_questions": {
+      const n = Array.isArray(args.questions) ? args.questions.length : 0;
+      return n === 1 ? "Asked a question" : n > 1 ? `Asked ${n} questions` : "Asked questions";
     }
     case "get_today":
       return "Read today";

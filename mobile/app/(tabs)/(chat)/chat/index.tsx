@@ -21,6 +21,10 @@ import { EmptyState } from "@/components/EmptyState";
 import { railToolbar, useTightSideRail } from "@/components/screen-chrome";
 import { useTheme, withAlpha, type as typeScale, type Theme, KEYBOARD_OPEN_GAP } from "@/theme";
 import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/agent";
+import { skipQuestions, usePendingQuestions } from "@/chat/questions-store";
+import { QuestionCard } from "@/components/chat/QuestionCard";
+import { cancelConfirm, usePendingConfirm } from "@/chat/confirm-store";
+import { ConfirmCard } from "@/components/chat/ConfirmCard";
 import { haptics, toolbarPress } from "@/haptics";
 import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, recordChatUsage, type ToolCall } from "@/db/chat-store";
 import { redactValue } from "@cairn/shared/chat/redaction";
@@ -117,6 +121,12 @@ const CHAT_PAGE_SIZE = 40;
 export default function ChatScreen() {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
+  // An ask_questions card the running turn is waiting on (rendered at the end of the transcript).
+  const pendingQuestions = usePendingQuestions();
+  // A card left open when the chat screen goes away is skipped, so the turn can finish.
+  // A delete the running turn is waiting on the user to confirm.
+  const pendingConfirm = usePendingConfirm();
+  useEffect(() => () => { skipQuestions(); cancelConfirm(); }, []);
   const router = useRouter();
   const tightRail = useTightSideRail();
 
@@ -201,6 +211,17 @@ export default function ChatScreen() {
     scrollToEndSoon,
     scrollToEndIfFollowing,
   } = useChatScroll(messages.length);
+  // Bring a new questions or delete card into view.
+  const pendingQuestionsId = pendingQuestions?.id;
+  useEffect(() => {
+    if (pendingQuestionsId != null) scrollToEndSoon();
+  }, [pendingQuestionsId, scrollToEndSoon]);
+  const pendingConfirmId = pendingConfirm?.id;
+  // Clear chat stays available mid-turn only when the turn is stuck waiting on a card.
+  const clearDisabled = busy && pendingQuestionsId == null && pendingConfirmId == null;
+  useEffect(() => {
+    if (pendingConfirmId != null) scrollToEndSoon();
+  }, [pendingConfirmId, scrollToEndSoon]);
 
   // Morph composer springs (strip + plusOut) + attachment host
   const strip = useSharedValue(0);
@@ -375,6 +396,18 @@ export default function ChatScreen() {
     }
   }, [input]);
 
+  const clearNow = useCallback(() => {
+    clearChatHistory();
+    conversation.current = [];
+    setMessages([]);
+    setVisibleCount(CHAT_PAGE_SIZE);
+    setUsage(null);
+    // Drop the on-device session so a new chat gets a fresh context window.
+    resetAppleSession();
+  }, []);
+  // Clear chosen while a turn was waiting on a card: the turn is closed out first, then this runs.
+  const clearAfterTurn = useRef(false);
+
   const send = useCallback(async () => {
     const queuedSend = pendingSendRef.current;
     pendingSendRef.current = null;
@@ -384,6 +417,9 @@ export default function ChatScreen() {
     // A turn is already running — queue this message instead of interrupting
     // it. The queue drains (FIFO) when the current reply finishes.
     if (busy) {
+      // A deferred Clear chat is waiting for this turn to end: don't queue into a chat about to be cleared.
+      // The draft stays in the composer to send afterwards.
+      if (clearAfterTurn.current) return;
       // The chips picked for this draft travel with it, so a later draft can't change who it means.
       const picks = pickedMentions.current; // captured now: the updater below runs later
       pickedMentions.current = new Map();
@@ -559,10 +595,16 @@ export default function ChatScreen() {
       saveChatMessage({ role: "assistant", content: msg, tools: toolTrail.length ? toolTrail : undefined });
       haptics.error(); // request failed
     } finally {
+      // Clear chat was chosen while this turn waited on a card: now that its reply is saved, clear.
+      // Done here, not in an effect, so it still happens if the screen was left mid-turn.
+      if (clearAfterTurn.current) {
+        clearAfterTurn.current = false;
+        clearNow();
+      }
       setBusy(false);
       setTimeout(() => scrollToEndIfFollowing(true), 50);
     }
-  }, [input, attachments, busy, followEnd, scrollToEndIfFollowing, streamStore]);
+  }, [input, attachments, busy, followEnd, scrollToEndIfFollowing, streamStore, clearNow]);
 
   // Drain the queue: when a turn finishes (busy went true → false), send the
   // next queued message. Keeps the queue on Stop and drains after errors too.
@@ -591,7 +633,9 @@ export default function ChatScreen() {
   }, []);
 
   const onClear = useCallback(() => {
-    if (messages.length === 0 || busy) return;
+    // A turn waiting on a question or delete card can't finish by itself, so Clear is allowed then.
+    const waitingOnCard = busy && (pendingQuestionsId != null || pendingConfirmId != null);
+    if (messages.length === 0 || (busy && !waitingOnCard)) return;
     Alert.alert("Clear chat?", "This deletes the on-device conversation history. It only affects this device.", [
       { text: "Cancel", style: "cancel" },
       {
@@ -599,17 +643,19 @@ export default function ChatScreen() {
         style: "destructive",
         onPress: () => {
           haptics.warning();
-          clearChatHistory();
-          conversation.current = [];
-          setMessages([]);
-          setVisibleCount(CHAT_PAGE_SIZE);
-          setUsage(null);
-          // Drop the on-device session so a new chat gets a fresh context window.
-          resetAppleSession();
+          if (busy) {
+            // Close the card as skipped / cancelled, drop queued messages, and clear once the turn has
+            // finished, so it can't write its reply into the cleared conversation.
+            clearAfterTurn.current = true;
+            setQueued([]);
+          }
+          skipQuestions();
+          cancelConfirm();
+          if (!busy) clearNow();
         },
       },
     ]);
-  }, [messages.length, busy]);
+  }, [messages.length, busy, pendingQuestionsId, pendingConfirmId, clearNow]);
 
   // canSend stays true while busy so sending queues the message instead of
   // being blocked — the queue drains when the current reply finishes.
@@ -816,9 +862,9 @@ export default function ChatScreen() {
               accessibilityRole="button"
               accessibilityLabel="Clear chat"
               hitSlop={8}
-              disabled={busy}
+              disabled={clearDisabled}
               onPress={onClear}
-              style={[styles.composerToolBtn, busy && { opacity: 0.4 }]}
+              style={[styles.composerToolBtn, clearDisabled && { opacity: 0.4 }]}
             >
               <Trash2 size={18} color={t.textSecondary} />
             </Pressable>
@@ -891,7 +937,7 @@ export default function ChatScreen() {
             key="clear"
             icon={ICON_DELETE}
             hidden={messages.length === 0}
-            disabled={busy}
+            disabled={clearDisabled}
             accessibilityLabel="Clear chat"
             // Inline arrow (not a bare toolbarPress(onClear)) so the react-hooks
             // ref lint doesn't flag onClear's transitive ref access during render.
@@ -990,6 +1036,8 @@ export default function ChatScreen() {
                   </Pressable>
                 ) : null}
                 {visibleMessages.map((m) => <MessageBubble key={m.id} m={m} />)}
+                {pendingQuestions ? <QuestionCard key={pendingQuestions.id} pending={pendingQuestions} onFocusAnswer={followEnd} /> : null}
+                {pendingConfirm ? <ConfirmCard key={pendingConfirm.id} pending={pendingConfirm} /> : null}
                 {queued.map((q) => (
                   <View key={q.id} style={styles.queuedRow}>
                     <View style={styles.queuedBubble}>

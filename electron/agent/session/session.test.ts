@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgentEvent } from "../events";
 import { SESSION_FILE, openSession, readSession } from "./log";
-import { deriveTitle, foldState, historyFromRecords } from "./history";
+import { deriveTitle, foldState, historyFromRecords, titleInputs } from "./history";
+import type { SessionRecord } from "./format";
 import { createAdapter } from "./adapter";
 
 const usage = { input: 10, output: 5, cacheRead: 2, cacheWrite: 1, totalTokens: 18, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.01 } };
@@ -151,5 +152,30 @@ describe("trace adapter", () => {
     expect(data({ type: "approval/asked", ask: { sessionId: "p1", callId: "c2", nonce: "n", tool: "bash", risk: "EXEC", title: "Run", preview: "ls", reason: "r", grants: [], expiresAt: 1 } })[0]).toMatchObject({ kind: "approval", sessionId: "p1", status: "required", callId: "c2" });
     expect(data({ type: "turn/end", reason: "aborted" })[0]).toMatchObject({ trace: "status", status: "done", error: "aborted" });
     expect(adapt({ type: "assistant/delta", text: "x" }).events).toEqual([]);
+  });
+});
+
+describe("titles", () => {
+  const at = (seq: number, event: SessionRecord["event"]): SessionRecord => ({ seq, time: seq, event });
+  const msg = (seq: number, content: string) => at(seq, { type: "user/message", content });
+
+  it("prefers a person's title over an auto title, and an auto title over the first line", () => {
+    expect(deriveTitle([msg(1, "plan the garden")])).toBe("plan the garden");
+    const auto = [msg(1, "plan the garden"), at(2, { type: "session/title", title: "Garden plan", source: "auto" })];
+    expect(deriveTitle(auto)).toBe("Garden plan");
+    const renamed = [msg(1, "plan the garden"), at(2, { type: "session/title", title: "Spring", source: "user" }), at(3, { type: "session/title", title: "Later auto", source: "auto" })];
+    expect(deriveTitle(renamed)).toBe("Spring");
+    // Older logs: a title without a source is a rename.
+    expect(titleInputs([msg(1, "x"), at(2, { type: "session/title", title: "Old" })]).userTitle).toBe("Old");
+  });
+
+  it("collects only what a person typed", () => {
+    const inputs = titleInputs([
+      msg(1, "plan the garden"),
+      at(2, { type: "user/message", content: "goal round", agentAuthored: true }),
+      at(3, { type: "user/message", content: "blocked", blocked: true }),
+      at(4, { type: "session/title", title: "Garden", source: "auto" }),
+    ]);
+    expect(inputs).toMatchObject({ humanMessages: ["plan the garden"], autoTitles: 1, userTitle: undefined });
   });
 });

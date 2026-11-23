@@ -64,7 +64,7 @@ export function ToolTrail({ tools }: { tools: ToolCall[] }) {
   return (
     <View style={styles.toolTrail}>
       {tools.map((tt, i) => {
-        const label = humanizeToolCall(tt.tool, tt.args ?? {}, tt.ref ?? undefined, lookup);
+        const label = humanizeToolCall(tt.tool, tt.args ?? {}, tt.ref ?? undefined, lookup, tt.output);
         const connector = Object.entries(connectors).find(([prefix]) => tt.tool.startsWith(prefix))?.[1];
         if (tt.running) {
           // Tool is executing — show a spinner chip until its result arrives.

@@ -166,6 +166,15 @@ describe("cairn tools", () => {
     expect(cairnRisk("delete").class).toBe("WRITE_LOCAL");
   });
 
+  it("asks before People archives, merges and team deletes, not restores or other writes", () => {
+    expect(cairnRisk("people", { action: "archive", personId: "p1" }).class).toBe("WRITE_LOCAL");
+    expect(cairnRisk("people", { action: "merge", personId: "p1", otherPersonId: "p2" }).class).toBe("WRITE_LOCAL");
+    expect(cairnRisk("people", { action: "team_delete", team: "Design" }).class).toBe("WRITE_LOCAL");
+    expect(cairnRisk("people", { action: "archive", personId: "p1", remove: true }).class).toBe("WRITE_CAIRN");
+    expect(cairnRisk("people", { action: "upsert", name: "Ana" }).class).toBe("WRITE_CAIRN");
+    expect(cairnRisk("people", { action: "get", personId: "p1" }).class).toBe("READ");
+  });
+
   it("produces schemas pi-ai can validate calls against", () => {
     const getItem = get(tools, "get_item");
     expect(validateToolCall([getItem], { type: "toolCall", id: "1", name: "get_item", arguments: { id: "n_1" } })).toEqual({ id: "n_1" });

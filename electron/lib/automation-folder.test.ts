@@ -43,9 +43,10 @@ describe("automation folder paths", () => {
     expect(dir).toBe(path.join("/ws", ".automations", "aut-1"));
   });
 
-  it("rejects project names that resolve outside the workspace", () => {
-    expect(() => projectRootDir("/ws", "..")).toThrow("outside workspace");
-    expect(() => automationFolderDir("/ws", "aut-1", "..")).toThrow("outside workspace");
+  it("never resolves outside the workspace, even for a name that is a path to the parent", () => {
+    // toSlug turns "." / ".." into a plain folder name, so the name can't climb out in the first place.
+    expect(projectRootDir("/ws", "..")).toBe(path.join("/ws", "Untitled"));
+    expect(automationFolderDir("/ws", "aut-1", "..")).toBe(path.join("/ws", "Untitled", ".automations", "aut-1"));
   });
 
   it("resolves projects under a filesystem-root workspace", () => {

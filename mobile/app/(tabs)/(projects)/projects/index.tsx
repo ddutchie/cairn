@@ -12,7 +12,7 @@ import { ProjectIcon } from "@/components/ProjectIcon";
 import { WorkspaceProgressCard } from "@/components/overview/WorkspaceProgressCard";
 import { ProjectsSplitView, resetProjectsSelection } from "@/components/ProjectsSplitView";
 import { WorkspaceHeaderMenu } from "@/components/WorkspaceHeaderMenu";
-import { ICON_SETTINGS, ICON_CAPTURE } from "@/components/toolbar-icons";
+import { ICON_SETTINGS, ICON_CAPTURE, ICON_ADD } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { requestSync } from "@/sync/controller";
@@ -96,6 +96,14 @@ export default function ProjectsScreen() {
         {railToolbar(
           tightRail,
           <Stack.Toolbar.Button
+            key="new-project"
+            icon={ICON_ADD}
+            accessibilityLabel="New project"
+            onPress={toolbarPress(() => router.push("/project-form" as Href))}
+          >
+            New project
+          </Stack.Toolbar.Button>,
+          <Stack.Toolbar.Button
             key="capture"
             icon={ICON_CAPTURE}
             accessibilityLabel="Quick capture"
@@ -134,8 +142,16 @@ export default function ProjectsScreen() {
         {header}
         <EmptyState
           title="No projects yet"
-          subtitle="Connect your sync folder in the Sync tab to pull your workspace."
-        />
+          subtitle="Connect your sync folder in the Sync tab to pull your workspace, or start a project here."
+        >
+          <PressableScale
+            style={[styles.emptyButton, { backgroundColor: t.accent }]}
+            onPress={() => router.push("/project-form" as Href)}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.emptyButtonText, { color: t.accentFg }]}>New project</Text>
+          </PressableScale>
+        </EmptyState>
       </TabScreen>
     );
   }
@@ -207,4 +223,6 @@ const styles = StyleSheet.create({
   name: { ...typeScale.subtitle },
   meta: { ...typeScale.caption, marginTop: 2 },
   chevron: { fontSize: 22, fontWeight: "300" },
+  emptyButton: { paddingVertical: 10, paddingHorizontal: 18, borderRadius: 12 },
+  emptyButtonText: { ...typeScale.label },
 });

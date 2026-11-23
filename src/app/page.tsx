@@ -316,6 +316,16 @@ export default function Home() {
         void useCairnStore.getState().refreshFromChangeFeed();
       });
 
+      // Chat thread titles: the model names a thread after its first reply,
+      // which can land after the turn ends, so take them as they arrive.
+      const unsubTitle = sessionClient.onProjection((projection) => {
+        if (projection.kind !== "title" || !projection.sessionId.startsWith("chat-")) return;
+        const title = (projection.data as { title?: unknown }).title;
+        if (typeof title === "string" && title.trim()) {
+          useCairnStore.getState().setProjectedTitle(projection.sessionId.slice("chat-".length), title);
+        }
+      });
+
       // Auto-updater listeners — events may arrive in any order
       const unsubAvailable = appClient.updater.onUpdateAvailable((info) => {
         setUpdateVersion(info.version);
@@ -326,6 +336,7 @@ export default function Home() {
 
       return () => {
         unsubDb();
+        unsubTitle();
         unsubAiStart();
         unsubAiEnd();
         unsubAvailable();
