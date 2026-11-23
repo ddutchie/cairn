@@ -524,7 +524,7 @@ const BASE_TOOLS: ToolDef[] = [
   {
     name: "get_today",
     description:
-      "What needs the user today, from this phone's synced data: overdue tasks, tasks due today, today's meetings, and people they are overdue to meet. Read-only. This is not the desktop's AI brief (that does not sync), so say so if asked for it.",
+      "What needs the user today, from this phone's synced data: overdue tasks, tasks due today, today's meetings with the free time left, open action items they own, and people they are overdue to meet. Read-only. This is not the desktop's AI brief (that does not sync), so say so if asked for it.",
     params: "{}",
     jsonSchema: obj({}),
     run: () => {
@@ -537,6 +537,8 @@ const BASE_TOOLS: ToolDef[] = [
         dueToday: d.dueToday.map(task),
         meetings: d.meetings.map((m) => ({ id: m.id, title: m.title, startsAt: m.startsAt, endsAt: m.endsAt ?? null })),
         peopleDue: d.peopleDue.map((p) => ({ id: p.id, name: p.name, daysOverCadence: p.daysOver })),
+        youOwe: d.youOwe.map((i) => ({ noteId: i.noteId, note: i.noteTitle, text: i.text })),
+        freeTime: { minutesLeft: d.day.freeLeft, longestMinutes: d.day.largestFree, meetingsLeft: d.day.meetingsLeft },
       };
     },
   },

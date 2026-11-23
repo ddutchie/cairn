@@ -13,7 +13,7 @@ import {
   Modal,
   TextInput,
 } from "react-native";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { RefreshCw, Plus, Trash2, ExternalLink, Wrench, ChevronRight, ChevronDown, LogIn, LogOut } from "lucide-react-native";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { haptics, toolbarPress } from "@/haptics";
@@ -88,7 +88,7 @@ const isRead = (t: ToolDef) => !WRITE_TOOL_NAMES.has(t.name);
 
 /** Map an installed OAuth MCP server to the OAuth flow's server config. */
 function oauthCfg(s: InstalledMcpServer): OAuthServerConfig {
-  return { id: s.id, serverUrl: s.baseUrl, scope: s.oauthScope };
+  return { id: s.id, serverUrl: s.baseUrl, scope: s.oauthScope, clientId: s.oauthClientId, redirectUri: s.oauthRedirectUri };
 }
 
 export default function ToolsSettingsScreen() {
@@ -136,6 +136,14 @@ export default function ToolsSettingsScreen() {
     setInstalledMcp(listInstalledMcpServers());
     setToggles(getToggleMap());
   }, []);
+
+  // Pick up a connector added from the custom connector form (a separate screen) when this one comes back into focus.
+  useFocusEffect(
+    useCallback(() => {
+      reloadLocal();
+      setMcpToolsRev((r) => r + 1);
+    }, [reloadLocal]),
+  );
 
   // Refresh the per-OAuth-server connected (has-tokens) map for the badges.
   const refreshConnected = useCallback(async () => {
@@ -539,6 +547,7 @@ export default function ToolsSettingsScreen() {
                       <View style={styles.rowMain}>
                         <Text style={styles.rowTitle}>{s.name}</Text>
                         {!!s.blurb && <Text style={styles.rowSub} numberOfLines={2}>{s.blurb}</Text>}
+                        {s.custom && <Text style={styles.rowSub} numberOfLines={1}>{`Your own · ${new URL(s.baseUrl).host}`}</Text>}
                         {isOAuth && (
                           <Text style={[styles.statusText, { color: isConnected ? t.success : t.textTertiary }]}>
                             {isConnected ? "Connected" : "Not connected"}
@@ -771,6 +780,15 @@ export default function ToolsSettingsScreen() {
           {/* 4. Add an MCP server (OAuth supported via deep-link sign-in) */}
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>MCP servers</Text>
+            <Pressable
+              style={[styles.addBtn, { alignSelf: "flex-start", marginBottom: 10 }]}
+              onPress={() => { haptics.selection(); router.push("/custom-connector"); }}
+              accessibilityRole="button"
+              accessibilityLabel="Add your own MCP server"
+            >
+              <Plus size={14} color={t.accentFg} />
+              <Text style={styles.addBtnText}>Add your own</Text>
+            </Pressable>
             {browsableMcp.length === 0 ? (
               <Text style={styles.sectionHint}>
                 {notInstalledMcp.length === 0

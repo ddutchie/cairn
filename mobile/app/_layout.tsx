@@ -255,6 +255,7 @@ function RootNavigator({
       <Stack.Screen name="capture" options={{ title: "Capture", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="project-form" options={{ title: "Project", presentation: "modal", contentStyle: cardStyle }} />
+      <Stack.Screen name="custom-connector" options={{ title: "Custom connector", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="person-form" options={{ title: "Add person", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="team-form" options={{ title: "New team", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="person-details" options={{ title: "Details", presentation: "modal", contentStyle: cardStyle }} />

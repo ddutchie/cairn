@@ -40,6 +40,9 @@ export interface McpServerRuntimeConfig {
   headers?: Record<string, string>;
   authMode?: "none" | "oauth";
   oauthScope?: string;
+  /** The user's own pre-registered OAuth client (custom connectors). */
+  oauthClientId?: string;
+  oauthRedirectUri?: string;
   name?: string;
 }
 
@@ -60,6 +63,8 @@ function configSignature(cfg: McpServerRuntimeConfig): string {
     headers: cfg.headers ?? {},
     authMode: cfg.authMode ?? "none",
     oauthScope: cfg.oauthScope ?? "",
+    oauthClientId: cfg.oauthClientId ?? "",
+    oauthRedirectUri: cfg.oauthRedirectUri ?? "",
   });
 }
 
@@ -69,7 +74,7 @@ function makeTransport(cfg: McpServerRuntimeConfig): StreamableHTTPClientTranspo
   if (cfg.authMode === "oauth") {
     // The provider injects + refreshes the bearer from the keychain; static
     // headers aren't used for OAuth servers.
-    const provider = new SecureStoreOAuthProvider(cfg.id, cfg.name ?? cfg.id, cfg.oauthScope);
+    const provider = new SecureStoreOAuthProvider(cfg.id, cfg.name ?? cfg.id, cfg.oauthScope, { clientId: cfg.oauthClientId, redirectUri: cfg.oauthRedirectUri });
     return new StreamableHTTPClientTransport(url, { authProvider: provider, fetch: fetchFn });
   }
   const headers = cfg.headers ?? {};

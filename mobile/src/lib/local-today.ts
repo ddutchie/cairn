@@ -1,7 +1,7 @@
 import { buildRhythm } from "@cairn/shared/people/rhythm";
 import { buildLocalToday, localDay, localDayBounds, type LocalToday } from "@cairn/shared/today/local";
 import { listMeetingsBetween, listOpenDueTasks } from "@/db/queries";
-import { loadPeople } from "@/db/people";
+import { loadMyOpenItems, loadPeople } from "@/db/people";
 
 /** The phone's Today as of `now`, from synced data only. Cheap and synchronous (SQLite on the JS thread). */
 export function loadLocalToday(now: number = Date.now()): LocalToday {
@@ -18,5 +18,11 @@ export function loadLocalToday(now: number = Date.now()): LocalToday {
   } catch {
     // People tables may not be ready; Today still shows tasks and meetings.
   }
-  return buildLocalToday({ tasks, meetings, peopleDue }, now);
+  let youOwe: NonNullable<Parameters<typeof buildLocalToday>[0]["youOwe"]> = [];
+  try {
+    youOwe = loadMyOpenItems().map((i) => ({ noteId: i.noteId, noteTitle: i.noteTitle, text: i.text, lineKey: i.lineKey, bodyDigest: i.bodyDigest }));
+  } catch {
+    // Same as above: a missing People layer must not blank Today.
+  }
+  return buildLocalToday({ tasks, meetings, peopleDue, youOwe }, now);
 }

@@ -15,6 +15,7 @@
  */
 
 import { getMeta, setMeta } from "../db";
+import { customConnectorId, type CustomMcpConfig } from "@cairn/shared/chat/custom-connector";
 import type { RegistryMcpEntry } from "@cairn/shared/chat/registry-schema";
 import type { OpenAIToolDef } from "@cairn/shared/chat/mcp-namespace";
 import type { McpServerRuntimeConfig } from "./mcp-client";
@@ -35,6 +36,11 @@ export interface InstalledMcpServer {
   transport: "http" | "sse";
   authMode: "none" | "oauth";
   oauthScope?: string;
+  /** Custom connectors: the user's own app registration. Public values; there is no secret. */
+  oauthClientId?: string;
+  oauthRedirectUri?: string;
+  /** Added by hand rather than from the registry. */
+  custom?: boolean;
   /** Static headers (e.g. API-key servers). May contain <API_KEY> placeholders. */
   headers?: Record<string, string>;
 }
@@ -87,6 +93,23 @@ export function installMcpServer(entry: RegistryMcpEntry): void {
   writeInstalled(list);
 }
 
+/** Add a connector by hand (already validated by `parseCustomMcp`). Does NOT connect or authorize. */
+export function addCustomMcpServer(config: CustomMcpConfig): InstalledMcpServer {
+  const record: InstalledMcpServer = {
+    id: customConnectorId(config.name),
+    name: config.name,
+    baseUrl: config.baseUrl,
+    transport: "http",
+    authMode: config.authMode,
+    oauthScope: config.oauthScope,
+    oauthClientId: config.oauthClientId,
+    oauthRedirectUri: config.oauthRedirectUri,
+    custom: true,
+  };
+  writeInstalled([...listInstalledMcpServers(), record]);
+  return record;
+}
+
 /** Uninstall a server: drop record, cached tools, OAuth artefacts, live conn. */
 export async function uninstallMcpServer(id: string): Promise<void> {
   writeInstalled(listInstalledMcpServers().filter((s) => s.id !== id));
@@ -104,6 +127,8 @@ export function toRuntimeConfig(s: InstalledMcpServer): McpServerRuntimeConfig {
     headers: s.headers,
     authMode: s.authMode,
     oauthScope: s.oauthScope,
+    oauthClientId: s.oauthClientId,
+    oauthRedirectUri: s.oauthRedirectUri,
     name: s.name,
   };
 }

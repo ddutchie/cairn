@@ -75,7 +75,14 @@ export interface OAuthServerConfig {
   /** The MCP server URL the SDK runs discovery against. */
   serverUrl: string;
   scope?: string;
+  /** The user's own pre-registered public client id. Skips CIMD and dynamic registration. */
+  clientId?: string;
+  /** Redirect URI registered on that app. Defaults to Cairn's https bounce page. */
+  redirectUri?: string;
 }
+
+/** The part of a server's OAuth config the provider needs beyond id, name and scope. */
+export type PreRegistered = Pick<OAuthServerConfig, "clientId" | "redirectUri">;
 
 /** Tokens carry an absolute expiry we stamp on save (SDK ignores unknown fields). */
 type StampedTokens = OAuthTokens & { expires_at?: number };
@@ -118,17 +125,21 @@ export class SecureStoreOAuthProvider implements OAuthClientProvider {
    * client_id_metadata_document_supported. Servers that don't support CIMD fall
    * back to DCR via the SDK automatically.
    */
-  readonly clientMetadataUrl = CLIENT_METADATA_URL;
+  readonly clientMetadataUrl: string | undefined;
 
   constructor(
     private readonly serverId: string,
     private readonly serverName: string,
     private readonly scope?: string,
-  ) {}
+    private readonly pre: PreRegistered = {},
+  ) {
+    // With the user's own client id there is nothing to discover or register: leave CIMD off.
+    this.clientMetadataUrl = pre.clientId ? undefined : CLIENT_METADATA_URL;
+  }
 
   get redirectUrl(): string {
-    // Advertise the https bounce page (strict providers reject cairn:// here).
-    return HTTPS_REDIRECT_URI;
+    // Advertise the https bounce page (strict providers reject cairn:// here), unless the user's app registered another.
+    return this.pre.redirectUri || HTTPS_REDIRECT_URI;
   }
 
   get clientMetadata(): OAuthClientMetadata {
@@ -136,7 +147,7 @@ export class SecureStoreOAuthProvider implements OAuthClientProvider {
       client_name: `Cairn — ${this.serverName}`,
       // Advertise the https bounce redirect (used by DCR fallback + must match
       // the CIMD doc). The bounce page forwards to cairn://oauth/callback.
-      redirect_uris: [HTTPS_REDIRECT_URI],
+      redirect_uris: [this.redirectUrl],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
@@ -145,6 +156,8 @@ export class SecureStoreOAuthProvider implements OAuthClientProvider {
   }
 
   async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
+    // A pre-registered public client: the SDK uses it as is and skips dynamic registration. PKCE, so no secret.
+    if (this.pre.clientId) return { client_id: this.pre.clientId, redirect_uris: [this.redirectUrl] } as OAuthClientInformationMixed;
     return getJson<OAuthClientInformationFull>(this.serverId, KEY_CLIENT_INFO);
   }
 
@@ -244,7 +257,7 @@ function friendlyAuthError(serverName: string, raw: string): { error: string; de
  * Never throws — returns a status the UI can show.
  */
 export async function startAuth(cfg: OAuthServerConfig, serverName: string): Promise<AuthStartResult> {
-  const provider = new SecureStoreOAuthProvider(cfg.id, serverName, cfg.scope);
+  const provider = new SecureStoreOAuthProvider(cfg.id, serverName, cfg.scope, cfg);
 
   // Clear stale client registration + verifier (awaited) so auth()'s
   // clientInformation() read starts fresh and the CIMD branch runs.
@@ -322,7 +335,7 @@ function isTokenExpired(tokens: StampedTokens): boolean {
  * browser.
  */
 export async function getAccessToken(cfg: OAuthServerConfig, serverName: string): Promise<string | null> {
-  const provider = new SecureStoreOAuthProvider(cfg.id, serverName, cfg.scope);
+  const provider = new SecureStoreOAuthProvider(cfg.id, serverName, cfg.scope, cfg);
   const stored = (await provider.tokens()) as StampedTokens | undefined;
   if (!stored?.access_token) return null;
   if (!isTokenExpired(stored)) return stored.access_token;
