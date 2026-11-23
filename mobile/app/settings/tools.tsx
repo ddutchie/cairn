@@ -678,6 +678,25 @@ export default function ToolsSettingsScreen() {
             )}
           </View>
 
+          {/* 2b. Your own MCP server: at the top so it isn't buried under the registry lists, and shown even if the catalog can't load. */}
+          <View style={styles.section}>
+            <Pressable
+              style={styles.mcpCard}
+              onPress={() => { haptics.selection(); router.push("/custom-connector"); }}
+              accessibilityRole="button"
+              accessibilityLabel="Add your own MCP server"
+            >
+              <View style={styles.mcpHeader}>
+                <Plus size={20} color={t.accent} />
+                <View style={styles.rowMain}>
+                  <Text style={styles.rowTitle}>Add your own MCP server</Text>
+                  <Text style={styles.rowSub} numberOfLines={2}>A server that isn&apos;t in the catalog, with your own sign-in. Stays on this phone.</Text>
+                </View>
+                <ChevronRight size={18} color={t.textTertiary} />
+              </View>
+            </Pressable>
+          </View>
+
           {/* 3. Browse filters — search + category chips (govern both Add lists) */}
           {hasAnyBrowsable && (
             <View style={styles.section}>
@@ -780,15 +799,6 @@ export default function ToolsSettingsScreen() {
           {/* 4. Add an MCP server (OAuth supported via deep-link sign-in) */}
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>MCP servers</Text>
-            <Pressable
-              style={[styles.addBtn, { alignSelf: "flex-start", marginBottom: 10 }]}
-              onPress={() => { haptics.selection(); router.push("/custom-connector"); }}
-              accessibilityRole="button"
-              accessibilityLabel="Add your own MCP server"
-            >
-              <Plus size={14} color={t.accentFg} />
-              <Text style={styles.addBtnText}>Add your own</Text>
-            </Pressable>
             {browsableMcp.length === 0 ? (
               <Text style={styles.sectionHint}>
                 {notInstalledMcp.length === 0
