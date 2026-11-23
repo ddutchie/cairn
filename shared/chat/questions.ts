@@ -34,5 +34,10 @@ export function parseQuestions(raw: unknown): { questions: AskQuestion[] } | { e
 
 /** Answers keyed by question id, as the tool result text. A blank answer reads "(no answer)". */
 export function formatAnswers(questions: readonly AskQuestion[], answers: Readonly<Record<string, string>>): string {
-  return questions.map((q) => `**${q.label}:** ${answers[q.id]?.trim() || "(no answer)"}`).join("\n");
+  // Own properties only: a question id like "constructor" must not read an inherited function.
+  const answerFor = (id: string): string => {
+    const a = Object.prototype.hasOwnProperty.call(answers, id) ? answers[id] : undefined;
+    return typeof a === "string" ? a.trim() : "";
+  };
+  return questions.map((q) => `**${q.label}:** ${answerFor(q.id) || "(no answer)"}`).join("\n");
 }

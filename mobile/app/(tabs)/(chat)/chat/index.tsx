@@ -217,6 +217,8 @@ export default function ChatScreen() {
     if (pendingQuestionsId != null) scrollToEndSoon();
   }, [pendingQuestionsId, scrollToEndSoon]);
   const pendingConfirmId = pendingConfirm?.id;
+  // Clear chat stays available mid-turn only when the turn is stuck waiting on a card.
+  const clearDisabled = busy && pendingQuestionsId == null && pendingConfirmId == null;
   useEffect(() => {
     if (pendingConfirmId != null) scrollToEndSoon();
   }, [pendingConfirmId, scrollToEndSoon]);
@@ -583,6 +585,18 @@ export default function ChatScreen() {
     }
   }, [input, attachments, busy, followEnd, scrollToEndIfFollowing, streamStore]);
 
+  const clearNow = useCallback(() => {
+    clearChatHistory();
+    conversation.current = [];
+    setMessages([]);
+    setVisibleCount(CHAT_PAGE_SIZE);
+    setUsage(null);
+    // Drop the on-device session so a new chat gets a fresh context window.
+    resetAppleSession();
+  }, []);
+  // Clear chosen while a turn was waiting on a card: the turn is closed out first, then this runs.
+  const clearAfterTurn = useRef(false);
+
   // Drain the queue: when a turn finishes (busy went true → false), send the
   // next queued message. Keeps the queue on Stop and drains after errors too.
   const sendRef = useRef<() => void>(() => {});
@@ -591,13 +605,18 @@ export default function ChatScreen() {
   useEffect(() => {
     const wasBusy = prevBusyRef.current;
     prevBusyRef.current = busy;
+    if (wasBusy && !busy && clearAfterTurn.current) {
+      clearAfterTurn.current = false;
+      clearNow();
+      return;
+    }
     if (wasBusy && !busy && queuedRef.current.length > 0) {
       const [next, ...rest] = queuedRef.current;
       setQueued(rest);
       pendingSendRef.current = { content: next.content, attachments: next.attachments, picks: next.picks };
       sendRef.current();
     }
-  }, [busy]);
+  }, [busy, clearNow]);
 
   const removeQueued = useCallback((qid: string) => {
     setQueued((prev) => prev.filter((q) => q.id !== qid));
@@ -610,7 +629,9 @@ export default function ChatScreen() {
   }, []);
 
   const onClear = useCallback(() => {
-    if (messages.length === 0 || busy) return;
+    // A turn waiting on a question or delete card can't finish by itself, so Clear is allowed then.
+    const waitingOnCard = busy && (pendingQuestionsId != null || pendingConfirmId != null);
+    if (messages.length === 0 || (busy && !waitingOnCard)) return;
     Alert.alert("Clear chat?", "This deletes the on-device conversation history. It only affects this device.", [
       { text: "Cancel", style: "cancel" },
       {
@@ -618,19 +639,19 @@ export default function ChatScreen() {
         style: "destructive",
         onPress: () => {
           haptics.warning();
+          if (busy) {
+            // Close the card as skipped / cancelled, drop queued messages, and clear once the turn has
+            // finished, so it can't write its reply into the cleared conversation.
+            clearAfterTurn.current = true;
+            setQueued([]);
+          }
           skipQuestions();
           cancelConfirm();
-          clearChatHistory();
-          conversation.current = [];
-          setMessages([]);
-          setVisibleCount(CHAT_PAGE_SIZE);
-          setUsage(null);
-          // Drop the on-device session so a new chat gets a fresh context window.
-          resetAppleSession();
+          if (!busy) clearNow();
         },
       },
     ]);
-  }, [messages.length, busy]);
+  }, [messages.length, busy, pendingQuestionsId, pendingConfirmId, clearNow]);
 
   // canSend stays true while busy so sending queues the message instead of
   // being blocked — the queue drains when the current reply finishes.
@@ -837,9 +858,9 @@ export default function ChatScreen() {
               accessibilityRole="button"
               accessibilityLabel="Clear chat"
               hitSlop={8}
-              disabled={busy}
+              disabled={clearDisabled}
               onPress={onClear}
-              style={[styles.composerToolBtn, busy && { opacity: 0.4 }]}
+              style={[styles.composerToolBtn, clearDisabled && { opacity: 0.4 }]}
             >
               <Trash2 size={18} color={t.textSecondary} />
             </Pressable>
@@ -912,7 +933,7 @@ export default function ChatScreen() {
             key="clear"
             icon={ICON_DELETE}
             hidden={messages.length === 0}
-            disabled={busy}
+            disabled={clearDisabled}
             accessibilityLabel="Clear chat"
             // Inline arrow (not a bare toolbarPress(onClear)) so the react-hooks
             // ref lint doesn't flag onClear's transitive ref access during render.

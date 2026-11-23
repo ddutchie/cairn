@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { answerQuestions, skipQuestions, type PendingQuestions } from "@/chat/questions-store";
+import { answerQuestions, getAnswerDraft, setAnswerDraft, skipQuestions, type PendingQuestions } from "@/chat/questions-store";
 import { haptics } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
@@ -12,7 +12,8 @@ import { useTheme, type as typeScale, type Theme } from "@/theme";
 export function QuestionCard({ pending, onFocusAnswer }: { pending: PendingQuestions; onFocusAnswer?: () => void }) {
   const t = useTheme();
   const s = useMemo(() => makeStyles(t), [t]);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  // Seeded from the store: this card remounts when the app resumes, and what was typed must stay.
+  const [answers, setAnswers] = useState<Record<string, string>>(() => getAnswerDraft(pending.id));
   const anyAnswer = Object.values(answers).some((a) => a.trim().length > 0);
 
   const send = () => {
@@ -35,7 +36,7 @@ export function QuestionCard({ pending, onFocusAnswer }: { pending: PendingQuest
           <TextInput
             style={s.input}
             value={answers[q.id] ?? ""}
-            onChangeText={(v) => setAnswers((cur) => ({ ...cur, [q.id]: v }))}
+            onChangeText={(v) => setAnswers((cur) => { const next = { ...cur, [q.id]: v }; setAnswerDraft(pending.id, next); return next; })}
             placeholder="Your answer"
             placeholderTextColor={t.textTertiary}
             multiline

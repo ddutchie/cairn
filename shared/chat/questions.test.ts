@@ -27,4 +27,9 @@ describe("formatAnswers", () => {
     const qs = [{ id: "a", label: "Audience", prompt: "" }, { id: "b", label: "Deadline", prompt: "" }];
     expect(formatAnswers(qs, { a: " Designers " })).toBe("**Audience:** Designers\n**Deadline:** (no answer)");
   });
+
+  it("treats inherited properties as unanswered", () => {
+    const qs = [{ id: "constructor", label: "Name", prompt: "" }, { id: "b", label: "B", prompt: "" }];
+    expect(formatAnswers(qs, { b: "yes" })).toBe("**Name:** (no answer)\n**B:** yes");
+  });
 });

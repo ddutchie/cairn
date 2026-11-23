@@ -59,7 +59,7 @@ Everything else in this document is **S** or **M**: the data is already on the p
 | Linked notes on a card | Partial: links are stored and used by chat tools; no link editor on the card screen confirmed | Medium, S |
 | Blocked by (dependencies) | No on the card screen; `update_tasks` can set it from chat | Low, S |
 | Filters (search, assignee, due today, due within 7 days) | Partial: project filter bar; desktop filter set not matched row for row | Low |
-| Add, rename, delete column; WIP limit | **No**: nothing writes `board_columns` | Medium, S |
+| Add, rename, delete column; WIP limit | **No**: no column management. Creating a project inserts the default columns, but nothing adds, renames, reorders or deletes one | Medium, S |
 | Archived tasks view with search | Unchecked | Low |
 | Agent badge, work log (`task_progress`) | No | Low: a coding-agent job. Drop `task_progress` from the mobile tool list rather than add it |
 

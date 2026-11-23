@@ -16,7 +16,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { writeNoteFile, deleteProjectNotesDir, deleteNoteFile, hardDeleteNoteFile, setPathRemover, type NoteFileData, type PathRemover } from "./notes-io";
+import { toSlug } from "./text-utils";
+import { renameProjectNotesDir, writeNoteFile, deleteProjectNotesDir, deleteNoteFile, hardDeleteNoteFile, setPathRemover, type NoteFileData, type PathRemover } from "./notes-io";
 
 let tmpDir: string;
 
@@ -320,5 +321,21 @@ describe("hardDeleteNoteFile — sync delete that bypasses the OS-trash remover"
 
     expect(trashed).toEqual([]);            // trasher untouched
     expect(fs.existsSync(fp)).toBe(false);  // file gone synchronously
+  });
+});
+
+describe("project folder names from other devices", () => {
+  it("never slugs to the folder itself or its parent", () => {
+    for (const name of [".", "..", "...", " .. ", "/.."]) expect(toSlug(name)).toBe("Untitled");
+    expect(toSlug("v1.2")).toBe("v1.2");
+  });
+
+  it("keeps a folder inside the workspace when a project is renamed to ..", () => {
+    const ws = path.join(tmpDir, "ws");
+    fs.mkdirSync(path.join(ws, "A"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "A", "n.md"), "x");
+    expect(renameProjectNotesDir(ws, "A", "..")).toBe(true);
+    expect(fs.existsSync(path.join(ws, "Untitled", "n.md"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, "n.md"))).toBe(false);
   });
 });

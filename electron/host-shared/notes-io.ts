@@ -524,6 +524,10 @@ export function renameProjectNotesDir(
   const oldDir = projectNotesDir(workspacePath, oldProjectName);
   const newDir = projectNotesDir(workspacePath, newProjectName);
   if (oldDir === newDir) return false; // same slug — nothing to do
+  // Names can arrive from another device, so never move a folder out of (or onto) the workspace itself.
+  const root = path.resolve(workspacePath);
+  const inside = (d: string) => path.dirname(path.resolve(d)) === root;
+  if (!inside(oldDir) || !inside(newDir)) return false;
   if (!fs.existsSync(oldDir)) return false; // no files on disk yet
 
   try {

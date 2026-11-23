@@ -34,4 +34,29 @@ describe("maybeTitleChat", () => {
     expect(host.autoTitle).not.toHaveBeenCalled();
     await expect(maybeTitleChat(host, "chat-3", config, {}, vi.fn(async () => { throw new Error("offline"); }))).rejects.toThrow("offline");
   });
+
+  it("looks again after a turn that ended while the first request was still running", async () => {
+    let inputs: TitleInputs = { humanMessages: ["hi"], firstReply: "Hello", autoTitles: 0 };
+    const titles: string[] = [];
+    const host = {
+      titleInputs: vi.fn(async () => inputs),
+      autoTitle: vi.fn(async (_id: string, title: string) => { titles.push(title); inputs = { ...inputs, autoTitles: inputs.autoTitles + 1 }; return true; }),
+    };
+    let releaseFirst!: (v: string) => void;
+    const run = vi.fn()
+      .mockImplementationOnce(() => new Promise<string>((resolve) => { releaseFirst = resolve; }))
+      .mockImplementationOnce(async () => "Garden bed plan");
+    const first = maybeTitleChat(host, "chat-4", config, {}, run);
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    // The second turn finishes while the greeting is still being named.
+    inputs = { humanMessages: ["hi", "Help me plan the garden beds"], firstReply: "Hello", autoTitles: 0 };
+    expect(await maybeTitleChat(host, "chat-4", config, {}, run)).toBeUndefined();
+    expect(run).toHaveBeenCalledTimes(1); // never two model calls at once
+    releaseFirst("Greeting");
+    await first;
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(titles).toEqual(["Greeting", "Garden bed plan"]);
+    // The second request names the conversation from both messages.
+    expect(JSON.stringify(run.mock.calls[1][0])).toContain("garden beds");
+  });
 });

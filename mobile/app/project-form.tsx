@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { WORKSPACE_ICON_NAMES, DEFAULT_PROJECT_ICON, resolveProjectIconName } from "@cairn/shared/ui/constants";
@@ -31,18 +31,32 @@ export default function ProjectForm() {
   const s = useMemo(() => makeStyles(t), [t]);
   const existing = useMemo(() => (id ? getProjectFields(id) : null), [id]);
 
-  const [name, setName] = useState(existing?.name ?? "");
-  const [description, setDescription] = useState(existing?.description ?? "");
-  const [icon, setIcon] = useState(resolveProjectIconName(existing?.icon ?? DEFAULT_PROJECT_ICON));
-  const [status, setStatus] = useState(existing?.status ?? "active");
-  const [priority, setPriority] = useState(existing?.priority ?? "medium");
+  // What the form opened with. An edit saves only the fields that differ from this, so a
+  // field a sync changed while the form was open isn't overwritten with its old value.
+  const seed = useMemo(() => ({
+    name: existing?.name ?? "",
+    description: existing?.description ?? "",
+    icon: resolveProjectIconName(existing?.icon ?? DEFAULT_PROJECT_ICON),
+    status: existing?.status ?? "active",
+    priority: existing?.priority ?? "medium",
+  }), [existing]);
+  const [name, setName] = useState(seed.name);
+  const [description, setDescription] = useState(seed.description);
+  const [icon, setIcon] = useState(seed.icon);
+  const [status, setStatus] = useState(seed.status);
+  const [priority, setPriority] = useState(seed.priority);
   const canSave = name.trim().length > 0;
+  // Set on the first Save or keyboard submit, before the modal closes, so a second one is ignored.
+  const submitting = useRef(false);
 
   const save = () => {
-    if (!canSave) return;
+    if (!canSave || submitting.current) return;
+    submitting.current = true;
     try {
       if (existing) {
-        updateProject(existing.id, { name, description, icon, status, priority });
+        const current = { name, description, icon, status, priority };
+        const changed = (Object.keys(current) as (keyof typeof current)[]).filter((k) => current[k] !== seed[k]);
+        if (changed.length > 0) updateProject(existing.id, Object.fromEntries(changed.map((k) => [k, current[k]])));
         router.back();
         return;
       }
@@ -55,6 +69,7 @@ export default function ProjectForm() {
         router.replace({ pathname: "/project/[id]", params: { id: newId } });
       }
     } catch (e) {
+      submitting.current = false; // let them fix it and try again
       Alert.alert(existing ? "Couldn't save the project" : "Couldn't create the project", e instanceof Error ? e.message : String(e));
     }
   };

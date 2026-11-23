@@ -26,6 +26,9 @@ function toUpsertInput(t: ChatThread): ChatThreadUpsertInput {
  */
 let reloadToken = 0;
 const latestReload = new Map<string, number>();
+/** Bumped each time a thread's title is set live (a projection or a rename), so a slower load can tell its copy is stale. */
+const titleRevisions = new Map<string, number>();
+const bumpTitleRevision = (threadId: string) => titleRevisions.set(threadId, (titleRevisions.get(threadId) ?? 0) + 1);
 
 export interface ChatSlice {
   chatThreads: ChatThread[];
@@ -118,6 +121,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   unreadThreadIds: [],
 
   setProjectedTitle(threadId, title) {
+    bumpTitleRevision(threadId);
     set((s) => ({
       projectedTitles: { ...s.projectedTitles, [threadId]: title },
       // Lists read the thread's own title, so a title named after the turn shows at once.
@@ -152,6 +156,9 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     const threadsRes = await ipcResult((e) => e.chat.threads(workspaceId));
     if ("error" in threadsRes) return;
     const dbThreads = threadsRes.data;
+    // A title set while this load is reading sessions is newer than what the sessions return.
+    const revisionsAtStart = new Map(titleRevisions);
+    const titleMovedSince = (threadId: string) => (titleRevisions.get(threadId) ?? 0) !== (revisionsAtStart.get(threadId) ?? 0);
 
     // Pull messages for every thread in parallel — engine's JSONL session log
     // (JsonlSessionPersistence, stable id `chat-<threadId>`) is the sole
@@ -210,7 +217,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
           const restoredUsage = usageByThreadId.get(t.id) as ChatThread["lastUsage"];
           const finalUsage = restoredUsage ?? mem?.lastUsage ?? t.lastUsage;
           // The session log's title (a rename, else the model's name for it) wins over the row's.
-          const title = titleByThreadId.get(t.id) || t.title;
+          const title = titleMovedSince(t.id) ? s.projectedTitles[t.id] || mem?.title || t.title : titleByThreadId.get(t.id) || t.title;
           const withTitle = title !== t.title ? { ...t, title } : t;
           return finalUsage ? { ...withTitle, lastUsage: finalUsage } : withTitle;
         }),
@@ -219,6 +226,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       // Merge projected titles (session/title fold) — authoritative auto-titles.
       const nextProjected: Record<string, string | null> = { ...s.projectedTitles };
       for (const [tid, title] of titleByThreadId) {
+        if (titleMovedSince(tid)) continue;
         if (title) nextProjected[tid] = title;
         else if (title === null) nextProjected[tid] = null;
       }
@@ -465,6 +473,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     if (!trimmed) return;
     // Optimistic update — projected title wins immediately, and SQLite is
     // updated via the sessionTitle service (which pins kind:'user').
+    bumpTitleRevision(threadId);
     set((s) => ({
       chatThreads: s.chatThreads.map((t) =>
         t.id === threadId ? { ...t, title: trimmed || undefined, updatedAt: now() } : t
