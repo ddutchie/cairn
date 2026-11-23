@@ -51,9 +51,18 @@ export function humanizeToolCall(
   args: Args = {},
   ref?: HumanizeRef | null,
   lookup: HumanizeLookup = {},
-  /** The tool's result text, when it has one (a cancelled delete reads "Kept …"). */
+  /** The tool's result text, when it has one: a call cancelled on the confirmation card reads differently. */
   output?: string,
 ): string {
+  const label = labelFor(tool, args, ref, lookup);
+  if (!/"cancelled"\s*:\s*true/.test(output ?? "")) return label;
+  if (label.startsWith("Deleted ")) return `Kept ${label.slice(8)}`;
+  if (label.startsWith("Archived ")) return `Didn't archive ${label.slice(9)}`;
+  if (label.startsWith("Merged ")) return `Didn't merge ${label.slice(7)}`;
+  return `Cancelled: ${label}`;
+}
+
+function labelFor(tool: string, args: Args, ref: HumanizeRef | null | undefined, lookup: HumanizeLookup): string {
   switch (tool) {
     case "get_context": {
       const projectId = str(args.projectId).trim();
@@ -124,7 +133,14 @@ export function humanizeToolCall(
       const id = str(args.id).trim() || ref?.id;
       if (!kind || !id) return "Deleted item";
       const name = kind === "note" ? noteName(lookup, id) : taskName(lookup, id);
-      return /"cancelled"\s*:\s*true/.test(output ?? "") ? `Kept ${kind} ${name}` : `Deleted ${kind} ${name}`;
+      return `Deleted ${kind} ${name}`;
+    }
+    case "people": {
+      const who = str(args.name).trim() || "a person";
+      if (args.action === "archive") return args.remove === true ? `Restored ${who}` : `Archived ${who}`;
+      if (args.action === "merge") return "Merged two people";
+      if (args.action === "team_delete") return `Deleted team ${str(args.team).trim() || "a team"}`;
+      return prettifyToolLabel(tool, { prettifyBare: true });
     }
     case "ask_questions": {
       const n = Array.isArray(args.questions) ? args.questions.length : 0;

@@ -19,7 +19,7 @@ import { isOverdue, isDueWithin } from "@cairn/shared/notes/due";
 import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_PARAM_DESCRIPTIONS as PD, PEOPLE_TOOL_DESCRIPTION } from "@cairn/shared/agent/people-tools";
 import { isReadCall, refusesHiddenNoteWrite, scrubHidden } from "@cairn/shared/agent/people-privacy";
 import { peopleTool, setCardOwnerArg, setNoteAttendees, type PeopleToolContext } from "@cairn/shared/people/tool";
-import { agentHiddenNoteIds } from "@cairn/shared/people/queries";
+import { agentHiddenNoteIds, getPerson } from "@cairn/shared/people/queries";
 import { CADENCES, LINK_KINDS, PEOPLE_STATUSES, RELATIONSHIP_TYPES, TEAM_KINDS } from "@cairn/shared/types/people";
 import { peopleDb, peopleWorkspaceId } from "@/db/people";
 import { loadLocalToday } from "@/lib/local-today";
@@ -28,6 +28,7 @@ import { notifyLocalWrite } from "@/sync/write-signal";
 import { parseQuestions, formatAnswers } from "@cairn/shared/chat/questions";
 import { askQuestions } from "./questions-store";
 import { askConfirm } from "./confirm-store";
+import { CANCELLED_RESULT, confirmRequestFor, type ConfirmLookup } from "./confirm-gate";
 
 export interface ToolDef {
   name: string;
@@ -510,19 +511,11 @@ const BASE_TOOLS: ToolDef[] = [
     description: "Delete a note or task card by id (soft delete, synced as a tombstone). The user confirms on a Delete / Cancel card before anything is deleted; if they cancel, don't retry.",
     params: '{ "type": "note"|"task", "id": string }',
     jsonSchema: obj({ type: { type: "string", enum: ["note", "task"] }, id: S }, ["type", "id"]),
-    run: async (a) => {
+    run: (a) => {
       const id = str(a.id);
       if (a.type !== "note" && a.type !== "task") return { error: `Unknown delete type "${str(a.type)}"` };
-      const item = a.type === "note" ? q.getNote(id) : q.getCard(id);
-      if (!item) return { error: `No ${a.type} with id "${id}"` };
-      const kind = a.type === "note" ? "note" : "task";
-      const name = item.title?.trim() || "Untitled";
-      const ok = await askConfirm({
-        title: `Delete the ${kind} “${name}”?`,
-        detail: "It goes on every device that syncs with this one.",
-        confirmLabel: `Delete ${kind}`,
-      });
-      if (!ok) return { cancelled: true, note: `The user kept the ${kind}. Don't delete it or ask again unless they bring it up.` };
+      // The confirmation card runs first (guardConfirm in allTools).
+      if (!(a.type === "note" ? q.getNote(id) : q.getCard(id))) return { error: `No ${a.type} with id "${id}"` };
       if (a.type === "note") q.softDeleteNote(id);
       else q.deleteCard(id);
       return { ok: true, deleted: id };
@@ -714,7 +707,30 @@ export const WRITE_TOOL_NAMES = new Set<string>([
 export function allTools(): ToolDef[] {
   const services = serviceToolDefs().filter((t) => isToolEnabled(t.name));
   const mcp = mcpToolDefs().filter((t) => isToolEnabled(t.name));
-  return [...builtinTools(), ...services, ...mcp];
+  return [...builtinTools(), ...services, ...mcp].map((t) => guardConfirm(t));
+}
+
+const CONFIRM_LOOKUP: ConfirmLookup = {
+  noteTitle: (id) => q.getNote(id)?.title ?? undefined,
+  taskTitle: (id) => q.getCard(id)?.title ?? undefined,
+  personName: (id) => getPerson(peopleDb(), id)?.name,
+};
+
+/**
+ * Wrap a tool so the calls `confirmsByDefault` names (deletes, archives, merges)
+ * wait on the Confirm / Cancel card in the chat, and do nothing on Cancel. Every
+ * tool goes through here, built-in or connector, so a new rule in the shared
+ * policy needs no change in the tool itself.
+ */
+export function guardConfirm(t: ToolDef, lookup: ConfirmLookup = CONFIRM_LOOKUP): ToolDef {
+  return {
+    ...t,
+    run: async (args) => {
+      const req = confirmRequestFor(t.name, args, lookup);
+      if (req && !(await askConfirm(req))) return CANCELLED_RESULT;
+      return t.run(args);
+    },
+  };
 }
 
 /**

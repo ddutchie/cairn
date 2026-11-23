@@ -167,27 +167,41 @@ describe("mobile consolidated tools route to the right queries", () => {
     expect(res.map((c) => c.id)).toEqual(["late"]);
   });
 
-  it("delete waits for the Delete / Cancel card and routes by type", async () => {
-    const store = await import("./confirm-store");
+  it("delete routes by type and reports a missing item", async () => {
     q.getNote.mockReturnValue({ id: "n1", title: "Plan" });
     q.getCard.mockReturnValue({ id: "c1", title: "Ship" });
-    const note = run("delete", { type: "note", id: "n1" });
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(q.softDeleteNote).not.toHaveBeenCalled();
-    expect(store.confirmPending()).toBe(true);
-    expect(await note).toEqual({ ok: true, deleted: "n1" });
+    expect(await run("delete", { type: "note", id: "n1" })).toEqual({ ok: true, deleted: "n1" });
     expect(q.softDeleteNote).toHaveBeenCalledWith("n1");
-
-    const task = run("delete", { type: "task", id: "c1" });
-    await Promise.resolve();
-    await Promise.resolve();
-    store.cancelConfirm();
-    expect(await task).toMatchObject({ cancelled: true });
-    expect(q.deleteCard).not.toHaveBeenCalled();
-
+    await run("delete", { type: "task", id: "c1" });
+    expect(q.deleteCard).toHaveBeenCalledWith("c1");
     q.getCard.mockReturnValue(null);
     expect((await run("delete", { type: "task", id: "gone" })).error).toMatch(/No task/);
+  });
+
+  it("guardConfirm waits on the card for gated calls and does nothing on Cancel", async () => {
+    const { guardConfirm } = await import("./tools");
+    const store = await import("./confirm-store");
+    const inner = vi.fn(() => ({ ok: true }));
+    const lookup = { noteTitle: () => "Plan", taskTitle: () => "Ship", personName: () => "Ana" };
+    const tool = guardConfirm({ name: "delete", description: "", params: "", jsonSchema: {}, run: inner }, lookup);
+    const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
+
+    const kept = tool.run({ type: "note", id: "n1" });
+    await flush();
+    expect(inner).not.toHaveBeenCalled();
+    store.cancelConfirm();
+    expect(await kept).toMatchObject({ cancelled: true });
+    expect(inner).not.toHaveBeenCalled();
+
+    const done = tool.run({ type: "note", id: "n1" });
+    await flush();
+    store.confirmPending();
+    expect(await done).toEqual({ ok: true });
+
+    const people = guardConfirm({ name: "people", description: "", params: "", jsonSchema: {}, run: inner }, lookup);
+    inner.mockClear();
+    expect(await people.run({ action: "upsert", name: "Ana" })).toEqual({ ok: true });
+    expect(inner).toHaveBeenCalledTimes(1);
   });
 });
 

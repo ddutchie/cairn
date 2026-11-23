@@ -10,7 +10,7 @@ import { executeTool } from "./cairn-executor";
 import type { LLMConfig } from "../../lib/llm";
 import type { ChatRequest } from "../../lib/chat-prompt";
 import { TOOL_SCHEMAS, toolParametersJsonSchema } from "../host-store";
-import { APPROVAL_SAFE_TOOLS, PEOPLE_READ_ACTIONS, approvalPreview } from "../../../shared/agent/tool-risk";
+import { APPROVAL_SAFE_TOOLS, PEOPLE_READ_ACTIONS, approvalPreview, confirmsByDefault } from "../../../shared/agent/tool-risk";
 import { defineTool, type AgentTool, type ToolContext } from "../tool-types";
 import type { RiskInfo } from "../rules";
 import { fail, fromJsonSchema, ok, renderValue } from "./schema";
@@ -27,17 +27,15 @@ export interface CairnToolDeps {
   askQuestions?: (questions: unknown[], ctx: ToolContext) => Promise<unknown>;
 }
 
-/** Deletes are the one Cairn-data write that is not allowed by default. */
-const ASKS_BY_DEFAULT = new Set(["delete"]);
-
 const ASK_QUESTIONS_DESCRIPTION =
   "Ask the user a structured list of clarifying questions via an inline form and WAIT for their answers. This tool BLOCKS: it returns the user's answers as the tool result ({ok:true, answers:[{id, custom}]}). Do NOT write a closing message telling the user to fill in a form — just call the tool, then continue using the answers it returns to complete the task in the same turn.";
 
 export function cairnRisk(name: string, args: Record<string, unknown> = {}): RiskInfo {
   if (APPROVAL_SAFE_TOOLS.has(name)) return { class: "READ" };
   if (name === "people" && PEOPLE_READ_ACTIONS.has(String(args.action))) return { class: "READ" };
-  // Not a workspace path, so the workspace-edits preset never covers it: it asks unless a rule says otherwise.
-  if (ASKS_BY_DEFAULT.has(name)) return { class: "WRITE_LOCAL" };
+  // Deletes, archives and merges (confirmsByDefault) ask even where Cairn data writes are allowed:
+  // WRITE_LOCAL with no workspace path, so the workspace-edits preset never covers it either.
+  if (confirmsByDefault(name, args)) return { class: "WRITE_LOCAL" };
   return { class: "WRITE_CAIRN" };
 }
 

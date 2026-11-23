@@ -69,6 +69,20 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
 /** `people` actions that only read: no approval, and their results are privacy-scrubbed like other reads. */
 export const PEOPLE_READ_ACTIONS: ReadonlySet<string> = new Set(["query", "get", "timeline", "relationships", "inventory", "teams"]);
 
+/**
+ * Calls that ask before they run even where other Cairn data writes are allowed:
+ * they remove something (a note or task, a person from the lists, a team) or fold
+ * two people into one. Desktop raises these to an approval; mobile shows a
+ * Confirm / Cancel card. Restoring an archived person (`remove: true`) is not one.
+ */
+export function confirmsByDefault(name: string, args: Record<string, unknown> = {}): boolean {
+  if (name === "delete") return true;
+  if (name !== "people") return false;
+  const action = String(args.action);
+  if (action === "archive") return args.remove !== true;
+  return action === "merge" || action === "team_delete";
+}
+
 /** Risk of one call: like riskForTool, except `people` reads are READ. */
 export function riskForCall(name: string, args: Record<string, unknown> = {}): RiskClass {
   if (name === "people" && PEOPLE_READ_ACTIONS.has(String(args.action))) return "READ";

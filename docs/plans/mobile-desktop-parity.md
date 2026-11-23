@@ -172,7 +172,7 @@ Recommended graph batch: people and meeting nodes, neighbourhood focus, then the
 | Desktop | Mobile | Migrate? |
 |---|---|---|
 | Streaming chat, tools | Yes | done |
-| Approval before a delete | **Yes**: the `delete` tool waits on a Delete / Cancel card in the chat (`confirm-store`); Cancel tells the model to leave it | Done. People `archive` / `team_delete` still run without a card |
+| Approval before a delete | **Yes**: every tool goes through `guardConfirm` (`confirm-gate.ts`), which shows a Confirm / Cancel card for the calls the shared `confirmsByDefault` rule names: `delete`, People archive, merge and team delete (desktop asks for the same set) | Done. To gate more calls, add them to `confirmsByDefault`. Not gated yet: connector (MCP/service) calls, which desktop asks about |
 | Expandable tool cards showing what changed | Yes (PR 334) | done |
 | Provider, model, temperature, max steps | Yes: model chip panel | done |
 | Personalities, chat themes | Yes | done |
