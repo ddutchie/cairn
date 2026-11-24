@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { NO_HUD } from "@/games/pixel/hud";
-import { mulberry32 } from "@/games/pixel/terrain";
-import { BreakoutSim, MAX_COLS, MIN_COLS, ROWS } from "./sim";
+import { NO_HUD } from "@cairn/shared/arcade/pixel/hud";
+import { mulberry32 } from "@cairn/shared/arcade/pixel/terrain";
+import { BreakoutSim, MAX_COLS, MIN_COLS, ROWS } from "@cairn/shared/arcade/breakout/sim";
 
 function started(width = 180, seed = 1) {
   const sim = new BreakoutSim({ width, height: 320, rand: mulberry32(seed) });

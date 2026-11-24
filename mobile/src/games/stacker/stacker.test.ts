@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { mulberry32 } from "@/games/pixel/terrain";
-import { PERFECT, SH, StackerSim } from "./sim";
-import { stoneSprite } from "./sprites";
+import { mulberry32 } from "@cairn/shared/arcade/pixel/terrain";
+import { PERFECT, StackerSim } from "@cairn/shared/arcade/stacker/sim";
+import { SH, stoneSprite } from "@cairn/shared/arcade/stacker/sprites";
 
 function started(seed = 1) {
   const sim = new StackerSim({ width: 180, height: 320, rand: mulberry32(seed) });

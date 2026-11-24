@@ -1,12 +1,12 @@
 /**
- * The contract between an arcade game and its host (`PixelScreen`). The host
- * binds the canvas, steps `update` at 60 Hz, calls `render` every frame and
- * forwards input in game pixels.
+ * The contract between a desktop arcade game adapter and `PixelScreen`.
+ * All game logic lives in @cairn/shared/arcade/*.
  */
 
+import type { ArcadeGameId } from "@cairn/shared/arcade/menu";
 import type { ArcadeData } from "./data";
 
-export type ArcadeGameId = "task-force" | "stacker" | "breakout" | "wayfinder" | "inbox-zero";
+export type { ArcadeGameId };
 
 export interface PixelGame {
   update(): void;
@@ -17,13 +17,16 @@ export interface PixelGame {
   up(): void;
   /** A key went down or up; returns true when the game used it. */
   key(code: string, down: boolean): boolean;
-  /** Optional hook when the host canvas width changes mid-run (live `W` already updated). */
-  resize?(prevW: number): void;
+  /** Optional hook when the host canvas width changes mid-run. */
+  resize?(width: number, height: number): void;
   /** Best score so far (the host persists it when it rises). */
   readonly best: number;
 }
 
 export interface GameEnv {
+  canvas: HTMLCanvasElement;
+  width: number;
+  height: number;
   data: ArcadeData;
   best: number;
 }

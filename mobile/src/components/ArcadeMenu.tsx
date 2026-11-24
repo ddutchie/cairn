@@ -3,17 +3,9 @@ import { useRouter, type Href } from "expo-router";
 import { getMeta } from "@/db";
 import { haptics } from "@/haptics";
 import { PixelGameView, type PixelGame, type PixelGameSpec } from "@/components/PixelGameView";
-import { ArcadeRenderer } from "@/games/arcade/render";
-import { ArcadeMenu, type ArcadeEvent, type ArcadeGameId } from "@/games/arcade/menu";
-
-/** Best-score meta keys of each game (see their views). */
-const BEST_KEYS: Record<ArcadeGameId, string> = {
-  "task-force": "taskforce_best",
-  wayfinder: "wayfinder_best",
-  "inbox-zero": "inboxzero_best",
-  stacker: "stacker_best",
-  breakout: "breakout_best",
-};
+import { skiaBackend } from "@/games/pixel/skia-backend";
+import { ArcadeMenu, CARTRIDGES, type ArcadeEvent, type ArcadeGameId } from "@cairn/shared/arcade/menu";
+import { ArcadeRenderer } from "@cairn/shared/arcade/menu-render";
 
 function readBest(key: string): number {
   const n = parseInt(getMeta(key) ?? "", 10);
@@ -21,9 +13,9 @@ function readBest(key: string): number {
 }
 
 function createArcade({ width, height, hud }: PixelGameSpec): PixelGame<ArcadeEvent> {
-  const bests = Object.fromEntries(Object.entries(BEST_KEYS).map(([id, key]) => [id, readBest(key)]));
-  const menu = new ArcadeMenu({ width, height, hud, bests });
-  const renderer = new ArcadeRenderer(menu);
+  const bests = Object.fromEntries(CARTRIDGES.map((c) => [c.id, readBest(c.bestKey)])) as Partial<Record<ArcadeGameId, number>>;
+  const menu = new ArcadeMenu({ width, height, hud, inputMode: "touch", bests });
+  const renderer = new ArcadeRenderer(skiaBackend, menu);
   return {
     events: menu.events,
     best: 0,
@@ -46,7 +38,6 @@ export function ArcadeView() {
   const onEvent = useCallback(
     (e: ArcadeEvent) => {
       if (e === "select") return haptics.impactMedium();
-      // Swap the arcade for the game, so Close goes straight back to the app.
       router.replace(`/${e.slice("open:".length)}` as Href);
     },
     [router],

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { clip, fontAtlasPixels, glyphIndices, CHARSET, textWidth } from "@/games/pixel/font";
-import { ENEMIES, PLAYER } from "./models";
-import { makeModel } from "@/games/pixel/models";
-import { DEMO_LEVELS, TaskForceSim, type Level } from "./sim";
-import { CHUNK, MARGIN, SEA, Terrain, chunkTop, mulberry32, visibleChunks } from "@/games/pixel/terrain";
+import { clip, fontAtlasPixels, glyphIndices, CHARSET, textWidth } from "@cairn/shared/arcade/pixel/font";
+import { ENEMIES, PLAYER } from "@cairn/shared/arcade/task-force/models";
+import { makeModel } from "@cairn/shared/arcade/pixel/models";
+import { DEMO_LEVELS, TaskForceSim, type Level } from "@cairn/shared/arcade/task-force/sim";
+import { CHUNK, MARGIN, SEA, Terrain, chunkTop, mulberry32, visibleChunks } from "@cairn/shared/arcade/pixel/terrain";
 
 describe("terrain", () => {
   it("is deterministic for a seed", () => {

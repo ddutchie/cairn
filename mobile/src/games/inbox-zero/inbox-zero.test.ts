@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { DEMO_ARCADE_PROJECTS } from "@/games/pixel/arcade-data";
-import { NO_HUD } from "@/games/pixel/hud";
-import { CELL, CORE_GX, InboxZeroSim, canBuildCore } from "./sim";
+import { DEMO_ARCADE_PROJECTS } from "@cairn/shared/arcade/pixel/arcade-data";
+import { NO_HUD } from "@cairn/shared/arcade/pixel/hud";
+import { CELL, CORE_GX, InboxZeroSim, canBuildCore } from "@cairn/shared/arcade/inbox-zero/sim";
 
 describe("InboxZeroSim", () => {
   it("centers the flow and shop clear of Duo side rails", () => {

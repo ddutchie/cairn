@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { NO_HUD } from "@/games/pixel/hud";
-import { ArcadeMenu } from "./menu";
+import { NO_HUD } from "@cairn/shared/arcade/pixel/hud";
+import { ArcadeMenu } from "@cairn/shared/arcade/menu";
 
 describe("arcade menu", () => {
   it("lays the cartridges out inside the playfield, clear of the rail", () => {

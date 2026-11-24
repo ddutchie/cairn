@@ -2,28 +2,28 @@
 
 /**
  * Hosts one arcade game: a canvas 320 game pixels tall, upscaled with
- * nearest-neighbour to fill the view's height. With `fit`, the canvas is as
- * wide as the view's shape allows (the phone shape at least, 480 px at most);
- * without it, it keeps the phone shape. Games that implement `resize` re-bind
- * when the container resizes; others keep their start width and rescale. A fixed
- * 60 Hz step pauses while the window is hidden; pointer input arrives in game
- * pixels, keys while mounted.
+ * nearest-neighbour interpolation, stepping at 60 Hz with localStorage best
+ * score persistence and live resize handling.
  */
 
 import { useEffect, useRef, useState } from "react";
-import { useContainerDims } from "@/lib/viz/hooks";
+import { clamp } from "@cairn/shared/arcade/pixel/kinds";
 import { storage } from "@/lib/storage";
+import { useContainerDims } from "@/lib/viz/hooks";
 import type { ArcadeData } from "./data";
 import type { GameFactory, PixelGame } from "./game";
-import { H, MAX_W, MIN_W, bindScreen, clamp } from "./pixel/kit";
+
+export const H = 320;
+export const MIN_W = 180;
+export const MAX_W = 960;
+const STEP = 1000 / 60;
 
 export const bestKey = (id: string) => `arcadeBest:${id}`;
-export const loadBest = (id: string): number => {
-  const v = storage.get<number>(bestKey(id));
-  return typeof v === "number" && Number.isFinite(v) ? v : 0;
-};
 
-const STEP = 1000 / 60;
+export function loadBest(id: string): number {
+  const n = storage.get<unknown>(bestKey(id));
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0;
+}
 
 export function PixelScreen({
   id,
@@ -32,13 +32,10 @@ export function PixelScreen({
   fit = true,
   onExit,
 }: {
-  /** Best-score key. */
   id: string;
   factory: GameFactory;
   data: ArcadeData;
-  /** Fill the view's width (else keep the 180-wide phone shape). */
   fit?: boolean;
-  /** Escape pressed. */
   onExit?: () => void;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
@@ -48,6 +45,7 @@ export function PixelScreen({
   useEffect(() => {
     exitRef.current = onExit;
   }, [onExit]);
+
   const { width, height } = useContainerDims(boxRef);
   const [gameW, setGameW] = useState(MIN_W);
   const k = Math.max(0.5, Math.min(width / gameW, height / H));
@@ -57,17 +55,26 @@ export function PixelScreen({
     const box = boxRef.current;
     if (!canvas || !box) return;
     const scale = Math.max(0.5, box.clientHeight / H);
-    bindScreen(canvas, fit ? Math.floor(box.clientWidth / scale) : MIN_W);
-    setGameW(canvas.width);
+    const initialW = fit ? Math.round(clamp(Math.floor(box.clientWidth / scale), MIN_W, MAX_W)) : MIN_W;
+    canvas.width = initialW;
+    canvas.height = H;
+    setGameW(initialW);
+
     let best = loadBest(id);
-    const game = factory({ data, best });
+    const game = factory({ canvas, width: initialW, height: H, data, best });
     gameRef.current = game;
-    let raf = 0, last = performance.now(), acc = 0, wasHidden = document.hidden;
+
+    let raf = 0;
+    let last = performance.now();
+    let acc = 0;
+    let wasHidden = document.hidden;
+
     const onVisibility = () => {
       wasHidden = true;
       acc = 0;
     };
     document.addEventListener("visibilitychange", onVisibility);
+
     const frame = (now: number) => {
       if (document.hidden) {
         wasHidden = true;
@@ -105,7 +112,6 @@ export function PixelScreen({
         return;
       }
       if (el && el.closest("button,a,[role='button'],[role='menuitem']")) return;
-      // Held Space / Enter would re-trigger drops and launches; arrows may repeat.
       if (e.repeat && (e.code === "Space" || e.code === "Enter")) {
         e.preventDefault();
         return;
@@ -117,6 +123,7 @@ export function PixelScreen({
     window.addEventListener("keyup", onKey);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
+
     return () => {
       cancelAnimationFrame(raf);
       document.removeEventListener("visibilitychange", onVisibility);
@@ -136,10 +143,8 @@ export function PixelScreen({
     const scale = Math.max(0.5, height / H);
     const nextW = Math.round(clamp(Math.floor(width / scale), MIN_W, MAX_W));
     if (nextW === canvas.width) return;
-    const prevW = canvas.width;
-    bindScreen(canvas, nextW);
-    setGameW(canvas.width);
-    game.resize(prevW);
+    setGameW(nextW);
+    game.resize(nextW, H);
     game.render();
   }, [width, height, fit]);
 
@@ -161,8 +166,6 @@ export function PixelScreen({
       onPointerMove={(e) => gameRef.current?.move(...toGame(e))}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {/* No width/height props: bindScreen owns them, and React re-setting
-          them would clear the canvas and its pixelated smoothing state. */}
       <canvas
         ref={canvasRef}
         className="block touch-none"

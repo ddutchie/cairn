@@ -1,13 +1,14 @@
 import { loadArcadeProjects } from "@/db/arcade";
 import { haptics } from "@/haptics";
 import { PixelGameView, type PixelGame, type PixelGameSpec } from "@/components/PixelGameView";
-import { WayfinderRenderer } from "@/games/wayfinder/render";
-import { WayfinderSim, type WayfinderEvent } from "@/games/wayfinder/sim";
+import { skiaBackend } from "@/games/pixel/skia-backend";
+import { WayfinderRenderer } from "@cairn/shared/arcade/wayfinder/render";
+import { WayfinderSim, type WayfinderEvent } from "@cairn/shared/arcade/wayfinder/sim";
 
 function createWayfinder({ width, height, hud, best }: PixelGameSpec): PixelGame<WayfinderEvent> {
   const { projects } = loadArcadeProjects();
-  const sim = new WayfinderSim({ width, height, projects, hud, best });
-  const renderer = new WayfinderRenderer(sim);
+  const sim = new WayfinderSim({ width, height, hud, inputMode: "touch", best, projects });
+  const renderer = new WayfinderRenderer(skiaBackend, sim);
   return {
     events: sim.events,
     get best() {
@@ -29,25 +30,25 @@ function createWayfinder({ width, height, hud, best }: PixelGameSpec): PixelGame
 
 function onEvent(e: WayfinderEvent): void {
   switch (e) {
-    case "start": return haptics.impactMedium();
-    case "chart": return haptics.selection();
-    case "lost": return haptics.impact();
-    case "load": return haptics.selection();
-    case "deliver": return haptics.impactMedium();
-    case "late": return haptics.warning();
-    case "aground": return haptics.impact();
-    case "kraken": return haptics.error();
-    case "escape": return haptics.success();
-    case "catch": return haptics.selection();
-    case "done": return haptics.success();
+    case "start":
+    case "deliver":
+    case "escape":
+      return haptics.impactMedium();
+    case "chart":
+    case "lost":
+    case "load":
+    case "catch":
+    case "done":
+      return haptics.impact();
+    case "late":
+      return haptics.warning();
+    case "aground":
+    case "kraken":
+      return haptics.impactHeavy();
   }
 }
 
-/**
- * Hidden easter-egg Wayfinder (the `/wayfinder` route): sail your notes as
- * islands, deliver today's tasks to their project harbours, and chart notes
- * hidden in the fog.
- */
+/** Wayfinder sailing easter-egg (`/wayfinder`). */
 export function WayfinderView() {
   return <PixelGameView create={createWayfinder} bestKey="wayfinder_best" onEvent={onEvent} />;
 }

@@ -32,6 +32,7 @@
     "./format/date": "./format/date.ts",
     "./format": "./format/index.ts",
     "./ui/constants": "./ui/constants.ts",
+    "./arcade/*": "./arcade/*.ts",
     "./*": "./*.ts",
     "./*.ts": "./*.ts"
   }

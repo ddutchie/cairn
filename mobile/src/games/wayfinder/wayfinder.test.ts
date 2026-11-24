@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { DEMO_ARCADE_PROJECTS } from "@/games/pixel/arcade-data";
-import { NO_HUD } from "@/games/pixel/hud";
-import { WD, WayfinderSim } from "./sim";
+import { DEMO_ARCADE_PROJECTS } from "@cairn/shared/arcade/pixel/arcade-data";
+import { NO_HUD } from "@cairn/shared/arcade/pixel/hud";
+import { WD, WayfinderSim } from "@cairn/shared/arcade/wayfinder/sim";
 
 describe("WayfinderSim", () => {
   it("builds harbours, note islands, crates, and overdue storms from workspace projects", () => {
@@ -46,5 +46,19 @@ describe("WayfinderSim", () => {
     // Boat starts near Today lighthouse so crates load immediately
     expect(sim.boat.cargo.length).toBeGreaterThan(0);
     expect(sim.events).toContain("load");
+  });
+
+  it("bobs gently in place on the title screen with fishing and swimming crew", () => {
+    const sim = new WayfinderSim({ width: 220, height: 380, projects: DEMO_ARCADE_PROJECTS });
+    const startX = sim.boat.x;
+    const startY = sim.boat.y;
+    for (let i = 0; i < 240; i++) sim.step();
+    expect(sim.boat.x).toBe(startX);
+    expect(sim.boat.y).toBe(startY);
+    expect(Math.abs(sim.boat.a)).toBeLessThanOrEqual(0.15);
+    expect(sim.crew.cast).toBeGreaterThan(0);
+    expect(sim.crew.swim).toBe("swim");
+    expect(sim.score).toBe(0);
+    expect(sim.events).toEqual([]);
   });
 });

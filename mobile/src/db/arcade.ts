@@ -6,30 +6,18 @@
  */
 
 import type { Priority } from "@cairn/shared/types/domain";
-import { ACCENTS, DEMO_ARCADE_PROJECTS, type ArcadeProject } from "@/games/pixel/arcade-data";
-import { BIOME_ORDER, hash2 } from "@/games/pixel/terrain";
+import { ACCENTS, DEMO_ARCADE_PROJECTS, cleanArcadeTitle, dueMinutes, type ArcadeProject } from "@cairn/shared/arcade/pixel/arcade-data";
+import { BIOME_ORDER } from "@cairn/shared/arcade/pixel/terrain";
 import { getDb } from "./index";
 import { LIVE, NOT_CONFLICT } from "./sql";
 
-export { ACCENTS, DEMO_ARCADE_PROJECTS, type ArcadeNote, type ArcadeProject, type ArcadeTask } from "@/games/pixel/arcade-data";
+export { ACCENTS, DEMO_ARCADE_PROJECTS, dueMinutes, type ArcadeNote, type ArcadeProject, type ArcadeTask } from "@cairn/shared/arcade/pixel/arcade-data";
 
 const PRIORITIES: Priority[] = ["low", "medium", "high", "urgent"];
 const PRIORITY_RANK: Record<Priority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 const MAX_PROJECTS = 6;
 const MAX_TASKS = 12;
 const MAX_NOTES = 8;
-const MAX_TITLE = 28;
-
-function clean(s: string): string {
-  const out = s
-    .toUpperCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^A-Z0-9:.\-!/'?+ ,&#()]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return out.slice(0, MAX_TITLE) || "UNTITLED";
-}
 
 function parseIds(raw: string | null): string[] {
   if (!raw) return [];
@@ -39,17 +27,6 @@ function parseIds(raw: string | null): string[] {
   } catch {
     return [];
   }
-}
-
-export function dueMinutes(due: string | null | undefined, now: Date, seed: number): { dueMin: number; overdue: boolean } {
-  const start = new Date(now);
-  start.setHours(9, 0, 0, 0);
-  if (!due) return { dueMin: 120 + Math.round(hash2(seed, 3, 9) * 400), overdue: false };
-  const d = new Date(due.length <= 10 ? `${due}T17:00:00` : due);
-  if (Number.isNaN(d.getTime())) return { dueMin: 300, overdue: false };
-  const mins = Math.round((d.getTime() - start.getTime()) / 60_000);
-  if (d < start) return { dueMin: Math.max(-540, Math.min(-30, mins)), overdue: true };
-  return { dueMin: Math.min(520, Math.max(45, mins)), overdue: false };
 }
 
 export function listArcadeProjects(now = new Date()): ArcadeProject[] {
@@ -86,12 +63,12 @@ export function listArcadeProjects(now = new Date()): ArcadeProject[] {
 
   return gathered.map((x, i) => ({
     id: x.p.id,
-    name: clean(x.p.name),
+    name: cleanArcadeTitle(x.p.name),
     accent: ACCENTS[i % ACCENTS.length],
     biome: BIOME_ORDER[i % BIOME_ORDER.length],
     tasks: x.tasks
       .map((t) => ({
-        title: clean(t.title),
+        title: cleanArcadeTitle(t.title),
         priority: (PRIORITIES as string[]).includes(t.priority) ? (t.priority as Priority) : "medium",
         due: t.due_date,
       }))
@@ -104,7 +81,7 @@ export function listArcadeProjects(now = new Date()): ArcadeProject[] {
       })),
     notes: x.notes.map((n) => ({
       id: n.id,
-      title: clean(n.title),
+      title: cleanArcadeTitle(n.title),
       words: Math.max(80, (n.content?.trim().length ?? 0) * 6),
       links: parseIds(n.linked_note_ids).filter((id) => id !== n.id && noteIds.has(id)),
     })),

@@ -3,8 +3,8 @@ import type { BoardColumn, TaskCard } from "@cairn/shared/types/board";
 import type { Note } from "@cairn/shared/types/notes";
 import type { Project, Tag } from "@cairn/shared/types/workspace";
 import { buildArcadeData, interleave } from "./data";
-import { BW, fitBricksToWidth, type Brick } from "./games/breakout";
-import { fontSafe } from "./pixel/kit";
+import { BW, fitBricksToWidth, type Brick } from "@cairn/shared/arcade/breakout/sim";
+import { fontSafe } from "@cairn/shared/arcade/pixel/font";
 
 const TS = "2026-11-24T10:00:00.000Z";
 

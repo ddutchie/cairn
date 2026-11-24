@@ -4,7 +4,8 @@ import { Canvas, Image, type SkImage } from "@shopify/react-native-skia";
 import { getMeta, setMeta } from "@/db";
 import { useModalOpenHaptic } from "@/haptics";
 import { hudFromInsets, type PixelHud } from "@/games/pixel/hud";
-import { INK, SAMPLING } from "@/games/pixel/painter";
+import { INK } from "@cairn/shared/arcade/pixel/painter";
+import { SAMPLING } from "@/games/pixel/skia-backend";
 import { useCornerSafeInsets } from "@/lib/use-corner-safe-insets";
 import { useMotion } from "@/lib/use-motion";
 

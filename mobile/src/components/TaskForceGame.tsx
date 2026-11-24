@@ -1,30 +1,25 @@
 import { listTaskForceLevels } from "@/db/task-force";
 import { haptics } from "@/haptics";
 import { PixelGameView, type PixelGame, type PixelGameSpec } from "@/components/PixelGameView";
-import { BIOME_ORDER } from "@/games/pixel/terrain";
-import { TaskForceRenderer } from "@/games/task-force/render";
-import { DEMO_LEVELS, TaskForceSim, type GameEvent, type Level } from "@/games/task-force/sim";
+import { skiaBackend } from "@/games/pixel/skia-backend";
+import { BIOME_ORDER } from "@cairn/shared/arcade/pixel/terrain";
+import { DEMO_LEVELS, type Level } from "@cairn/shared/arcade/task-force/models";
+import { TaskForceRenderer } from "@cairn/shared/arcade/task-force/render";
+import { TaskForceSim, type TaskForceEvent } from "@cairn/shared/arcade/task-force/sim";
 
-/** Drags move the jet a little further than the finger, like a trackpad. */
-const DRAG_GAIN = 1.25;
-
-/** Each live project with open tasks is a level; biomes cycle so every level looks different. */
-function buildLevels(): Level[] {
-  let rows: ReturnType<typeof listTaskForceLevels> = [];
+function workspaceLevels(): Level[] {
   try {
-    rows = listTaskForceLevels();
+    const rows = listTaskForceLevels();
+    if (!rows.length) return DEMO_LEVELS;
+    return rows.map((r, i) => ({ ...r, biome: BIOME_ORDER[i % BIOME_ORDER.length] }));
   } catch {
-    rows = [];
+    return DEMO_LEVELS;
   }
-  const levels = rows
-    .filter((r) => r.tasks.length > 0)
-    .map((r, i) => ({ name: r.name, biome: BIOME_ORDER[i % BIOME_ORDER.length], tasks: r.tasks, notes: r.notes }));
-  return levels.length ? levels : DEMO_LEVELS;
 }
 
-function createTaskForce({ width, height, hud, best }: PixelGameSpec): PixelGame<GameEvent> {
-  const sim = new TaskForceSim({ width, height, levels: buildLevels(), hud, best });
-  const renderer = new TaskForceRenderer(sim);
+function createTaskForce({ width, height, hud, best }: PixelGameSpec): PixelGame<TaskForceEvent> {
+  const sim = new TaskForceSim({ width, height, hud, inputMode: "touch", best, levels: workspaceLevels() });
+  const renderer = new TaskForceRenderer(skiaBackend, sim);
   return {
     events: sim.events,
     get best() {
@@ -38,31 +33,41 @@ function createTaskForce({ width, height, hud, best }: PixelGameSpec): PixelGame
     },
     step: () => sim.step(),
     draw: () => renderer.draw(),
-    // A tap starts / retries / continues; a drag steers relative to the finger.
-    down: () => sim.tap(),
-    move: (_x, _y, dx, dy) => sim.nudge(dx * DRAG_GAIN, dy * DRAG_GAIN),
+    down() {
+      sim.tap();
+    },
+    move(_x, _y, dx, dy) {
+      if (sim.state === "play" || sim.state === "boss" || sim.state === "intro" || sim.state === "clear") {
+        sim.nudge(dx, dy);
+      }
+    },
   };
 }
 
-function onEvent(e: GameEvent): void {
+function onEvent(e: TaskForceEvent): void {
   switch (e) {
-    case "start": return haptics.impactMedium();
-    case "kill": return haptics.impact();
-    case "kill-big": return haptics.impactHeavy();
-    case "boss-down": return haptics.impactHeavy();
-    case "hit": return haptics.error();
-    case "pickup": return haptics.selection();
-    case "boss": return haptics.warning();
-    case "clear": return haptics.success();
-    case "over": return haptics.error();
-    case "carried": return;
+    case "start":
+    case "clear":
+      return haptics.impactMedium();
+    case "kill":
+    case "pickup":
+      return haptics.impact();
+    case "kill-big":
+    case "boss":
+    case "boss-down":
+      return haptics.impactHeavy();
+    case "hit":
+      return haptics.warning();
+    case "over":
+      return haptics.error();
+    case "carried":
+      return haptics.selection();
   }
 }
 
 /**
- * Hidden easter-egg vertical shooter (the `/task-force` route). Every project
- * with open tasks is a level, its tasks are the enemy wave (priority picks the
- * ship) and its notes are pickups.
+ * Hidden easter-egg Task Force game (the `/task-force` route): each level is
+ * a project flying over its biome islands; open tasks are enemy waves.
  */
 export function TaskForceView() {
   return <PixelGameView create={createTaskForce} bestKey="taskforce_best" onEvent={onEvent} />;
