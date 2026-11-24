@@ -33,6 +33,18 @@ export { RouteErrorBoundary as ErrorBoundary };
 SplashScreen.preventAutoHideAsync().catch(() => {});
 SplashScreen.setOptions({ duration: 300, fade: true });
 
+/** Routes of the hidden pixel games (EmptyState's secret menu). */
+const PIXEL_GAME_ROUTES = ["arcade", "task-force", "stacker", "breakout"] as const;
+const PIXEL_GAME_OPTIONS = {
+  title: "",
+  presentation: "fullScreenModal",
+  headerTransparent: true,
+  headerStyle: { backgroundColor: "transparent" },
+  headerShadowVisible: false,
+  scrollEdgeEffects: { top: "hidden", bottom: "hidden", left: "hidden", right: "hidden" },
+  contentStyle: { backgroundColor: "#0a0f1e" },
+} as const;
+
 export default function RootLayout() {
   const t = useTheme();
   const scheme = useColorScheme();
@@ -266,6 +278,12 @@ function RootNavigator({
       <Stack.Screen name="attendee-picker" options={{ title: "Add attendees", presentation: "modal", contentStyle: cardStyle }} />
       {/* Settings is one modal with its own stack (app/settings/_layout.tsx): hub, AI, tools, appearance, sync. */}
       <Stack.Screen name="settings" options={{ headerShown: false, presentation: "modal", contentStyle: cardStyle }} />
+      {/* The hidden pixel games: full-bleed under a transparent bar, so their
+          Close item floats over the game (in the side rail on the Duo). Each game
+          draws its own backdrop; no side padding means it runs under the rail. */}
+      {PIXEL_GAME_ROUTES.map((name) => (
+        <Stack.Screen key={name} name={name} options={PIXEL_GAME_OPTIONS} />
+      ))}
       <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
       <Stack.Screen name="restore" options={{ title: "Deleted Notes" }} />
       {/* Native iOS sheets for the contextual pickers (tags, move,
