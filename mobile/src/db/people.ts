@@ -335,6 +335,28 @@ export function loadOpenItems(person: Person): OpenItems {
   return out;
 }
 
+/**
+ * Open action items the user owns, across every note (not only a person's).
+ * Empty when no "me" person is set: ownership can't be resolved without one.
+ */
+export function loadMyOpenItems(limit = 20): OpenItem[] {
+  const ws = peopleWorkspaceId();
+  if (!ws) return [];
+  const db = peopleDb();
+  const me = pq.getMe(db, ws);
+  if (!me) return [];
+  const candidates = loadCandidates(db, ws);
+  const out: OpenItem[] = [];
+  for (const n of notesWithOpenTasks(ws)) {
+    for (const item of ownedItemsIn(n.content ?? "", candidates)) {
+      if (item.done || item.ownerPersonId !== me.id) continue;
+      out.push({ bodyDigest: digest(n.content ?? ""), noteId: n.id, noteTitle: n.title, lineKey: item.lineKey, text: item.text, ownerText: item.ownerText });
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}
+
 /** Just the person (no timeline or open items), or null when they are gone: what the edit forms read. */
 export function loadPerson(personId: string): Person | null {
   return pq.getPerson(peopleDb(), personId);

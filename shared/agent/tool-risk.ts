@@ -112,8 +112,13 @@ export function needsApprovalForCall(name: string, args: Record<string, unknown>
   return needsApproval(name);
 }
 
+/** A tool that reaches a user-configured external server: an MCP tool (`mcp__`) or an HTTP service operation (`svc__`). */
+export function isConnectorTool(name: string): boolean {
+  return /^(?:mcp|svc)__/.test(name);
+}
+
 export function riskForTool(name: string): RiskClass {
-  if (/^(?:mcp|svc)__/.test(name)) return "EXTERNAL";
+  if (isConnectorTool(name)) return "EXTERNAL";
   // Shared MCP resource tools (engine-mcp-resources): they reach a user-configured
   // external server just like its mcp__ tools, so they carry the same class.
   if (name === "list_mcp_resources" || name === "list_mcp_resource_templates" || name === "read_mcp_resource") return "EXTERNAL";

@@ -13,6 +13,9 @@ export const DEEP_LINK_SCHEME = "cairn";
 /** The redirect target advertised to authorization servers on the deep-link path. */
 export const OAUTH_REDIRECT_URI = "cairn://oauth/callback";
 
+/** The https page that forwards to OAUTH_REDIRECT_URI. The default address Cairn advertises. */
+export const OAUTH_BOUNCE_URI = "https://gerardbuilds.com/cairn/oauth";
+
 export interface OAuthCallback {
   code: string;
   /**

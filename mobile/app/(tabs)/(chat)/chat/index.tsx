@@ -23,7 +23,7 @@ import { useTheme, withAlpha, type as typeScale, type Theme, KEYBOARD_OPEN_GAP }
 import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { skipQuestions, usePendingQuestions } from "@/chat/questions-store";
 import { QuestionCard } from "@/components/chat/QuestionCard";
-import { cancelConfirm, usePendingConfirm } from "@/chat/confirm-store";
+import { cancelConfirm, clearSessionAllows, usePendingConfirm } from "@/chat/confirm-store";
 import { ConfirmCard } from "@/components/chat/ConfirmCard";
 import { haptics, toolbarPress } from "@/haptics";
 import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, recordChatUsage, type ToolCall } from "@/db/chat-store";
@@ -398,6 +398,8 @@ export default function ChatScreen() {
 
   const clearNow = useCallback(() => {
     clearChatHistory();
+    // At the chat boundary, so a grant given during a deferred clear's last turn doesn't carry into the next chat.
+    clearSessionAllows();
     conversation.current = [];
     setMessages([]);
     setVisibleCount(CHAT_PAGE_SIZE);
@@ -651,6 +653,7 @@ export default function ChatScreen() {
           }
           skipQuestions();
           cancelConfirm();
+          clearSessionAllows();
           if (!busy) clearNow();
         },
       },

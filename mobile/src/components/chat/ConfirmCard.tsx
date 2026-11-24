@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { cancelConfirm, confirmPending, type PendingConfirm } from "@/chat/confirm-store";
+import { allowForSession, cancelConfirm, confirmPending, type PendingConfirm } from "@/chat/confirm-store";
 import { haptics } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
@@ -16,6 +16,13 @@ export function ConfirmCard({ pending }: { pending: PendingConfirm }) {
     haptics.warning();
     confirmPending();
   };
+  const always = () => {
+    if (!pending.rememberKey) return;
+    haptics.selection();
+    allowForSession(pending.rememberKey);
+    confirmPending();
+  };
+  const neutral = pending.tone === "neutral";
   const cancel = () => {
     haptics.selection();
     cancelConfirm();
@@ -29,8 +36,13 @@ export function ConfirmCard({ pending }: { pending: PendingConfirm }) {
         <Pressable onPress={cancel} hitSlop={8} accessibilityRole="button" style={s.cancel}>
           <Text style={s.cancelText}>Cancel</Text>
         </Pressable>
-        <Pressable onPress={confirm} accessibilityRole="button" style={s.confirm}>
-          <Text style={s.confirmText}>{pending.confirmLabel}</Text>
+        {pending.rememberKey ? (
+          <Pressable onPress={always} hitSlop={8} accessibilityRole="button" accessibilityHint="Stops asking about this tool until you clear the chat" style={s.cancel}>
+            <Text style={s.cancelText}>Always allow</Text>
+          </Pressable>
+        ) : null}
+        <Pressable onPress={confirm} accessibilityRole="button" style={[s.confirm, neutral && { backgroundColor: t.accent }]}>
+          <Text style={[s.confirmText, neutral && { color: t.accentFg }]}>{pending.confirmLabel}</Text>
         </Pressable>
       </View>
     </View>

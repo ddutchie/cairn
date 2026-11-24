@@ -10,11 +10,12 @@
 import * as q from "@/db/queries";
 import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, type SemanticHit } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
-import { serviceToolDefs } from "./services";
+import { listInstalledServices, serviceToolDefs } from "./services";
 import { isToolEnabled } from "./tool-toggles";
 import { getCachedMcpToolDefs, getInstalledMcpServer, toRuntimeConfig } from "./mcp-store";
 import * as mcpClient from "./mcp-client";
 import { parseToolName } from "@cairn/shared/chat/mcp-namespace";
+import { parseServiceToolName } from "@cairn/shared/chat/service-exec";
 import { isOverdue, isDueWithin } from "@cairn/shared/notes/due";
 import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_PARAM_DESCRIPTIONS as PD, PEOPLE_TOOL_DESCRIPTION } from "@cairn/shared/agent/people-tools";
 import { isReadCall, refusesHiddenNoteWrite, scrubHidden } from "@cairn/shared/agent/people-privacy";
@@ -27,7 +28,7 @@ import { cardChanges, type ToolChange } from "@cairn/shared/conversation/tool-vi
 import { notifyLocalWrite } from "@/sync/write-signal";
 import { parseQuestions, formatAnswers } from "@cairn/shared/chat/questions";
 import { askQuestions } from "./questions-store";
-import { askConfirm } from "./confirm-store";
+import { askConfirm, isAllowedForSession } from "./confirm-store";
 import { CANCELLED_RESULT, confirmRequestFor, type ConfirmLookup } from "./confirm-gate";
 
 export interface ToolDef {
@@ -524,7 +525,7 @@ const BASE_TOOLS: ToolDef[] = [
   {
     name: "get_today",
     description:
-      "What needs the user today, from this phone's synced data: overdue tasks, tasks due today, today's meetings, and people they are overdue to meet. Read-only. This is not the desktop's AI brief (that does not sync), so say so if asked for it.",
+      "What needs the user today, from this phone's synced data: overdue tasks, tasks due today, today's meetings with the free time left, open action items they own, and people they are overdue to meet. Read-only. This is not the desktop's AI brief (that does not sync), so say so if asked for it.",
     params: "{}",
     jsonSchema: obj({}),
     run: () => {
@@ -537,6 +538,8 @@ const BASE_TOOLS: ToolDef[] = [
         dueToday: d.dueToday.map(task),
         meetings: d.meetings.map((m) => ({ id: m.id, title: m.title, startsAt: m.startsAt, endsAt: m.endsAt ?? null })),
         peopleDue: d.peopleDue.map((p) => ({ id: p.id, name: p.name, daysOverCadence: p.daysOver })),
+        youOwe: d.youOwe.map((i) => ({ noteId: i.noteId, note: i.noteTitle, text: i.text })),
+        freeTime: { minutesLeft: d.day.freeLeft, longestMinutes: d.day.largestFree, meetingsLeft: d.day.meetingsLeft },
       };
     },
   },
@@ -714,6 +717,12 @@ const CONFIRM_LOOKUP: ConfirmLookup = {
   noteTitle: (id) => q.getNote(id)?.title ?? undefined,
   taskTitle: (id) => q.getCard(id)?.title ?? undefined,
   personName: (id) => getPerson(peopleDb(), id)?.name,
+  connectorName: (tool) => {
+    const mcp = parseToolName(tool);
+    if (mcp) return getInstalledMcpServer(mcp.serverId)?.name;
+    const svc = parseServiceToolName(tool);
+    return svc ? listInstalledServices().find((x) => x.id === svc.serviceId)?.name : undefined;
+  },
 };
 
 /**
@@ -727,7 +736,7 @@ export function guardConfirm(t: ToolDef, lookup: ConfirmLookup = CONFIRM_LOOKUP)
     ...t,
     run: async (args) => {
       const req = confirmRequestFor(t.name, args, lookup);
-      if (req && !(await askConfirm(req))) return CANCELLED_RESULT;
+      if (req && !(req.rememberKey && isAllowedForSession(req.rememberKey)) && !(await askConfirm(req))) return CANCELLED_RESULT;
       return t.run(args);
     },
   };

@@ -86,8 +86,8 @@ Desktop: `TodayView` over the brief that the Today automation writes. Mobile: th
 | People due to meet (rhythm) | Yes | done |
 | Live line, pin, widget link | Yes: Workspace row, pinnable accessory | done |
 | `get_today` chat tool | Yes: local digest | done |
-| Day strip with free time (`dayBlocks`) | No | **Yes, S**: `dayBlocks` is already pure in `shared/today/` and meetings are on the phone |
-| Open action items (you owe / they owe) | No on Today; the person page has them (`loadOpenItems`) | **Yes, S**: a "You owe" section across people |
+| Day strip with free time (`dayBlocks`) | Yes: "Your day" on Today | done |
+| Open action items (you owe / they owe) | Partial: "You owe" on Today (needs "me" set); "they owe" stays on the person page | done for the phone's job |
 | Your projects facts (`today-facts.ts`) | No | Medium, M: port the queries to mobile, keep the shaping in `shared/today/` |
 | Headline, stat tiles | No | Low, S once the facts exist |
 | AI lanes: Need you, Prepared for you, Moving without you | No | **L**: needs the brief published (see "What syncs"). Recommended transport: a synced `today_briefs` row per workspace and day |
@@ -172,7 +172,7 @@ Recommended graph batch: people and meeting nodes, neighbourhood focus, then the
 | Desktop | Mobile | Migrate? |
 |---|---|---|
 | Streaming chat, tools | Yes | done |
-| Approval before a delete | **Yes**: every tool goes through `guardConfirm` (`confirm-gate.ts`), which shows a Confirm / Cancel card for the calls the shared `confirmsByDefault` rule names: `delete`, People archive, merge and team delete (desktop asks for the same set) | Done. To gate more calls, add them to `confirmsByDefault`. Not gated yet: connector (MCP/service) calls, which desktop asks about |
+| Approval before a delete | **Yes**: every tool goes through `guardConfirm` (`confirm-gate.ts`), which shows a Confirm / Cancel card for the calls the shared `confirmsByDefault` rule names: `delete`, People archive, merge and team delete (desktop asks for the same set) | Done. To gate more calls, add them to `confirmsByDefault`. Connector (MCP/service) calls also ask, with an Always allow for the rest of the chat, like desktop |
 | Expandable tool cards showing what changed | Yes (PR 334) | done |
 | Provider, model, temperature, max steps | Yes: model chip panel | done |
 | Personalities, chat themes | Yes | done |
@@ -222,7 +222,7 @@ Mobile: one Settings modal (`/settings`) with the four desktop group names.
 | Coding agent | n/a | no |
 | Writing style | Partial: read-only page (PR 336) | Low: edit |
 | Embeddings | Partial: `EmbeddingsCard`, on-device | done for the phone's job |
-| Tools (MCP, HTTP services) | Yes | done |
+| Tools (MCP, HTTP services) | Yes, plus **Add your own** MCP server with an optional own OAuth client ID (device-local). Missing: API-key headers for custom servers, OAuth for HTTP services, custom HTTP services, syncing definitions | Medium |
 | Commands | No | With slash commands |
 | Connect other agents | n/a | no |
 | Device sync | Yes | done |
