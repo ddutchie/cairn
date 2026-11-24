@@ -550,9 +550,10 @@ export function OverviewTab({
   );
 
   // Where the project's docs, channels and code live. Read-only here: add and edit on the desktop.
+  const rawLinks = project?.links;
   const projectLinks = useMemo(() => {
-    try { return normalizeLinks(project?.links ? JSON.parse(project.links) : []); } catch { return []; }
-  }, [project?.links]);
+    try { return normalizeLinks(rawLinks ? JSON.parse(rawLinks) : []); } catch { return []; }
+  }, [rawLinks]);
   const links = projectLinks.length > 0 ? (
     <View style={[styles.notesCard, { backgroundColor: t.surface, borderColor: t.border }]}>
       <Text style={[typeScale.caption, { color: t.textPrimary, fontWeight: "600" }]}>Links</Text>
