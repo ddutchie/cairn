@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Project links on the Overview: add by pasting a URL (kind and ref are detected),
  * edit, and remove. Runs against the dev server with the IPC layer mocked.
