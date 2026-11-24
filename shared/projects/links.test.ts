@@ -98,3 +98,19 @@ describe("extractLinkCandidates", () => {
     expect(found.map((f) => f.url)).toEqual(["https://e.com/new"]);
   });
 });
+
+describe("connectorForLinkKind", () => {
+  const servers = [
+    { name: "Atlassian", baseUrl: "https://mcp.atlassian.com/v1/sse", enabled: true },
+    { name: "Slack", baseUrl: "https://mcp.slack.com/mcp", enabled: false },
+    { name: "My Slack", baseUrl: "https://x.example/mcp", enabled: true },
+  ];
+  it("matches by name or address, only among enabled servers", async () => {
+    const { connectorForLinkKind } = await import("./links");
+    expect(connectorForLinkKind("confluence", servers)?.name).toBe("Atlassian");
+    expect(connectorForLinkKind("jira", servers)?.name).toBe("Atlassian");
+    expect(connectorForLinkKind("slack", servers)?.name).toBe("My Slack");
+    expect(connectorForLinkKind("figma", servers)).toBeUndefined();
+    expect(connectorForLinkKind("url", servers)).toBeUndefined();
+  });
+});

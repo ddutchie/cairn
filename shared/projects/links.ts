@@ -242,3 +242,28 @@ export function extractLinkCandidates(text: string | undefined, existing: Projec
   }
   return [...found.values()];
 }
+
+const CONNECTOR_KEYWORDS: Partial<Record<ProjectLinkKind, string[]>> = {
+  confluence: ["atlassian", "confluence"],
+  jira: ["atlassian", "jira"],
+  slack: ["slack"],
+  github: ["github"],
+  figma: ["figma"],
+  notion: ["notion"],
+  linear: ["linear"],
+  drive: ["google drive", "gdrive", "drive.google", "googleapis"],
+};
+
+/** The first enabled MCP server that looks like the one serving a link's kind, matched on its name or address. */
+export function connectorForLinkKind<T extends { name: string; baseUrl?: string; enabled: boolean }>(
+  kind: ProjectLinkKind,
+  servers: readonly T[],
+): T | undefined {
+  const words = CONNECTOR_KEYWORDS[kind];
+  if (!words) return undefined;
+  return servers.find((s) => {
+    if (!s.enabled) return false;
+    const hay = `${s.name} ${s.baseUrl ?? ""}`.toLowerCase();
+    return words.some((w) => hay.includes(w));
+  });
+}
