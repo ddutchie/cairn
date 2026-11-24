@@ -1,13 +1,13 @@
 /**
  * The Cairn Arcade: the pixel game picker the secret menu opens (pure, no
- * Skia). Three cartridges in a column; tap one, it blinks, then the host opens
+ * Skia). Five cartridges in a column; tap one, it blinks, then the host opens
  * that game.
  */
 
 import type { PixelHud } from "@/games/pixel/hud";
 import { NO_HUD } from "@/games/pixel/hud";
 
-export type ArcadeGameId = "task-force" | "stacker" | "breakout";
+export type ArcadeGameId = "task-force" | "wayfinder" | "inbox-zero" | "stacker" | "breakout";
 export type ArcadeEvent = "select" | `open:${ArcadeGameId}`;
 
 export interface Cartridge {
@@ -23,14 +23,16 @@ export interface Cartridge {
   h: number;
 }
 
-export const CARD_H = 58;
-const GAP = 8;
+export const CARD_H = 48;
+const GAP = 6;
 const BLINK = 14;
 
 export const CARTRIDGES: Omit<Cartridge, "best" | "x" | "y" | "w" | "h">[] = [
   { id: "task-force", title: "TASK FORCE", blurb: "SHOOT DOWN YOUR BACKLOG", accent: "#2ec4b6" },
-  { id: "stacker", title: "STACKER", blurb: "BUILD A CAIRN OF YOUR WORK", accent: "#e3a23b" },
-  { id: "breakout", title: "BREAKOUT", blurb: "BREAK THROUGH THE WORKSPACE", accent: "#5b8dd6" },
+  { id: "wayfinder", title: "WAYFINDER", blurb: "SAIL YOUR NOTES", accent: "#47a3e6" },
+  { id: "inbox-zero", title: "INBOX ZERO", blurb: "DEFEND YOUR BOARD", accent: "#7cc46a" },
+  { id: "stacker", title: "STACKER", blurb: "BUILD A CAIRN OF WORK", accent: "#e3a23b" },
+  { id: "breakout", title: "BREAKOUT", blurb: "BREAK THROUGH IT ALL", accent: "#5b8dd6" },
 ];
 
 export class ArcadeMenu {
@@ -54,10 +56,13 @@ export class ArcadeMenu {
     this.hud = opts.hud ?? NO_HUD;
     const left = this.hud.left + 8, right = this.W - this.hud.right - 8;
     const w = Math.min(220, right - left), x = Math.round((left + right - w) / 2);
-    const total = CARTRIDGES.length * CARD_H + (CARTRIDGES.length - 1) * GAP;
-    const y0 = Math.max(this.hud.top + 56, Math.round((this.H - total) / 2) + 16);
-    this.titleY = y0 - 46;
-    this.cards = CARTRIDGES.map((c, i) => ({ ...c, best: opts.bests?.[c.id] ?? 0, x, y: y0 + i * (CARD_H + GAP), w, h: CARD_H }));
+    const topMargin = this.hud.top + 46, botMargin = this.hud.bottom + 18;
+    const avail = Math.max(180, this.H - topMargin - botMargin);
+    const cardH = Math.min(CARD_H, Math.floor((avail - (CARTRIDGES.length - 1) * GAP) / CARTRIDGES.length));
+    const total = CARTRIDGES.length * cardH + (CARTRIDGES.length - 1) * GAP;
+    const y0 = Math.max(topMargin, Math.round((this.H - total) / 2) + 12);
+    this.titleY = y0 - 38;
+    this.cards = CARTRIDGES.map((c, i) => ({ ...c, best: opts.bests?.[c.id] ?? 0, x, y: y0 + i * (cardH + GAP), w, h: cardH }));
     this.best = Math.max(0, ...this.cards.map((c) => c.best));
   }
 

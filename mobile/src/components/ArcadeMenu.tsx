@@ -7,7 +7,13 @@ import { ArcadeRenderer } from "@/games/arcade/render";
 import { ArcadeMenu, type ArcadeEvent, type ArcadeGameId } from "@/games/arcade/menu";
 
 /** Best-score meta keys of each game (see their views). */
-const BEST_KEYS: Record<ArcadeGameId, string> = { "task-force": "taskforce_best", stacker: "stacker_best", breakout: "breakout_best" };
+const BEST_KEYS: Record<ArcadeGameId, string> = {
+  "task-force": "taskforce_best",
+  wayfinder: "wayfinder_best",
+  "inbox-zero": "inboxzero_best",
+  stacker: "stacker_best",
+  breakout: "breakout_best",
+};
 
 function readBest(key: string): number {
   const n = parseInt(getMeta(key) ?? "", 10);

@@ -96,6 +96,22 @@ export function mulberry32(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+export function vnoise(x: number, y: number, s: number): number {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi, yi, s), b = hash2(xi + 1, yi, s), c = hash2(xi, yi + 1, s), d = hash2(xi + 1, yi + 1, s);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+export function fbm(x: number, y: number, s: number): number {
+  let t = 0, a = 0.5, f = 1, n = 0;
+  for (let i = 0; i < 5; i++) {
+    t += vnoise(x * f, y * f, s + i * 17) * a;
+    n += a;
+    a *= 0.5;
+    f *= 2.03;
+  }
+  return t / n;
+}
 export const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
 
 interface Prepared {

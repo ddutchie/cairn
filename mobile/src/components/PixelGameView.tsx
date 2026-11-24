@@ -32,6 +32,8 @@ export interface PixelGame<E extends string> {
   down(x: number, y: number): void;
   /** Finger moved to (x, y); (dx, dy) since the last move. Game pixels. */
   move(x: number, y: number, dx: number, dy: number): void;
+  /** Finger lifted or gesture cancelled. */
+  up?(): void;
 }
 
 const STEP_MS = 1000 / 60;
@@ -50,11 +52,11 @@ function loadBest(key: string): number {
 }
 
 /**
- * Host for the hidden pixel games (Task Force, Stacker, Breakout). Measures
- * whatever the route gives it (phone, folded or unfolded Duo), picks a
- * whole-number scale so every game pixel is the same size, builds the game for
- * that playfield, runs it at 60 Hz, scales each frame up with nearest
- * sampling, persists the best score under `bestKey` (device meta, never
+ * Host for the hidden pixel games (Task Force, Wayfinder, Inbox Zero, Stacker,
+ * Breakout). Measures whatever the route gives it (phone, folded or unfolded
+ * Duo), picks a whole-number scale so every game pixel is the same size, builds
+ * the game for that playfield, runs it at 60 Hz, scales each frame up with
+ * nearest sampling, persists the best score under `bestKey` (device meta, never
  * synced) and pauses while the app is in the background.
  */
 export function PixelGameView<E extends string>(props: {
@@ -170,6 +172,8 @@ function Host<E extends string>({
         lx = g.dx;
         ly = g.dy;
       },
+      onPanResponderRelease: () => game.up?.(),
+      onPanResponderTerminate: () => game.up?.(),
     });
   }, [game, k, left]);
 
