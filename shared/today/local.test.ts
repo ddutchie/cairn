@@ -67,7 +67,8 @@ describe("day strip", () => {
   it("cuts a meeting that runs past midnight instead of dropping it", () => {
     const next = new Date(2026, 10, 23, 1, 0).toISOString();
     const t = buildLocalToday({ tasks: [], peopleDue: [], meetings: [{ id: "n", title: "Late", startsAt: at(22), endsAt: next }] }, NOW);
-    expect(t.day.blocks.some((b) => b.kind === "meeting")).toBe(true);
+    const meeting = t.day.blocks.find((b) => b.kind === "meeting");
+    expect(meeting?.end).toBe(24 * 60);
   });
 });
 

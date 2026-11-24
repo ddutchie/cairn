@@ -39,7 +39,9 @@ export function TodayScreen() {
     next.setHours(24, 0, 0, 0);
     const timer = setTimeout(load, next.getTime() - Date.now() + 1000);
     const sub = AppState.addEventListener("change", (s) => { if (s === "active") load(); });
-    return () => { clearTimeout(timer); sub.remove(); };
+    // Free time is measured from now, so keep it current while the screen stays open.
+    const clockTimer = setInterval(load, 60_000);
+    return () => { clearTimeout(timer); clearInterval(clockTimer); sub.remove(); };
   }, [load, today?.date]);
 
   const task = (id: string) => router.push({ pathname: "/card/[id]", params: { id } } as Href);
@@ -81,9 +83,9 @@ export function TodayScreen() {
             {empty ? <EmptyState title="Nothing needs you today" subtitle="Due tasks, meetings and people to catch up with show up here." /> : null}
             {section("Overdue", today.overdue.length, today.overdue.map((x) => row(x.id, x.title, [x.projectName, `due ${formatDate(x.dueDate)}`].filter(Boolean).join(" · "), () => task(x.id), t.danger)))}
             {section("Due today", today.dueToday.length, today.dueToday.map((x) => row(x.id, x.title, x.projectName, () => task(x.id), t.warning)))}
-            {today.meetings.length ? (
+            {today.meetings.length || today.day.blocks.some((b) => !b.past) ? (
               <View>
-                <Text style={s.section}>{`Your day · ${today.meetings.length}`}</Text>
+                <Text style={s.section}>{today.meetings.length ? `Your day · ${today.meetings.length}` : "Your day"}</Text>
                 {freeTimeLine(today.day) ? <Text style={s.freeLine}>{freeTimeLine(today.day)}</Text> : null}
                 {today.day.blocks.map((b) =>
                   b.kind === "meeting" ? (

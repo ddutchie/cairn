@@ -398,6 +398,8 @@ export default function ChatScreen() {
 
   const clearNow = useCallback(() => {
     clearChatHistory();
+    // At the chat boundary, so a grant given during a deferred clear's last turn doesn't carry into the next chat.
+    clearSessionAllows();
     conversation.current = [];
     setMessages([]);
     setVisibleCount(CHAT_PAGE_SIZE);

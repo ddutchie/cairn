@@ -137,20 +137,21 @@ export default function ToolsSettingsScreen() {
     setToggles(getToggleMap());
   }, []);
 
-  // Pick up a connector added from the custom connector form (a separate screen) when this one comes back into focus.
-  useFocusEffect(
-    useCallback(() => {
-      reloadLocal();
-      setMcpToolsRev((r) => r + 1);
-    }, [reloadLocal]),
-  );
-
   // Refresh the per-OAuth-server connected (has-tokens) map for the badges.
   const refreshConnected = useCallback(async () => {
     const servers = listInstalledMcpServers().filter((s) => s.authMode === "oauth");
     const entries = await Promise.all(servers.map(async (s) => [s.id, await hasTokens(s.id)] as const));
     setConnected(Object.fromEntries(entries));
   }, []);
+
+  // Pick up a connector added (and signed in) from the custom connector form, a separate screen, when this one regains focus.
+  useFocusEffect(
+    useCallback(() => {
+      reloadLocal();
+      setMcpToolsRev((r) => r + 1);
+      refreshConnected();
+    }, [reloadLocal, refreshConnected]),
+  );
 
   const loadRegistry = useCallback(
     async (force: boolean) => {

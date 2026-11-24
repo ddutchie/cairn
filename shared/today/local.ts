@@ -86,6 +86,15 @@ const hhmm = (iso: string) => {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
+/** A meeting's end as "HH:MM": same-day as is, a later day as "24:00", unknown as undefined (the strip assumes a short meeting). */
+function endOf(endsAt: string | null | undefined, now: number): string | undefined {
+  if (!endsAt) return undefined;
+  const t = new Date(endsAt).getTime();
+  const day = localDay(now);
+  const endDay = localDay(t);
+  return endDay === day ? hhmm(endsAt) : endDay > day ? "24:00" : undefined;
+}
+
 /** Meetings as the shared day strip's events. A meeting that runs past midnight is cut at 24:00. */
 function toDay(meetings: LocalTodayMeeting[], now: number): TodayDay {
   const d = new Date(now);
@@ -94,7 +103,7 @@ function toDay(meetings: LocalTodayMeeting[], now: number): TodayDay {
       id: m.id,
       title: m.title,
       start: hhmm(m.startsAt),
-      end: m.endsAt && localDay(new Date(m.endsAt).getTime()) === localDay(now) ? hhmm(m.endsAt) : undefined,
+      end: endOf(m.endsAt, now),
     })),
     d.getHours() * 60 + d.getMinutes(),
   );

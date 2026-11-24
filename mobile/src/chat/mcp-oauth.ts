@@ -30,7 +30,7 @@ import type {
   OAuthClientInformationMixed,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
-import { OAUTH_REDIRECT_URI, parseOAuthCallback } from "@cairn/shared/chat/oauth-callback";
+import { OAUTH_BOUNCE_URI, OAUTH_REDIRECT_URI, parseOAuthCallback } from "@cairn/shared/chat/oauth-callback";
 
 /**
  * The https redirect we ADVERTISE to authorization servers. Strict providers
@@ -40,7 +40,7 @@ import { OAUTH_REDIRECT_URI, parseOAuthCallback } from "@cairn/shared/chat/oauth
  * which the in-app auth session intercepts. This URL is also listed in the CIMD
  * doc's redirect_uris. See appsbygerard/cairn/oauth/index.html.
  */
-const HTTPS_REDIRECT_URI = "https://gerardbuilds.com/cairn/oauth";
+const HTTPS_REDIRECT_URI = OAUTH_BOUNCE_URI;
 
 // Per-server secure-store keys (mirror desktop's KEY_* artefacts).
 const KEY_CLIENT_INFO = "oauth_client";

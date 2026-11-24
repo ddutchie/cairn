@@ -9,6 +9,8 @@
  * there is no client secret to store.
  */
 
+import { OAUTH_BOUNCE_URI, OAUTH_REDIRECT_URI } from "./oauth-callback";
+
 export interface CustomMcpInput {
   name: string;
   url: string;
@@ -33,12 +35,6 @@ export interface CustomMcpConfig {
 
 export type CustomMcpResult = { ok: true; value: CustomMcpConfig } | { ok: false; error: string };
 
-/** Whether a URL is one the phone can use for a redirect: https, or an app scheme (never http, never a script). */
-function redirectOk(u: URL): boolean {
-  if (u.protocol === "https:") return true;
-  return /^[a-z][a-z0-9+.-]*:$/.test(u.protocol) && !["http:", "javascript:", "data:", "file:", "blob:"].includes(u.protocol);
-}
-
 /** Validate and normalise the form. Errors are written for the person filling it in. */
 export function parseCustomMcp(input: CustomMcpInput): CustomMcpResult {
   const name = input.name.trim();
@@ -62,10 +58,9 @@ export function parseCustomMcp(input: CustomMcpInput): CustomMcpResult {
     const redirect = input.redirectUri?.trim();
     if (redirect) {
       if (!clientId) return { ok: false, error: "A redirect URI only applies with your own client ID." };
-      try {
-        if (!redirectOk(new URL(redirect))) throw new Error("scheme");
-      } catch {
-        return { ok: false, error: "The redirect URI must be https:// or an app link like cairn://oauth/callback." };
+      // Only the two addresses the sign-in session can finish on: the https bounce page and the app link it forwards to.
+      if (redirect !== OAUTH_BOUNCE_URI && redirect !== OAUTH_REDIRECT_URI) {
+        return { ok: false, error: `The redirect URI must be ${OAUTH_BOUNCE_URI} or ${OAUTH_REDIRECT_URI}.` };
       }
       out.oauthRedirectUri = redirect;
     }

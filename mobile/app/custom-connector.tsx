@@ -104,7 +104,7 @@ export default function CustomConnectorForm() {
           {oauth ? (
             <>
               <Text style={s.label}>Your app&apos;s client ID (optional)</Text>
-              <TextInput style={s.input} value={clientId} onChangeText={setClientId} placeholder="Leave empty to register automatically" placeholderTextColor={t.textTertiary} autoCapitalize="none" autoCorrect={false} />
+              <TextInput style={s.input} value={clientId} onChangeText={(v) => { setClientId(v); if (!v.trim()) setRedirectUri(""); }} placeholder="Leave empty to register automatically" placeholderTextColor={t.textTertiary} autoCapitalize="none" autoCorrect={false} />
               <Text style={s.hint}>
                 Needed when the provider has no automatic registration, such as a Microsoft 365 tenant: register an app there as a public client and paste its ID. No secret is stored.
               </Text>

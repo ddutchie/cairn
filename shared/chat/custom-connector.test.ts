@@ -25,7 +25,10 @@ describe("parseCustomMcp", () => {
     for (const redirectUri of ["http://x.example/cb", "javascript:alert(1)", "not a url"]) {
       expect(parseCustomMcp({ ...base, clientId: "abc", redirectUri }).ok).toBe(false);
     }
-    expect(parseCustomMcp({ ...base, clientId: "abc", redirectUri: "https://x.example/cb" }).ok).toBe(true);
+    // Only addresses the sign-in session can finish on are allowed.
+    expect(parseCustomMcp({ ...base, clientId: "abc", redirectUri: "https://x.example/cb" }).ok).toBe(false);
+    expect(parseCustomMcp({ ...base, clientId: "abc", redirectUri: "cairn://oauth/custom" }).ok).toBe(false);
+    expect(parseCustomMcp({ ...base, clientId: "abc", redirectUri: "https://gerardbuilds.com/cairn/oauth" }).ok).toBe(true);
   });
 });
 
