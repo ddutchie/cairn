@@ -98,8 +98,7 @@ export function ProjectLinksSection({ project }: { project: Project }) {
                   link={link}
                   onCancel={() => setEditingId(null)}
                   onSave={(patch) => {
-                    add([{ url: link.url, ...patch }]);
-                    setEditingId(null);
+                    if (add([{ url: link.url, ...patch }])) setEditingId(null);
                   }}
                 />
               ) : (

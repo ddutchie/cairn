@@ -57,12 +57,19 @@ export function isProjectLinkKind(value: unknown): value is ProjectLinkKind {
   return typeof value === "string" && (PROJECT_LINK_KINDS as readonly string[]).includes(value);
 }
 
+function safeDecode(part: string): string {
+  try { return decodeURIComponent(part); } catch { return part; }
+}
+
 /** Parse an http(s) URL, or null. Anything else (javascript:, file:, bare text) is refused. */
 function parseHttpUrl(raw: string): URL | null {
   const text = raw.trim();
   if (!text || text.length > MAX_URL) return null;
   try {
-    const url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(text) ? text : `https://${text}`);
+    // A scheme means "://" or a known non-web one; "host:port/path" is a bare address.
+    const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(text);
+    if (!hasScheme && /^(javascript|data|file|mailto|vbscript|about|blob|tel):/i.test(text)) return null;
+    const url = new URL(hasScheme ? text : `https://${text}`);
     return url.protocol === "http:" || url.protocol === "https:" ? url : null;
   } catch {
     return null;
@@ -74,6 +81,8 @@ export function normalizeLinkUrl(raw: string): string | null {
   const url = parseHttpUrl(raw);
   if (!url) return null;
   url.hash = "";
+  url.username = "";
+  url.password = "";
   const path = url.pathname.replace(/\/+$/, "");
   return `${url.protocol}//${url.host.toLowerCase()}${path}${url.search}`;
 }
@@ -89,7 +98,7 @@ export function detectProjectLink(raw: string): DetectedLink | null {
   const url = parseHttpUrl(raw);
   if (!url) return null;
   const host = url.hostname.toLowerCase();
-  const parts = url.pathname.split("/").filter(Boolean).map((p) => decodeURIComponent(p));
+  const parts = url.pathname.split("/").filter(Boolean).map(safeDecode);
 
   if (host.endsWith(".atlassian.net")) {
     if (parts[0] === "wiki") {
@@ -142,7 +151,8 @@ export function buildProjectLink(input: ProjectLinkInput, id: string): ProjectLi
   const detected = detectProjectLink(input.url);
   if (!url || !detected) return null;
   const kind = isProjectLinkKind(input.kind) ? input.kind : detected.kind;
-  const ref = clip(input.ref, MAX_REF) ?? (kind === detected.kind ? detected.ref : undefined);
+  // An explicit ref (even empty) is the caller's choice; only a missing one is detected from the URL.
+  const ref = input.ref !== undefined ? clip(input.ref, MAX_REF) : (kind === detected.kind ? detected.ref : undefined);
   const note = clip(input.note, MAX_NOTE);
   return {
     id,
@@ -163,13 +173,17 @@ export function normalizeLinks(raw: unknown): ProjectLink[] {
     if (!item || typeof item !== "object") continue;
     const r = item as Record<string, unknown>;
     if (typeof r.id !== "string" || !r.id || typeof r.url !== "string") continue;
-    const link = buildProjectLink({
-      url: r.url,
-      kind: isProjectLinkKind(r.kind) ? r.kind : undefined,
-      label: typeof r.label === "string" ? r.label : undefined,
-      ref: typeof r.ref === "string" ? r.ref : undefined,
-      note: typeof r.note === "string" ? r.note : undefined,
-    }, r.id);
+    let link: ProjectLink | null = null;
+    try {
+      link = buildProjectLink({
+        url: r.url,
+        kind: isProjectLinkKind(r.kind) ? r.kind : undefined,
+        label: typeof r.label === "string" ? r.label : undefined,
+        // A stored link without a ref stays without one; it is not re-detected on every read.
+        ref: typeof r.ref === "string" ? r.ref : "",
+        note: typeof r.note === "string" ? r.note : undefined,
+      }, r.id);
+    } catch { /* one bad row must never break reading the project */ }
     if (!link || seen.has(link.url) || seen.has(`id:${link.id}`)) continue;
     seen.add(link.url);
     seen.add(`id:${link.id}`);
@@ -204,7 +218,7 @@ export function addProjectLinks(existing: ProjectLink[], inputs: ProjectLinkInpu
         url,
         kind: isProjectLinkKind(input.kind) ? input.kind : prev.kind,
         label: input.label ?? prev.label,
-        ref: input.ref ?? (kindChanged ? undefined : prev.ref),
+        ref: input.ref !== undefined ? input.ref : (kindChanged ? undefined : (prev.ref ?? "")),
         note: input.note ?? prev.note,
       }, prev.id);
       if (merged) links[at] = merged;

@@ -114,3 +114,31 @@ describe("connectorForLinkKind", () => {
     expect(connectorForLinkKind("url", servers)).toBeUndefined();
   });
 });
+
+describe("robustness", () => {
+  it("survives malformed percent sequences", () => {
+    expect(() => detectProjectLink("https://github.com/a/%E0%A4%A")).not.toThrow();
+    expect(detectProjectLink("https://github.com/a/%E0%A4%A")!.kind).toBe("github");
+    expect(normalizeLinks([{ id: "a", url: "https://github.com/a/%E0%A4%A" }])).toHaveLength(1);
+  });
+  it("accepts host:port without a scheme but still refuses non-web schemes", () => {
+    expect(normalizeLinkUrl("localhost:3000/x")).toBe("https://localhost:3000/x");
+    expect(normalizeLinkUrl("example.com:8080")).toBe("https://example.com:8080");
+    expect(normalizeLinkUrl("mailto:a@b.c")).toBeNull();
+    expect(normalizeLinkUrl("data:text/html,x")).toBeNull();
+  });
+  it("strips credentials from the URL", () => {
+    expect(normalizeLinkUrl("https://user:pw@example.com/a")).toBe("https://example.com/a");
+  });
+  it("an emptied ref stays empty, on edit and across reads", () => {
+    const first = addProjectLinks([], [{ url: "https://github.com/acme/w" }], id).links;
+    expect(first[0].ref).toBe("acme/w");
+    const edited = addProjectLinks(first, [{ url: "https://github.com/acme/w", ref: "" }], id).links;
+    expect(edited[0].ref).toBeUndefined();
+    expect(normalizeLinks(JSON.parse(JSON.stringify(edited)))[0].ref).toBeUndefined();
+  });
+  it("an update that names no ref keeps the existing one", () => {
+    const first = addProjectLinks([], [{ url: "https://github.com/acme/w" }], id).links;
+    expect(addProjectLinks(first, [{ url: "https://github.com/acme/w", label: "x" }], id).links[0].ref).toBe("acme/w");
+  });
+});
