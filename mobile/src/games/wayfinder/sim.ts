@@ -224,6 +224,7 @@ export class WayfinderSim {
   readonly stormTasks: { t: ArcadeProject["tasks"][number]; p: Proj }[];
   readonly cargoTotal: number;
   readonly fog = new Float32Array(FW * FH);
+  fogVersion = 0;
   private readonly rand: () => number;
 
   state: WayfinderState = "title";
@@ -294,11 +295,19 @@ export class WayfinderSim {
   }
   reveal(x: number, y: number, r: number): void {
     const gx = x / 8, gy = y / 8, R = r / 8, x0 = Math.max(0, (gx - R) | 0), x1 = Math.min(FW - 1, (gx + R) | 0), y0 = Math.max(0, (gy - R) | 0), y1 = Math.min(FH - 1, (gy + R) | 0);
+    let changed = false;
     for (let j = y0; j <= y1; j++)
       for (let i = x0; i <= x1; i++) {
         const d = Math.hypot(i + 0.5 - gx, j + 0.5 - gy);
-        if (d < R) this.fog[j * FW + i] = Math.max(this.fog[j * FW + i], clamp(1.3 - d / R, 0, 1));
+        if (d < R) {
+          const idx = j * FW + i, nv = clamp(1.3 - d / R, 0, 1);
+          if (nv > this.fog[idx]) {
+            this.fog[idx] = nv;
+            changed = true;
+          }
+        }
       }
+    if (changed) this.fogVersion++;
   }
   private addScore(n: number): void {
     this.score += n;
@@ -331,6 +340,7 @@ export class WayfinderSim {
     this.parts = [];
     this.pops = [];
     this.fog.fill(0);
+    this.fogVersion++;
     for (const is of this.islands) is.charted = false;
     this.reveal(this.today.x, this.today.y, 76);
     for (const h of this.harbours) this.reveal(h.x, h.y, 58);
@@ -586,18 +596,18 @@ export class WayfinderSim {
       let da = want - this.boat.a;
       while (da > Math.PI) da -= Math.PI * 2;
       while (da < -Math.PI) da += Math.PI * 2;
-      this.boat.a += clamp(da, -0.06, 0.06);
+      this.boat.a += clamp(da, -0.08, 0.08);
     }
 
     const o = (this.boat.y | 0) * WD + (this.boat.x | 0), onLane = this.LANE[o] > 0;
     const load = this.boat.cargo.reduce((s, c) => s + WEIGHT[c.pr], 0);
-    let top = (onLane ? 1.55 : 1) * (1 - load) * (1 + this.pod.on * 0.12);
+    let top = (onLane ? 1.75 : 1.18) * (1 - load) * (1 + this.pod.on * 0.12);
     const inStorm = this.storms.find((s) => Math.hypot(s.x - this.boat.x, s.y - this.boat.y) < s.r);
     if (inStorm) {
       top *= 0.45;
       if (!this.calm && this.t % 20 === 0) this.shake = 2;
     }
-    this.boat.v += ((this.steer ? top : 0) - this.boat.v) * 0.04;
+    this.boat.v += ((this.steer ? top : 0) - this.boat.v) * 0.06;
     const nx = this.boat.x + Math.sin(this.boat.a) * this.boat.v, ny = this.boat.y - Math.cos(this.boat.a) * this.boat.v;
     const no = (ny | 0) * WD + (nx | 0);
     if (nx < 4 || ny < 4 || nx > WD - 4 || ny > HD - 4 || this.E[no] > 0.04) {

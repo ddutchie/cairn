@@ -137,6 +137,7 @@ export class InboxZeroSim {
   best: number;
   shake = 0;
   picked = 0;
+  cursor: { x: number; y: number } | null = null;
   toast: { s: string; t: number } | null = null;
   calm = false;
   events: InboxZeroEvent[] = [];
@@ -199,6 +200,9 @@ export class InboxZeroSim {
   private tagAt(c: number, r: number): Tower | undefined {
     return this.towers.find((tw) => tw.c === c && tw.r === r);
   }
+  getTagAt(c: number, r: number): Tower | undefined {
+    return this.tagAt(c, r);
+  }
 
   private reset(): void {
     this.wave = 0;
@@ -229,6 +233,7 @@ export class InboxZeroSim {
   down(x: number, y: number): void {
     if (this.state === "title" || ((this.state === "over" || this.state === "win") && this.stateT > 60)) {
       this.cards = [];
+      this.cursor = null;
       this.reset();
       this.events.push("start");
       return;
@@ -236,12 +241,25 @@ export class InboxZeroSim {
     if (this.state === "over" || this.state === "win") return;
 
     if (y >= this.shopY) {
+      this.cursor = null;
       const i = Math.floor((x - this.shopX0) / this.shopW);
       if (x >= this.shopX0 && i >= 0 && i < TAGS.length) this.picked = i;
       return;
     }
+    this.cursor = { x, y };
+  }
 
-    const c = Math.floor((x - this.coreX) / CELL), r = Math.floor((y - this.coreY) / CELL);
+  move(x: number, y: number): void {
+    if (this.cursor) this.cursor = { x, y };
+  }
+
+  up(): void {
+    const cur = this.cursor;
+    this.cursor = null;
+    if (!cur || this.state === "title" || this.state === "over" || this.state === "win") return;
+    if (cur.y >= this.shopY) return;
+
+    const c = Math.floor((cur.x - this.coreX) / CELL), r = Math.floor((cur.y - this.coreY) / CELL);
     if (c < this.minC || c > this.maxC || r < 0 || r >= CORE_GY) return;
 
     const tw = this.tagAt(c, r);

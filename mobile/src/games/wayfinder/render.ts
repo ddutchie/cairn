@@ -8,16 +8,40 @@ import { Skia, type SkCanvas, type SkImage } from "@shopify/react-native-skia";
 import type { Priority } from "@cairn/shared/types/domain";
 import { clip, textWidth } from "@/games/pixel/font";
 import { clamp } from "@/games/pixel/kinds";
-import { INK, PixelPainter, makeImage, stackAtlas, type StackAtlas } from "@/games/pixel/painter";
-import { BAYER, BIOMES, fbm, mulberry32 } from "@/games/pixel/terrain";
+import { INK, PixelPainter, SAMPLING, makeImage, stackAtlas, type StackAtlas } from "@/games/pixel/painter";
+import { BAYER, BIOMES, fbm, mulberry32, rgb } from "@/games/pixel/terrain";
 import {
   BOAT_MODEL, CRATE_MODELS, DOLPHIN_MODEL, KRAKEN_SEGS, LIGHTHOUSE_MODEL, PCOL, TURTLE_MODEL, WHALE_MODEL, hutModel,
 } from "./models";
 import { DAY_FRAMES, FH, FOG_TEX, FW, HD, WD, WayfinderSim, type Isle } from "./sim";
 
+const STORM_R = 22;
+const STORM_SZ = STORM_R * 2 + 1;
+
+function bakeStormSprite(flash: boolean): SkImage {
+  const bytes = new Uint8Array(STORM_SZ * STORM_SZ * 4);
+  const buf = new Uint32Array(bytes.buffer);
+  const pack = (hex: string) => {
+    const [r, g, b] = rgb(hex);
+    return ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
+  };
+  const lit = pack("#c7d0e6"), mid = pack("#5a6078"), dark = pack("#3a3f55");
+  for (let y = -STORM_R; y <= STORM_R; y++) {
+    for (let x = -STORM_R; x <= STORM_R; x++) {
+      const d = (x * x + y * y) / (STORM_R * STORM_R), n = fbm((x + STORM_R) * 0.08, (y + STORM_R) * 0.08, 7);
+      if (d < 1 && n * (1.2 - d) > 0.42 + BAYER[((y + 64) & 3) * 4 + ((x + 64) & 3)] * 0.12) {
+        buf[(y + STORM_R) * STORM_SZ + (x + STORM_R)] = flash ? lit : n > 0.62 ? mid : dark;
+      }
+    }
+  }
+  return makeImage(STORM_SZ, STORM_SZ, bytes);
+}
+
 export class WayfinderRenderer extends PixelPainter {
   private readonly sim: WayfinderSim;
   private readonly world: SkImage;
+  private readonly stormImg = bakeStormSprite(false);
+  private readonly stormFlashImg = bakeStormSprite(true);
   private readonly boat = stackAtlas(BOAT_MODEL);
   private readonly lighthouse = stackAtlas(LIGHTHOUSE_MODEL);
   private readonly whale = stackAtlas(WHALE_MODEL);
@@ -26,8 +50,16 @@ export class WayfinderRenderer extends PixelPainter {
   private readonly segs: StackAtlas[] = KRAKEN_SEGS.map((m) => stackAtlas(m));
   private readonly crates: Record<Priority, StackAtlas>;
   private readonly huts: StackAtlas[];
+  private readonly fogW: number;
+  private readonly fogH: number;
+  private readonly fogRect: ReturnType<typeof Skia.XYWHRect>;
   private readonly fogBytes: Uint8Array;
   private readonly fogBuf: Uint32Array;
+  private fogImg: SkImage | null = null;
+  private fogCamX = 0;
+  private fogCamY = 0;
+  private fogVer = -1;
+  private fogTick = -1;
   private mini: SkImage | null = null;
   private miniBuiltState: string | null = null;
   private readonly fx = mulberry32(404);
@@ -43,7 +75,10 @@ export class WayfinderRenderer extends PixelPainter {
       urgent: stackAtlas(CRATE_MODELS.urgent),
     };
     this.huts = sim.harbours.map((h) => stackAtlas(hutModel(h.p!.accent)));
-    this.fogBytes = new Uint8Array(sim.W * sim.H * 4);
+    this.fogW = Math.ceil(sim.W / 2) + 8;
+    this.fogH = Math.ceil(sim.H / 2) + 8;
+    this.fogRect = Skia.XYWHRect(0, 0, this.fogW, this.fogH);
+    this.fogBytes = new Uint8Array(this.fogW * this.fogH * 4);
     this.fogBuf = new Uint32Array(this.fogBytes.buffer);
   }
 
@@ -65,17 +100,50 @@ export class WayfinderRenderer extends PixelPainter {
 
   private drawFog(cv: SkCanvas): void {
     const s = this.sim, W = this.W, H = this.H, FOG = s.fog;
-    const g = (c: number, r: number) => FOG[clamp(r, 0, FH - 1) * FW + clamp(c, 0, FW - 1)];
-    for (let y = 0; y < H; y++) {
-      const wy = y + s.camY;
-      for (let x = 0; x < W; x++) {
-        const wx = x + s.camX;
-        const fx = wx / 8 - 0.5, fy = wy / 8 - 0.5, cx = Math.floor(fx), cy = Math.floor(fy), ax = fx - cx, ay = fy - cy;
-        const v = (g(cx, cy) * (1 - ax) + g(cx + 1, cy) * ax) * (1 - ay) + (g(cx, cy + 1) * (1 - ax) + g(cx + 1, cy + 1) * ax) * ay;
-        this.fogBuf[y * W + x] = v > BAYER[(y & 3) * 4 + (x & 3)] ? 0 : FOG_TEX[((wy + (s.t >> 3)) & 63) * 64 + ((wx + (s.t >> 4)) & 63)];
+    const outOfBounds =
+      s.camX < this.fogCamX ||
+      s.camY < this.fogCamY ||
+      s.camX + W > this.fogCamX + this.fogW * 2 ||
+      s.camY + H > this.fogCamY + this.fogH * 2;
+    const driftTick = s.t >> 3;
+    const needRebuild =
+      !this.fogImg ||
+      outOfBounds ||
+      driftTick !== this.fogTick ||
+      (s.fogVersion !== this.fogVer && (s.t & 3) === 0);
+
+    if (needRebuild) {
+      this.fogCamX = (Math.floor(s.camX / 2) * 2) - 8;
+      this.fogCamY = (Math.floor(s.camY / 2) * 2) - 8;
+      this.fogVer = s.fogVersion;
+      this.fogTick = driftTick;
+      const g = (c: number, r: number) => FOG[clamp(r, 0, FH - 1) * FW + clamp(c, 0, FW - 1)];
+      for (let y = 0; y < this.fogH; y++) {
+        const wy = y * 2 + this.fogCamY;
+        const fy = wy / 8 - 0.5, cy = Math.floor(fy), ay = fy - cy;
+        const bRow = (y & 3) * 4;
+        const tRow = ((wy + driftTick) & 63) * 64;
+        for (let x = 0; x < this.fogW; x++) {
+          const wx = x * 2 + this.fogCamX;
+          const fx = wx / 8 - 0.5, cx = Math.floor(fx), ax = fx - cx;
+          const v = (g(cx, cy) * (1 - ax) + g(cx + 1, cy) * ax) * (1 - ay) + (g(cx, cy + 1) * (1 - ax) + g(cx + 1, cy + 1) * ax) * ay;
+          this.fogBuf[y * this.fogW + x] = v > BAYER[bRow + (x & 3)] ? 0 : FOG_TEX[tRow + ((wx + (s.t >> 4)) & 63)];
+        }
       }
+      this.fogImg = makeImage(this.fogW, this.fogH, this.fogBytes);
     }
-    cv.drawImage(makeImage(W, H, this.fogBytes), 0, 0);
+
+    if (this.fogImg) {
+      cv.drawAtlas(
+        this.fogImg,
+        [this.fogRect],
+        [Skia.RSXform(2, 0, this.fogCamX - s.camX, this.fogCamY - s.camY)],
+        this.plain,
+        undefined,
+        undefined,
+        SAMPLING,
+      );
+    }
   }
 
   private ensureChart(): SkImage {
@@ -143,13 +211,7 @@ export class WayfinderRenderer extends PixelPainter {
     for (const st of s.storms) {
       const cx = this.sx(st.x), cy = this.sy(st.y);
       if (cx < -40 || cy < -40 || cx > W + 40 || cy > H + 40) continue;
-      for (let y = -st.r; y <= st.r; y++)
-        for (let x = -st.r; x <= st.r; x++) {
-          const d = (x * x + y * y) / (st.r * st.r), n = fbm((st.x + x) * 0.08 + t * 0.004, (st.y + y) * 0.08, 7);
-          if (d < 1 && n * (1.2 - d) > 0.42 + BAYER[((y + 64) & 3) * 4 + ((x + 64) & 3)] * 0.12) {
-            this.px(cv, cx + x, cy + y - 14, st.bolt > 4 ? "#c7d0e6" : n > 0.62 ? "#5a6078" : "#3a3f55");
-          }
-        }
+      cv.drawImage(st.bolt > 4 ? this.stormFlashImg : this.stormImg, Math.round(cx - STORM_R) + this.SX, Math.round(cy - STORM_R - 14) + this.SY);
       for (let i = 0; i < 10; i++) {
         const rx = cx + this.rng(-st.r, st.r) * 0.8, ry = cy - 6 + ((t * 3 + i * 23) % (st.r + 10));
         this.px(cv, rx, ry, "#9fb3d6");

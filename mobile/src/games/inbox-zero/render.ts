@@ -95,6 +95,42 @@ export class InboxZeroRenderer extends PixelPainter {
       this.textC(cv, lbl, Math.round(((i + 0.5) * W) / 3), s.coreY + 2, "#3a4670", 1, null);
     });
 
+    if (s.cursor && s.state !== "title" && s.cursor.y < s.shopY) {
+      const c = Math.floor((s.cursor.x - s.coreX) / CELL), r = Math.floor((s.cursor.y - s.coreY) / CELL);
+      if (c >= s.minC && c <= s.maxC && r >= 0 && r < CORE_GY) {
+        const cx = s.coreX + c * CELL, cy = s.coreY + r * CELL;
+        const tw = s.getTagAt(c, r);
+        if (tw) {
+          const T = TAGS.find((tg) => tg.id === tw.id)!;
+          const nextLvl = Math.min(2, tw.lvl + 1);
+          const range = T.range * (1 + nextLvl * 0.15);
+          const cost = Math.round(T.cost * (tw.lvl + 1) * 0.8);
+          const ok = tw.lvl < 2 && s.focus >= cost;
+          const fillP = this.paint(T.c, 0.16);
+          cv.drawCircle(cx + 6, cy + 6, range, fillP);
+          const ringP = this.paint(ok ? "#fff2a0" : "#ff5e8a", 0.7);
+          ringP.setStyle(1);
+          ringP.setStrokeWidth(1);
+          cv.drawCircle(cx + 6, cy + 6, range, ringP);
+          cv.drawRect(Skia.XYWHRect(cx + 0.5, cy + 0.5, CELL - 1, CELL - 1), ringP);
+        } else {
+          const tg = TAGS[s.picked];
+          const ok = canBuildCore(c, r) && s.focus >= tg.cost;
+          const boxP = this.paint(ok ? "#8dff9a" : "#ff5e8a", 0.9);
+          boxP.setStyle(1);
+          boxP.setStrokeWidth(1);
+          cv.drawRect(Skia.XYWHRect(cx + 0.5, cy + 0.5, CELL - 1, CELL - 1), boxP);
+          if (canBuildCore(c, r)) {
+            cv.drawCircle(cx + 6, cy + 6, tg.range, this.paint(tg.c, ok ? 0.16 : 0.08));
+            const arcP = this.paint(ok ? tg.c : "#ff5e8a", 0.7);
+            arcP.setStyle(1);
+            arcP.setStrokeWidth(1);
+            cv.drawCircle(cx + 6, cy + 6, tg.range, arcP);
+          }
+        }
+      }
+    }
+
     for (const c of s.cards) this.shadow(cv, this.cards[c.pr], c.x, c.y, c.dir + Math.sin(t * 0.2 + c.d) * 0.08, 2, 3, 0.35);
     for (const tw of s.towers) this.shadow(cv, this.towers[tw.id][tw.lvl], tw.x, tw.y, tw.a, 3, 4, 0.35);
 
