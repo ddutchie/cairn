@@ -10,6 +10,7 @@ import type { Note } from "../../shared/types/notes";
 import type { ChatThread, ChatThreadScope } from "../../shared/types/chat";
 import type { BoardColumn, TaskCard } from "../../shared/types/board";
 import type { ColumnType, Priority, ProjectStatus } from "../../shared/types/domain";
+import { normalizeLinks } from "../../shared/projects/links";
 import type { Project, ProjectSettings, Tag, Workspace } from "../../shared/types/workspace";
 import type { IdeaFlow, IdeaFlowEdge, IdeaFlowNode, IdeaNodeType } from "../../shared/types/flow";
 import { NOTIFICATION_TARGET_TYPES, type McpNotification, type NotificationTargetType } from "../../shared/types/notifications";
@@ -80,6 +81,7 @@ export function toProject(row: DbRow): Project {
     tagIds: p(row.tag_ids) as string[],
     codeDirectory: row.code_directory as string | null ?? null,
     projectSettings: projectSettings as ProjectSettings,
+    links: normalizeLinks(p(row.links)),
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     archivedAt: row.archived_at as string | undefined,

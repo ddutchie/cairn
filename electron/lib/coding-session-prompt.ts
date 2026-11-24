@@ -104,6 +104,7 @@ You MUST follow this workflow on every session — it is not optional:
 
 **1. Orient (first thing, once per session)**
 Call \`get_context\` to get column IDs and project state. The IDs are stable for the session — you do not need to call it again before each write.
+It also lists the project's \`links\` (Confluence space, Slack channels, Jira project, repo) with a \`ref\` a connector tool can take: use them before searching a connector, and save a place worth keeping with \`upsert_project\` \`addLinks\`.
 If there is an active task, immediately move it to In Progress with \`update_tasks\` (pass \`columnType: "in_progress"\`).
 
 **2. Document as you go**

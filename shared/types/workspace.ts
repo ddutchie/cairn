@@ -73,6 +73,8 @@ export interface Workspace {
 
 // ── Project ───────────────────────────────────
 
+import type { ProjectLink } from "../projects/links";
+
 export interface ProjectSettings {
   prTemplate?: string;
   defaultBranch?: string;
@@ -92,6 +94,8 @@ export interface Project {
   tagIds: ID[];
   codeDirectory: string | null;
   projectSettings?: ProjectSettings;
+  /** Where the project's material lives (Confluence space, Slack channels, repo…). */
+  links?: ProjectLink[];
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;
@@ -129,6 +133,7 @@ export type ProjectPatch = Partial<{
   tagIds: ID[];
   archivedAt: string;
   codeDirectory: string | null;
+  links: ProjectLink[];
 }>;
 
 export interface TagCreateInput {

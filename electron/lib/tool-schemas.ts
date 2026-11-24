@@ -12,6 +12,7 @@
  */
 
 import * as z from "zod";
+import { PROJECT_LINK_KINDS } from "../../shared/projects/links";
 
 import { isCairnReadTool } from "../../shared/agent/tool-names";
 import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_PARAM_DESCRIPTIONS as PD, PEOPLE_TOOL_DESCRIPTION_DESKTOP } from "../../shared/agent/people-tools";
@@ -188,7 +189,7 @@ export const TOOL_SCHEMAS = {
   // ── Projects & delete ─────────────────────────────────────────────────────────
 
   upsert_project: {
-    description: "Create or update a project. Omit projectId to create (auto-creates default columns); provide projectId to update existing fields.",
+    description: "Create or update a project. Omit projectId to create (auto-creates default columns); provide projectId to update existing fields. addLinks/removeLinkIds manage the project's links (Confluence space, Slack channel, Jira project, repo): addLinks is keyed by url, so repeating a url updates it.",
     schema: z.object({
       projectId:   sIdOpt.describe("Omit to create a new project"),
       workspaceId: sId.optional().describe("Required when creating"),
@@ -197,6 +198,14 @@ export const TOOL_SCHEMAS = {
       icon:        sStrOpt.describe("Single emoji"),
       status:      sStatus,
       priority:    sPriority,
+      addLinks:    z.array(z.object({
+        url:   z.string().describe("http(s) URL; kind, label and ref are detected from it when omitted"),
+        kind:  z.enum(PROJECT_LINK_KINDS).optional(),
+        label: sStrOpt,
+        ref:   sStrOpt.describe("What a connector tool takes: Confluence space key, Slack channel id, Jira project key, owner/repo"),
+        note:  sStrOpt.describe("What the link is for"),
+      })).optional(),
+      removeLinkIds: z.array(z.string()).optional().describe("Link ids from get_context"),
     }),
   },
 

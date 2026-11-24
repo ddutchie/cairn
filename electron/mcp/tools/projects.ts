@@ -4,7 +4,18 @@ import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
 import { DEFAULT_COLUMNS } from "../../db/defaults";
 import { Snapshot, insertNotification } from "../db";
+import { addProjectLinks, removeProjectLinks, type ProjectLink } from "../../../shared/projects/links";
 import { renameProjectNotesDir, deleteProjectNotesDir } from "../../host-shared/notes-io";
+
+/** Apply addLinks / removeLinkIds to a link list; says which inputs were refused. */
+function applyLinkArgs(current: ProjectLink[], args: Record<string, any>): { links: ProjectLink[]; rejected: string[]; changed: boolean } {
+  const add = Array.isArray(args.addLinks) ? args.addLinks : [];
+  const remove = Array.isArray(args.removeLinkIds) ? args.removeLinkIds.filter((x: unknown) => typeof x === "string") : [];
+  if (!add.length && !remove.length) return { links: current, rejected: [], changed: false };
+  const kept = removeProjectLinks(current, remove);
+  const { links, rejected } = addProjectLinks(kept, add, newId);
+  return { links, rejected, changed: true };
+}
 
 export function upsert_project(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {
   if (args.projectId) {
@@ -17,6 +28,8 @@ export function upsert_project(db: Database.Database, snap: Snapshot, workspaceP
     if (args.status !== undefined) patch.status = args.status;
     if (args.priority !== undefined) patch.priority = args.priority;
     if (args.icon !== undefined) patch.icon = args.icon;
+    const linkChange = applyLinkArgs(project.links ?? [], args);
+    if (linkChange.changed) patch.links = linkChange.links;
     const updatedProject = q.updateProject(db, args.projectId as string, patch);
     // Relocate the on-disk notes directory when the name (slug) changed, so the
     // .md files follow the rename instead of being orphaned under the old slug.
@@ -24,7 +37,7 @@ export function upsert_project(db: Database.Database, snap: Snapshot, workspaceP
       renameProjectNotesDir(workspacePath, project.name, updatedProject.name);
     }
     insertNotification(db, "upsert_project", "Project updated", `"${args.name ?? project.name}" was updated`);
-    return updatedProject;
+    return linkChange.rejected.length ? { ...updatedProject, rejectedLinks: linkChange.rejected } : updatedProject;
   } else {
     // ── create path ──────────────────────────────────────────────────────
     const workspace = snap.workspaces.find((w) => w.id === args.workspaceId);
@@ -40,6 +53,8 @@ export function upsert_project(db: Database.Database, snap: Snapshot, workspaceP
       status: args.status ?? "active",
       priority: args.priority ?? "medium",
     });
+    const linkChange = applyLinkArgs([], args);
+    const withLinks = linkChange.changed ? q.updateProject(db, projectId, { links: linkChange.links }) : createdProject;
     const columns = DEFAULT_COLUMNS.map((col) => {
       const colId = newId();
       return q.createColumn(db, {
@@ -52,7 +67,7 @@ export function upsert_project(db: Database.Database, snap: Snapshot, workspaceP
       });
     });
     insertNotification(db, "upsert_project", "Project created", `"${args.name}" was created`);
-    return { project: createdProject, columns };
+    return { project: withLinks, columns, ...(linkChange.rejected.length ? { rejectedLinks: linkChange.rejected } : {}) };
   }
 }
 
