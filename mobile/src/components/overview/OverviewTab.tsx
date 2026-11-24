@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, type StyleProp, type ViewStyle } from "react-native";
+import { View, Text, ScrollView, Pressable, Linking, StyleSheet, RefreshControl, type StyleProp, type ViewStyle } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { FileText, Circle as CircleIcon, Pin, StickyNote, ListTodo, AlertTriangle, Clock3, Folder, FolderCode, Kanban } from "lucide-react-native";
 import { COLUMN_COLORS, PRIORITY_COLOR, COLUMN_TYPE_ORDER } from "@cairn/shared/ui/constants";
 import { getDueDateStatus, formatRelative, parseIsoLocal, formatDate } from "@cairn/shared/format/date";
 import { stripMarkdown } from "@cairn/shared/notes/text";
+import { PROJECT_LINK_KIND_LABEL, normalizeLinks } from "@cairn/shared/projects/links";
 import { type ProjectOverviewData } from "@/db/queries";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { PressableScale } from "@/components/PressableScale";
@@ -36,12 +37,12 @@ function prettyStatus(s: string): string {
 }
 
 /** The Overview's blocks, in their single-column order (see `show`). */
-export type OverviewSection = "masthead" | "focus" | "kpi" | "queue" | "flow" | "priority" | "radar" | "notes" | "activity";
+export type OverviewSection = "masthead" | "focus" | "kpi" | "queue" | "flow" | "priority" | "radar" | "links" | "notes" | "activity";
 
 /** Overview up to and including the project health radar — the narrow status column. */
 export const OVERVIEW_STATUS: OverviewSection[] = ["masthead", "focus", "kpi", "queue", "flow", "priority", "radar"];
 /** What follows the health radar — the recent notes and activity, for a wide detail column. */
-export const OVERVIEW_DETAIL: OverviewSection[] = ["notes", "activity"];
+export const OVERVIEW_DETAIL: OverviewSection[] = ["links", "notes", "activity"];
 
 export interface OverviewNav {
   onOpenNote: (id: string) => void;
@@ -548,6 +549,33 @@ export function OverviewTab({
       <HealthRadar axes={radarAxes} size={260} />
   );
 
+  // Where the project's docs, channels and code live. Read-only here: add and edit on the desktop.
+  const projectLinks = useMemo(() => {
+    try { return normalizeLinks(project?.links ? JSON.parse(project.links) : []); } catch { return []; }
+  }, [project?.links]);
+  const links = projectLinks.length > 0 ? (
+    <View style={[styles.notesCard, { backgroundColor: t.surface, borderColor: t.border }]}>
+      <Text style={[typeScale.caption, { color: t.textPrimary, fontWeight: "600" }]}>Links</Text>
+      <View>
+        {projectLinks.map((l, i) => (
+          <PressableScale
+            key={l.id}
+            onPress={() => void Linking.openURL(l.url).catch(() => {})}
+            accessibilityLabel={`${l.label}, ${PROJECT_LINK_KIND_LABEL[l.kind]}`}
+            style={[styles.noteRow, { borderBottomColor: t.borderSubtle ?? t.border }, i === projectLinks.length - 1 && { borderBottomWidth: 0 }]}
+          >
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[typeScale.caption, { color: t.accent, fontWeight: "600" }]} numberOfLines={1}>{l.label}</Text>
+              <Text style={[typeScale.micro, { color: t.textTertiary }]} numberOfLines={1}>
+                {PROJECT_LINK_KIND_LABEL[l.kind]}{l.note ? `, ${l.note}` : l.ref ? `, ${l.ref}` : ""}
+              </Text>
+            </View>
+          </PressableScale>
+        ))}
+      </View>
+    </View>
+  ) : null;
+
   const notes = (
       <View style={[styles.notesCard, { backgroundColor: t.surface, borderColor: t.border }]}>
         <View style={styles.notesHeader}>
@@ -673,7 +701,7 @@ export function OverviewTab({
       </View>
   );
 
-  const sections: Record<OverviewSection, ReactNode> = { masthead, focus: focusBar, kpi, queue, flow, priority, radar, notes, activity };
+  const sections: Record<OverviewSection, ReactNode> = { masthead, focus: focusBar, kpi, queue, flow, priority, radar, links, notes, activity };
 
   return (
     <ScrollView
@@ -704,6 +732,7 @@ export function OverviewTab({
             {radar}
           </View>
           <View style={[styles.column, { width: colW, minWidth: colW, maxWidth: colW }]}>
+            {links}
             {notes}
             {activity}
           </View>
@@ -717,6 +746,7 @@ export function OverviewTab({
           {flow}
           {priority}
           {radar}
+          {links}
           {notes}
           {activity}
         </>

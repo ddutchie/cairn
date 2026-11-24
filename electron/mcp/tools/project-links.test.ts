@@ -56,6 +56,13 @@ describe("project links through upsert_project and get_context", () => {
     expect(pack.project.links[0]).toMatchObject({ kind: "confluence", ref: "ENG" });
   });
 
+  it("get_context lists addresses from the description that are not saved yet", () => {
+    call({ projectId: "proj1", description: "Spec: https://acme.atlassian.net/wiki/spaces/ENG and https://github.com/acme/w." });
+    call({ projectId: "proj1", addLinks: [{ url: "https://github.com/acme/w" }] });
+    const pack = executeGetProjectContextPack(getSnapshot(db), { projectId: "proj1" }) as any;
+    expect(pack.project.unsavedLinks).toEqual(["https://acme.atlassian.net/wiki/spaces/ENG"]);
+  });
+
   it("adds the column to a database that predates it, and syncs it as part of the row", () => {
     const old = makeDbBefore();
     applySchema(old);

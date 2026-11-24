@@ -5,7 +5,7 @@
  * (including Electron main process, IPC handlers, and standalone MCP server).
  */
 
-import { linksForAgent } from "../../shared/projects/links";
+import { extractLinkCandidates, linksForAgent } from "../../shared/projects/links";
 import { noteDigest } from "../../shared/notes/toc";
 import { buildNoteMarkdown, buildProjectMarkdown } from "../../shared/notes/export";
 import type { BoardColumn, TaskCard } from "../../shared/types/board";
@@ -105,6 +105,9 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
   if (project.priority && project.priority !== "medium") proj.priority = project.priority;
   if (project.dueDate) proj.dueDate = project.dueDate;
   if (project.links?.length) proj.links = linksForAgent(project.links);
+  // Addresses written in the description but not saved as links: the agent can offer to save them.
+  const unsaved = extractLinkCandidates(project.description, project.links ?? []).slice(0, 5).map((c) => c.url);
+  if (unsaved.length) proj.unsavedLinks = unsaved;
   proj.columns = columns.map((c) => ({ id: c.id, name: c.name, type: c.type }));
   return {
     project: proj,
