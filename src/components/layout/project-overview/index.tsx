@@ -33,6 +33,7 @@ import { ReviewButton } from "./review-button";
 import { SessionBrowser } from "@/components/agent/SessionBrowser";
 import { useAgentSessionActions } from "@/components/agent/useAgentSessionActions";
 import { CollapsibleSection } from "./primitives";
+import { ProjectLinksSection } from "./project-links";
 import { InstrumentCard, PanelHeading, SURFACE } from "@/components/ui/panel";
 import { RecentActivityFeed, RecentAutomationRunsFeed, ShippedFeed, AtRiskFeed } from "./sections";
 import type { TaskCard } from "@/types";
@@ -632,6 +633,10 @@ export function ProjectOverview() {
           {/* ── notes summary — single CTA, replaces two All notes links ── */}
           <div className="mb-6">
             <NotesSummaryPanel notesCount={notes.length} pinnedNotes={pinnedNotes} recentNotes={recentNotes} />
+          </div>
+          {/* ── links: where the project's docs, channels and code live ── */}
+          <div className="mb-6">
+            <ProjectLinksSection project={project} />
           </div>
           {/* ── delivery: shipped this week + at risk ── */}
           {metrics && (

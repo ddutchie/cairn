@@ -33,6 +33,8 @@ export interface ExportProjectInput {
   status: string;
   priority: string;
   dueDate?: string | null;
+  /** Where the project's material lives. */
+  links?: Array<{ label: string; url: string; note?: string }>;
   /** Columns in board order; empty columns are skipped by the builder. */
   columns: ExportColumnInput[];
   /** Notes, already ordered by the caller (folder then title). */
@@ -68,6 +70,12 @@ export function buildProjectMarkdown(project: ExportProjectInput): string {
   const meta = [`Status: ${project.status}`, `Priority: ${project.priority}`];
   if (project.dueDate) meta.push(`Due: ${project.dueDate}`);
   out.push(`_${meta.join(" · ")}_`, "");
+
+  if (project.links?.length) {
+    out.push("## Links", "");
+    for (const l of project.links) out.push(`- [${l.label}](${l.url})${l.note ? ` — ${l.note}` : ""}`);
+    out.push("");
+  }
 
   const nonEmptyCols = project.columns.filter((c) => c.cards.length > 0);
   if (nonEmptyCols.length > 0) {

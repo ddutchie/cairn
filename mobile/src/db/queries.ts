@@ -1306,6 +1306,8 @@ export interface ProjectMeta {
   /** Honest dates / at-a-glance code folder — mirrors desktop ProjectOverview. */
   created_at: string;
   code_directory: string | null;
+  /** JSON array of project links; read with `normalizeLinks`. */
+  links?: string | null;
 }
 
 /** A board column including its `type` (needed to find the done column + order + colour). */
@@ -1336,7 +1338,7 @@ export function getProjectOverview(projectId: string): ProjectOverviewData {
   const db = getDb();
   const project =
     db.getFirstSync<ProjectMeta>(
-      `SELECT id, name, icon, description, status, priority, due_date, tag_ids, created_at, code_directory
+      `SELECT id, name, icon, description, status, priority, due_date, tag_ids, created_at, code_directory, links
        FROM projects WHERE id = ? AND ${LIVE}`,
       projectId,
     ) ?? null;

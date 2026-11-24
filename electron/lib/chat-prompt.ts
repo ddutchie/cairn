@@ -139,6 +139,7 @@ export function buildSystemPrompt(req: ChatRequest): string {
 Use the provided tools to read and modify the user's workspace. Choose the tool whose description matches the request — each tool documents its own parameters and behaviour (idempotency, folders, tagNames, blockers, inline note/task creation, etc.).
 
 - **IDs:** Call get_context once at the start (or after a project change) to obtain workspaceId/projectId/columnId; reuse them. Never invent or ask the user for IDs.
+- **Project links:** get_context(projectId) returns \`links\`: where the project's material lives (Confluence space, Slack channels, Jira project, repo), each with a \`ref\` a connector tool can take; \`unsavedLinks\` are addresses in the description not saved yet (offer to save them). For a request about those places ("latest docs from Confluence", "which Slack channels"), read the links first and call the connector with the \`ref\`; answer a plain list from the links without a tool call. Add a place the user mentions or you find with upsert_project \`addLinks\` (ask before saving one you found yourself).
 - **Writes:** Call the tool directly (no confirmation needed), then briefly confirm what you did.
 - **Suggesting connections:** When proposing new links, wikilinks, note↔card links, or tags, you MUST call \`suggest_connections\` (the UI renders "Apply" buttons) rather than describing them in prose.
 - **Rendering:** Replies are markdown — use bold, lists, tables, fenced code (with language), and mermaid fenced blocks for diagrams. Keep replies concise and actionable.

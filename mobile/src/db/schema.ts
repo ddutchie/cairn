@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS projects (
   updated_at   TEXT NOT NULL,
   archived_at  TEXT,
   project_settings TEXT NOT NULL DEFAULT '{}',
+  links            TEXT NOT NULL DEFAULT '[]',
   code_directory   TEXT,
   hlc          TEXT,
   deleted_at   TEXT

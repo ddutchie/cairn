@@ -12,6 +12,7 @@
 import type Database from "better-sqlite3";
 import { ts, newId } from "./utils";
 import { toWorkspace, toProject, j, type DbRow } from "../host-shared/db-mappers";
+import { normalizeLinks, type ProjectLink } from "../../shared/projects/links";
 import type { SessionProfileId } from "../../shared/agent/session-profile";
 import { getOrCreateFlow } from "./flow-queries";
 import { detachForeignPeopleLinks, onNoteDeleted } from "./people-queries";
@@ -120,11 +121,12 @@ export function createProject(db: Database.Database, p: {
 export function updateProject(db: Database.Database, id: string, patch: Partial<{
   name: string; description: string; icon: string; status: string;
   priority: string; dueDate: string; tagIds: string[]; archivedAt: string;
-  codeDirectory: string | null;
+  codeDirectory: string | null; links: ProjectLink[];
 }>) {
   const now = ts();
   // codeDirectory is nullable — use a sentinel to distinguish "not provided" from "set to null"
   const hasCodeDir = Object.prototype.hasOwnProperty.call(patch, "codeDirectory");
+  const hasLinks = Array.isArray(patch.links);
   db.prepare(`
     UPDATE projects SET
       name           = COALESCE(?, name),
@@ -136,6 +138,7 @@ export function updateProject(db: Database.Database, id: string, patch: Partial<
       tag_ids        = COALESCE(?, tag_ids),
       archived_at    = COALESCE(?, archived_at),
       code_directory = ${hasCodeDir ? "?" : "code_directory"},
+      links          = ${hasLinks ? "?" : "links"},
       updated_at     = ?
     WHERE id = ?
   `).run(
@@ -144,6 +147,7 @@ export function updateProject(db: Database.Database, id: string, patch: Partial<
     patch.tagIds ? j(patch.tagIds) : null,
     patch.archivedAt ?? null,
     ...(hasCodeDir ? [patch.codeDirectory ?? null] : []),
+    ...(hasLinks ? [j(normalizeLinks(patch.links))] : []),
     now, id,
   );
   return toProject(db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as DbRow);

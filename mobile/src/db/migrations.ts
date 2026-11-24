@@ -247,6 +247,12 @@ const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
     db.execSync(MOBILE_TRIGGERS_SQL);
     adoptPeopleStructure(createExpoSyncDb(db));
   },
+  // v15: project links (Confluence space, Slack channels, repo…), a JSON array on the
+  // project row. Fresh installs have it from the base schema.
+  (db) => {
+    const cols = db.getAllSync<{ name: string }>("PRAGMA table_info(projects)").map((c) => c.name);
+    if (!cols.includes("links")) db.execSync("ALTER TABLE projects ADD COLUMN links TEXT NOT NULL DEFAULT '[]'");
+  },
 ];
 
 /** The schema version this build expects (base schema = 1, plus each migration). */

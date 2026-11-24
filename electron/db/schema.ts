@@ -1955,6 +1955,8 @@ function ensureColumns(db: Database.Database): void {
   ensure("llm_usage", "cache_creation_tokens", "cache_creation_tokens INTEGER NOT NULL DEFAULT 0");
   // v66 people layer — columns on existing synced tables.
   for (const { table, column, ddl } of PEOPLE_ADDED_COLUMNS) ensure(table, column, ddl);
+  // Project links (Confluence space, Slack channels…): a JSON array, synced as part of the row.
+  ensure("projects", "links", "links TEXT NOT NULL DEFAULT '[]'");
 }
 
 /** Test hook: apply the base schema and migrations up to `version` only, to build an older DB. */
