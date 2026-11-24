@@ -63,6 +63,11 @@ export function PixelScreen({
     const game = factory({ data, best });
     gameRef.current = game;
     let raf = 0, last = performance.now(), acc = 0, wasHidden = document.hidden;
+    const onVisibility = () => {
+      wasHidden = true;
+      acc = 0;
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     const frame = (now: number) => {
       if (document.hidden) {
         wasHidden = true;
@@ -114,6 +119,7 @@ export function PixelScreen({
     window.addEventListener("pointercancel", onUp);
     return () => {
       cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKey);
       window.removeEventListener("pointerup", onUp);
