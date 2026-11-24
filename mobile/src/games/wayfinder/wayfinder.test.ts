@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEMO_ARCADE_PROJECTS } from "@cairn/shared/arcade/pixel/arcade-data";
 import { NO_HUD } from "@cairn/shared/arcade/pixel/hud";
+import { fbm, fbmSampler } from "@cairn/shared/arcade/pixel/terrain";
 import { KO_PENALTY, MAX_HP, RETREAT_PENALTY, applyRelic, dealDeck, exploreLayout, freshVoyage, goldFor, isFight, kindAt, landRect, type StepKind } from "@cairn/shared/arcade/wayfinder/expedition";
 import { WD, WayfinderSim, type Isle } from "@cairn/shared/arcade/wayfinder/sim";
 
@@ -426,5 +427,29 @@ describe("Wayfinder island expeditions", () => {
     sim.setKey("Escape", true);
     expect(sim.state).toBe("sail");
     expect(sim.setKey("Escape", true)).toBe(false);
+  });
+});
+
+describe("Wayfinder world build", () => {
+  it("samples fbm bit for bit, and answers thresholds the same way", () => {
+    const s = fbmSampler(4);
+    for (let y = 0; y < 60; y += 0.7) {
+      for (let x = 0; x < 60; x += 0.3) {
+        const v = fbm(x, y, 4);
+        expect(s.at(x, y)).toBe(v);
+        for (const th of [0.3, 0.5, 0.55, 0.7]) expect(s.above(x, y, th)).toBe(v > th);
+      }
+    }
+  });
+
+  it("reuses the world for the same workspace but gives each game its own islands", () => {
+    const a = new WayfinderSim({ width: 200, height: 360, projects: DEMO_ARCADE_PROJECTS });
+    a.islands[0].charted = true;
+    const b = new WayfinderSim({ width: 300, height: 360, projects: DEMO_ARCADE_PROJECTS });
+    expect(b.worldPixels).toBe(a.worldPixels);
+    expect(b.islands[0]).not.toBe(a.islands[0]);
+    expect(b.islands[0].charted).toBe(false);
+    expect(b.all).toContain(b.today);
+    expect(b.all).not.toContain(a.today);
   });
 });

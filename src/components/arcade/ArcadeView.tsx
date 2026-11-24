@@ -20,7 +20,7 @@ import { buildTaskForceLevels } from "@cairn/shared/arcade/task-force/models";
 import { TaskForceRenderer } from "@cairn/shared/arcade/task-force/render";
 import { TaskForceSim } from "@cairn/shared/arcade/task-force/sim";
 import { WayfinderRenderer } from "@cairn/shared/arcade/wayfinder/render";
-import { WayfinderSim } from "@cairn/shared/arcade/wayfinder/sim";
+import { WayfinderSim, warmWayfinderSea } from "@cairn/shared/arcade/wayfinder/sim";
 import { useCairnStore } from "@/store";
 import { IconButton } from "@/components/ui/icon-button";
 import { ViewToolbar } from "@/components/ui/view-toolbar";
@@ -145,7 +145,11 @@ function makeMenuFactory(onPick: (id: ArcadeGameId) => void, onSelect: (id: Arca
     const menu = new ArcadeMenu({ width, height, hud: NO_HUD, inputMode: "pointer", bests, onSelect, onPick });
     const renderer = new ArcadeRenderer(createCanvasBackend(canvas), menu);
     return {
-      update: () => menu.step(),
+      update: () => {
+        menu.step();
+        // A slice of Wayfinder's sea per frame, so that game opens faster.
+        warmWayfinderSea();
+      },
       render: () => renderer.draw(),
       down: (x, y) => menu.down(x, y),
       move: (x, y) => menu.move(x, y),

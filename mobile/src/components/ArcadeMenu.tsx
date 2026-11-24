@@ -6,6 +6,7 @@ import { PixelGameView, type PixelGame, type PixelGameSpec } from "@/components/
 import { skiaBackend } from "@/games/pixel/skia-backend";
 import { ArcadeMenu, CARTRIDGES, type ArcadeEvent, type ArcadeGameId } from "@cairn/shared/arcade/menu";
 import { ArcadeRenderer } from "@cairn/shared/arcade/menu-render";
+import { warmWayfinderSea } from "@cairn/shared/arcade/wayfinder/sim";
 
 function readBest(key: string): number {
   const n = parseInt(getMeta(key) ?? "", 10);
@@ -25,7 +26,11 @@ function createArcade({ width, height, hud }: PixelGameSpec): PixelGame<ArcadeEv
     set calm(v) {
       menu.calm = v;
     },
-    step: () => menu.step(),
+    step: () => {
+      menu.step();
+      // A slice of Wayfinder's sea per frame, so that game opens faster.
+      warmWayfinderSea();
+    },
     draw: () => renderer.draw(),
     down: (x, y) => menu.down(x, y),
     move: () => {},

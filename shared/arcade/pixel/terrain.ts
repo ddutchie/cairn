@@ -95,6 +95,69 @@ export function fbm(x: number, y: number, s: number): number {
   }
   return t / n;
 }
+export interface FbmSampler {
+  /** Exactly `fbm(x, y, s)`. */
+  at(x: number, y: number): number;
+  /** Exactly `fbm(x, y, s) > th`, stopping once the octaves left cannot change the answer. */
+  above(x: number, y: number, th: number): boolean;
+}
+
+const FBM_OCTAVES = 5;
+// Each octave's weight, the total, and what the octaves after it can still add.
+const FBM_AMP = Array.from({ length: FBM_OCTAVES }, (_, i) => 0.5 ** (i + 1));
+const FBM_SUM = FBM_AMP.reduce((a, b) => a + b, 0);
+const FBM_REST = FBM_AMP.map((_, i) => FBM_AMP.slice(i + 1).reduce((a, b) => a + b, 0));
+
+/**
+ * `fbm` for one seed, for scanning many nearby points (a row at a time). It
+ * keeps each octave's last lattice cell, so neighbouring pixels skip the four
+ * corner hashes. Results match `fbm(x, y, s)` bit for bit.
+ */
+export function fbmSampler(s: number): FbmSampler {
+  const cx = new Float64Array(FBM_OCTAVES).fill(NaN), cy = new Float64Array(FBM_OCTAVES).fill(NaN);
+  const ca = new Float64Array(FBM_OCTAVES), cb = new Float64Array(FBM_OCTAVES), cc = new Float64Array(FBM_OCTAVES), cd = new Float64Array(FBM_OCTAVES);
+  // Same arithmetic as vnoise, octave i, at frequency f.
+  const octave = (i: number, x: number, y: number, f: number): number => {
+    const px = x * f, py = y * f, xi = Math.floor(px), yi = Math.floor(py), xf = px - xi, yf = py - yi;
+    if (xi !== cx[i] || yi !== cy[i]) {
+      const si = s + i * 17;
+      cx[i] = xi;
+      cy[i] = yi;
+      ca[i] = hash2(xi, yi, si);
+      cb[i] = hash2(xi + 1, yi, si);
+      cc[i] = hash2(xi, yi + 1, si);
+      cd[i] = hash2(xi + 1, yi + 1, si);
+    }
+    const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf), A = ca[i], B = cb[i], C = cc[i], D = cd[i];
+    return A + (B - A) * u + (C - A) * v + (A - B - C + D) * u * v;
+  };
+  return {
+    at(x, y) {
+      let t = 0, a = 0.5, f = 1, n = 0;
+      for (let i = 0; i < FBM_OCTAVES; i++) {
+        t += octave(i, x, y, f) * a;
+        n += a;
+        a *= 0.5;
+        f *= 2.03;
+      }
+      return t / n;
+    },
+    above(x, y, th) {
+      // Each octave adds between 0 and its weight, so a partial sum bounds the result.
+      const lo = th * FBM_SUM - 1e-9, hi = th * FBM_SUM + 1e-9;
+      let t = 0, a = 0.5, f = 1, n = 0;
+      for (let i = 0; i < FBM_OCTAVES; i++) {
+        t += octave(i, x, y, f) * a;
+        n += a;
+        a *= 0.5;
+        f *= 2.03;
+        if (t > hi) return true;
+        if (t + FBM_REST[i] < lo) return false;
+      }
+      return t / n > th;
+    },
+  };
+}
 export const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
 
 interface Prepared {

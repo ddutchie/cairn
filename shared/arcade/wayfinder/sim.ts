@@ -12,7 +12,7 @@ import type { Priority } from "../../types/domain";
 import type { ArcadeProject } from "../pixel/arcade-data";
 import { NO_HUD, hudFrame, type InputMode, type PixelHud } from "../pixel/hud";
 import { clamp } from "../pixel/kinds";
-import { BAYER, BIOMES, fbm, hash2, mulberry32, rgb, type BiomeName } from "../pixel/terrain";
+import { BAYER, BIOMES, fbm, fbmSampler, hash2, mulberry32, rgb, type BiomeName } from "../pixel/terrain";
 import {
   CHOICE_COOLDOWN,
   KO_FRAMES,
@@ -174,6 +174,26 @@ export const FOG_TEX: Uint32Array = (() => {
   return out;
 })();
 
+// The open sea's darker swell patches. They don't depend on the workspace, so
+// each pixel is worked out once per run (0 = not yet, 1 = calm, 2 = swell).
+const SWELL = new Uint8Array(WD * HD);
+const swellNoise = fbmSampler(4);
+function swellAt(x: number, y: number): boolean {
+  const o = y * WD + x;
+  if (!SWELL[o]) SWELL[o] = swellNoise.above(x * 0.02, y * 0.02, 0.55) ? 2 : 1;
+  return SWELL[o] === 2;
+}
+let swellRow = 0;
+/**
+ * Works out a few more rows of the swell, so the arcade menu can do it a
+ * slice per frame and Wayfinder opens without that wait. Stops once done.
+ */
+export function warmWayfinderSea(rows = 6): void {
+  for (const end = Math.min(HD, swellRow + rows); swellRow < end; swellRow++) {
+    for (let x = 0; x < WD; x++) swellAt(x, swellRow);
+  }
+}
+
 const clipTitle = (s: string) => (s.length > 22 ? `${s.slice(0, 21)}.` : s);
 
 export function buildWorld(projects: ArcadeProject[]) {
@@ -287,9 +307,10 @@ export function buildWorld(projects: ArcadeProject[]) {
     const x1 = Math.min(WD - 1, (is.x + R) | 0);
     const y0 = Math.max(0, (is.y - R) | 0);
     const y1 = Math.min(HD - 1, (is.y + R) | 0);
+    const wobble = fbmSampler(is.i * 13 + 5);
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
-        const dx = x - is.x, dy = y - is.y, wob = 0.75 + fbm(x * 0.06, y * 0.06, is.i * 13 + 5) * 0.6;
+        const dx = x - is.x, dy = y - is.y, wob = 0.75 + wobble.at(x * 0.06, y * 0.06) * 0.6;
         const d = Math.hypot(dx, dy) / (is.r * wob), o = y * WD + x, e = 1 - d * d;
         if (e > E[o]) {
           E[o] = e;
@@ -339,7 +360,7 @@ export function buildWorld(projects: ArcadeProject[]) {
   for (let y = 0; y < HD; y++) {
     for (let x = 0; x < WD; x++) {
       const o = y * WD + x, n = NEAR[o];
-      let c = n > 0.75 ? WATER[3] : n > 0.35 ? WATER[2] : n > 0 ? WATER[1] : fbm(x * 0.02, y * 0.02, 4) > 0.55 ? WATER[1] : WATER[0];
+      let c = n > 0.75 ? WATER[3] : n > 0.35 ? WATER[2] : n > 0 ? WATER[1] : swellAt(x, y) ? WATER[1] : WATER[0];
       if (n > 0.55 && n < 0.62 && hash2(x, y, 3) < 0.5) c = WATER[4];
       if (LANE[o] && E[o] <= 0) c = LANE[o] === 2 ? BUOY : BAYER[(y & 3) * 4 + (x & 3)] < 0.6 ? LANE_C : WATER[3];
       wbuf[o] = c;
@@ -374,6 +395,24 @@ export function buildWorld(projects: ArcadeProject[]) {
     .map(({ t, p }) => ({ title: t.title, p, pr: t.priority, due: t.dueMin }));
   const stormTasks = tasks.filter((x) => x.t.overdue).slice(0, MAX_STORMS);
   return { projs, islands, harbours, today, all, E, NEAR, LANE, worldPixels, crates, stormTasks };
+}
+
+type World = ReturnType<typeof buildWorld>;
+let lastWorld: { key: string; world: World } | null = null;
+
+/**
+ * `buildWorld`, reusing the last one while the workspace is unchanged (reopening
+ * the game, or folding and unfolding the iPhone Duo, which starts a new game).
+ * Islands get fresh copies because a voyage marks them explored and charted.
+ */
+export function worldFor(projects: ArcadeProject[]): World {
+  const key = JSON.stringify(projects);
+  if (lastWorld?.key !== key) lastWorld = { key, world: buildWorld(projects) };
+  const w = lastWorld.world;
+  const islands = w.islands.map((is) => ({ ...is }));
+  const harbours = w.harbours.map((h) => ({ ...h }));
+  const today = { ...w.today };
+  return { ...w, islands, harbours, today, all: [...islands, ...harbours, today] };
 }
 
 export interface WayfinderSpec {
@@ -457,7 +496,7 @@ export class WayfinderSim {
     this.best = opts.best ?? 0;
     this.rand = mulberry32(opts.seed ?? 31);
 
-    const w = buildWorld(opts.projects);
+    const w = worldFor(opts.projects);
     this.islands = w.islands;
     this.harbours = w.harbours;
     this.today = w.today;
