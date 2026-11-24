@@ -32,6 +32,7 @@ const GAMES: Record<ArcadeGameId, GameFactory> = {
 
 export function ArcadeView() {
   const [game, setGame] = useState<ArcadeGameId | null>(null);
+  const [menuSel, setMenuSel] = useState<ArcadeGameId>("task-force");
   const setArcadeUnlocked = useCairnStore((s) => s.setArcadeUnlocked);
   const setView = useCairnStore((s) => s.setView);
 
@@ -50,7 +51,7 @@ export function ArcadeView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-read per game, see above
   }, [game]);
 
-  const menu = useMemo(() => createArcadeMenu((id) => setGame(id)), []);
+  const menu = useMemo(() => createArcadeMenu((id) => setGame(id), (id) => setMenuSel(id)), []);
   const title = game ? CARTRIDGES.find((c) => c.id === game)?.name : undefined;
 
   return (
@@ -88,7 +89,25 @@ export function ArcadeView() {
       {game ? (
         <PixelScreen key={game} id={game} factory={GAMES[game]} data={data} onExit={() => setGame(null)} />
       ) : (
-        <PixelScreen key="menu" id="menu" factory={menu} data={data} />
+        <>
+          <div role="listbox" aria-label="Arcade games" className="sr-only">
+            {CARTRIDGES.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                role="option"
+                aria-selected={menuSel === c.id}
+                onClick={() => {
+                  setMenuSel(c.id);
+                  setGame(c.id);
+                }}
+              >
+                {c.title}
+              </button>
+            ))}
+          </div>
+          <PixelScreen key="menu" id="menu" factory={menu} data={data} />
+        </>
       )}
     </div>
   );

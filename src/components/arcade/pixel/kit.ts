@@ -498,7 +498,8 @@ export function fontSafe(s: string): string {
   return s
     .toUpperCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
     .replace(/[^A-Z0-9:.\-!/'?+ ,&=#<>]/g, "")
     .replace(/\s+/g, " ")
     .trim();

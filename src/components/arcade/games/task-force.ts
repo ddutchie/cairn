@@ -599,7 +599,10 @@ export const createTaskForce: GameFactory = ({ data, best: best0 }) => {
       player.x = clamp(player.x + dx, 8, W - 8);
       player.tx = clamp(player.tx + dx, 8, W - 8);
       player.px += dx;
-      for (const e of enemies) e.x += dx;
+      for (const e of enemies) {
+        e.x = clamp(e.x + dx, 14, W - 14);
+        e.x0 = clamp(e.x0 + dx, 14, W - 14);
+      }
       if (boss) boss.x += dx;
       for (const p of pickups) p.x += dx;
       for (const b of pbul) b.x += dx;

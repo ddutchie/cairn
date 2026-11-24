@@ -233,9 +233,12 @@ function buildWorld(data: ArcadeData) {
   wctx.putImageData(wimg, 0, 0);
   for (const is of all) is.lift = Math.round(Math.max(0, E[(is.y | 0) * WD + (is.x | 0)]) * RELIEF);
 
-  // Cargo: today's open work, most due first; overdue work turns into storms.
+  // Cargo: today's open work (excluding tasks due after today), explicit due-today first; overdue work turns into storms.
   const tasks = projs.flatMap((p) => p.tasks.map((t) => ({ t, p })));
-  const crates: Crate[] = tasks.filter((x) => !x.t.overdue).sort((a, b) => a.t.dueMin - b.t.dueMin).slice(0, MAX_CRATES)
+  const crates: Crate[] = tasks
+    .filter((x) => !x.t.overdue && x.t.dueScope !== "later")
+    .sort((a, b) => (a.t.dueScope === "untimed" ? 1 : 0) - (b.t.dueScope === "untimed" ? 1 : 0) || a.t.dueMin - b.t.dueMin)
+    .slice(0, MAX_CRATES)
     .map(({ t, p }) => ({ title: t.title, p, pr: t.priority, due: t.dueMin }));
   const stormTasks = tasks.filter((x) => x.t.overdue).slice(0, MAX_STORMS);
   return { projs, islands, harbours, today, all, E, NEAR, LANE, world, crates, stormTasks };
@@ -362,6 +365,12 @@ export const createWayfinder: GameFactory = ({ data, best: best0 }) => {
     else pod.on = Math.max(0, pod.on - 0.01);
     if (pod.on >= 1 && !pod.met) { pod.met = true; pop("A POD OF DOLPHINS", "JOINS YOUR BOW", "#c7e4ff"); }
     if (pod.on === 0) pod.met = false;
+    if (pod.on > 0)
+      for (let i = 0; i < 3; i++) {
+        const d = dolphinAt(i);
+        if (d.jump > 0 && (d.ph < 0.15 || d.ph > Math.PI - 0.15))
+          for (let k = 0; k < 3; k++) parts.push({ x: d.x + rand(-2, 2), y: d.y, vx: rand(-0.5, 0.5), vy: rand(-0.9, -0.3), g: 0.06, life: 12, c: "#e6f6ff" });
+      }
   }
   /** Dolphin i alongside the bow, porpoising. */
   function dolphinAt(i: number) {
@@ -408,11 +417,7 @@ export const createWayfinder: GameFactory = ({ data, best: best0 }) => {
     if (pod.on > 0)
       for (let i = 0; i < 3; i++) {
         const d = dolphinAt(i);
-        if (d.jump > 0) {
-          drawStack(S.dolphin, sx(d.x), sy(d.y) - Math.round(d.jump), boat.a);
-          if (d.ph < 0.15 || d.ph > Math.PI - 0.15)
-            for (let k = 0; k < 3; k++) parts.push({ x: d.x + rand(-2, 2), y: d.y, vx: rand(-0.5, 0.5), vy: rand(-0.9, -0.3), g: 0.06, life: 12, c: "#e6f6ff" });
-        }
+        if (d.jump > 0) drawStack(S.dolphin, sx(d.x), sy(d.y) - Math.round(d.jump), boat.a);
       }
   }
 
@@ -433,6 +438,10 @@ export const createWayfinder: GameFactory = ({ data, best: best0 }) => {
       return;
     }
     k.t++;
+    if (k.phase === "stir" && t % 6 === 0) {
+      const grow = Math.min(1, k.t / 60), rx = 28 * grow, ry = 20 * grow;
+      parts.push({ x: k.x + rand(-rx, rx), y: k.y + rand(-ry, ry), vx: 0, vy: -0.2, g: 0, life: 18, c: "#9fd2ff", wake: true });
+    }
     if (k.phase === "stir" && k.t > 110) { k.phase = "up"; k.t = 0; shake = 3; pop("THE KRAKEN", "SAIL CLEAR OF THE ARMS", "#ff5e8a"); }
     if (k.phase === "up") {
       for (const a of k.arms) { a.h = Math.min(1, a.h + 0.03); a.r = Math.max(16, 32 - k.t * 0.03); }
@@ -468,7 +477,6 @@ export const createWayfinder: GameFactory = ({ data, best: best0 }) => {
         const d = (x * x) / (rx * rx || 1) + (y * y) / (ry * ry || 1);
         if (d < 1 && BAYER[(((y + 64) | 0) & 3) * 4 + (((x + 64) | 0) & 3)] < 0.75 - d * 0.5) px(cx + x, cy + y, "#0a1a3a");
       }
-    if (k.phase === "stir" && t % 6 === 0) parts.push({ x: k.x + rand(-rx, rx), y: k.y + rand(-ry, ry), vx: 0, vy: -0.2, g: 0, life: 18, c: "#9fd2ff", wake: true });
   }
   function drawKrakenOver() {
     const k = kraken;
@@ -513,6 +521,10 @@ export const createWayfinder: GameFactory = ({ data, best: best0 }) => {
         crew.cast = Math.min(1, crew.cast + 0.035);
         if (crew.cast >= 1) crew.nextBite = 200 + Math.random() * 300;
       } else if (crew.bite > 0) {
+        if (t % 8 === 0) {
+          const end = lineEnd();
+          parts.push({ x: end.x + rand(-2, 2), y: end.y, vx: 0, vy: 0, g: 0, life: 10, c: "#e6f6ff", wake: true });
+        }
         if (--crew.bite === 0) catchSomething();
       } else if (--crew.nextBite <= 0) crew.bite = 40;
     }
@@ -556,7 +568,6 @@ export const createWayfinder: GameFactory = ({ data, best: best0 }) => {
       if (crew.cast >= 1) {
         const fy = Math.sin(t * 0.1) * 0.5 + dip;
         px(sx(end.x), sy(end.y) + fy, "#ff3d6e"); px(sx(end.x), sy(end.y) + fy - 1, "#ffffff");
-        if (crew.bite > 0 && t % 8 === 0) parts.push({ x: end.x + rand(-2, 2), y: end.y, vx: 0, vy: 0, g: 0, life: 10, c: "#e6f6ff", wake: true });
       }
     }
     if (crew.swim === "dive") {
@@ -580,7 +591,7 @@ export const createWayfinder: GameFactory = ({ data, best: best0 }) => {
   // ── Update ─────────────────────────────────────────────────────────────────
   function update() {
     t++; stateT++;
-    if (state !== "map") { stepCreatures(); stepKraken(); stepCrew(); }
+    if (state !== "map") stepCreatures();
     if (state === "title") {
       boat.a += 0.012;
       boat.x = WD / 2 + Math.sin(boat.a) * 40;
@@ -615,6 +626,8 @@ export const createWayfinder: GameFactory = ({ data, best: best0 }) => {
     if (nx < 4 || ny < 4 || nx > WD - 4 || ny > HD - 4 || E[no] > 0.04) { boat.v *= -0.3; shake = 1.5; }
     else { boat.x = nx; boat.y = ny; }
     if (boat.v > 0.3) wake(onLane);
+    stepCrew();
+    stepKraken();
     reveal(boat.x, boat.y, 64);
 
     for (const is of islands)
@@ -916,10 +929,11 @@ export const createWayfinder: GameFactory = ({ data, best: best0 }) => {
     move(x, y) { if (steer) steer = { x, y }; },
     up() { steer = null; },
     key(code, down) {
+      const wasDown = keys.has(code);
       if (down) keys.add(code);
       else keys.delete(code);
       if (!down) return /^Arrow/.test(code);
-      if (code === "KeyM") { toggleMap(); return true; }
+      if (code === "KeyM") { if (!wasDown) toggleMap(); return true; }
       if ((code === "Space" || code === "Enter") && (state === "title" || (state === "log" && stateT > 60))) { begin(); return true; }
       return /^(Arrow|Key[WASD]$|Space)/.test(code);
     },

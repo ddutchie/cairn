@@ -267,8 +267,20 @@ export function DockSidebar() {
         <div aria-hidden={collapsed} inert={collapsed ? true : undefined} className={cn("flex flex-col flex-1 min-h-0 w-full transition-opacity duration-300", collapsed ? "opacity-0 pointer-events-none absolute inset-x-0 top-0 h-0 overflow-hidden" : "opacity-100")}>
           {/* workspace header */}
           <div data-tutorial="workspace-switcher" className="flex items-center gap-2 px-3 h-11 border-b border-[var(--border-subtle)] flex-shrink-0">
-            {/* Not a control: a hidden easter egg (see secretTap above). */}
-            <span onClick={secretTap} className="flex shrink-0">
+            {/* Not a visible control: a hidden easter egg (see secretTap above). */}
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label={workspace?.name ?? "Workspace"}
+              onClick={secretTap}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  secretTap();
+                }
+              }}
+              className="flex shrink-0 outline-none"
+            >
               <WorkspaceIcon name={workspace?.icon} size={16} className="text-[var(--text-tertiary)]" />
             </span>
             <div className="min-w-0 flex-1">

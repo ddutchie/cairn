@@ -13,7 +13,8 @@ import {
   px, rand, scr, textW, type Model,
 } from "../pixel/kit";
 
-const ROWS = 7, BW = 26, BH = 10, GAP_X = 28, GAP_Y = 12, BY0 = 62;
+export const BW = 26;
+const ROWS = 7, BH = 10, GAP_X = 28, GAP_Y = 12, BY0 = 62;
 const PAD_Y = H - 34, PAD_W = 32, BALL_R = 2;
 const BASE_SPEED = 2.1;
 
@@ -42,9 +43,28 @@ export const padModel = lazy(() =>
   }),
 );
 
-interface Brick { x: number; y: number; kind: EntityKind; label: string; ph: number }
+export interface Brick { x: number; y: number; kind: EntityKind; label: string; ph: number }
 interface Particle { x: number; y: number; vx: number; vy: number; g: number; life: number; c: string }
 interface Pop { s: string; x: number; y: number; t: number; c: string; big: boolean }
+
+/**
+ * Shift surviving bricks by `dx` when the playfield width changes; if any
+ * surviving brick falls outside `[BW / 2 + 2, w - BW / 2 - 2]`, reflow the
+ * surviving bricks cleanly inside `w` so every brick stays hittable.
+ */
+export function fitBricksToWidth(bricks: Brick[], dx: number, w: number): void {
+  const minX = BW / 2 + 2, maxX = w - BW / 2 - 2;
+  for (const b of bricks) b.x += dx;
+  if (!bricks.some((b) => b.x < minX || b.x > maxX)) return;
+  const cols = clamp(Math.floor((w - 8) / GAP_X), 6, 16);
+  const bx0 = (w - (cols - 1) * GAP_X) / 2;
+  const rows = Math.ceil(bricks.length / cols);
+  const gapY = rows > ROWS ? Math.min(GAP_Y, Math.max(BH, Math.floor((PAD_Y - 30 - BY0) / Math.max(1, rows - 1)))) : GAP_Y;
+  for (let i = 0; i < bricks.length; i++) {
+    bricks[i].x = bx0 + (i % cols) * GAP_X;
+    bricks[i].y = BY0 + Math.floor(i / cols) * gapY;
+  }
+}
 
 export const createBreakout: GameFactory = ({ data, best: best0 }) => {
   const ctx = scr.ctx, BRICK = brickModels(), PAD = padModel(), labels = data.labels;
@@ -243,7 +263,7 @@ export const createBreakout: GameFactory = ({ data, best: best0 }) => {
       for (const p of trail) p.x += dx;
       for (const p of parts) p.x += dx;
       for (const p of pops) p.x += dx;
-      for (const b of bricks) b.x += dx;
+      fitBricksToWidth(bricks, dx, W);
       demo.splice(0, demo.length, ...layout());
     },
     get best() { return best; },

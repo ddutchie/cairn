@@ -62,11 +62,21 @@ export function PixelScreen({
     let best = loadBest(id);
     const game = factory({ data, best });
     gameRef.current = game;
-    let raf = 0, last = performance.now(), acc = 0;
+    let raf = 0, last = performance.now(), acc = 0, wasHidden = document.hidden;
     const frame = (now: number) => {
+      if (document.hidden) {
+        wasHidden = true;
+        acc = 0;
+        raf = requestAnimationFrame(frame);
+        return;
+      }
+      if (wasHidden) {
+        wasHidden = false;
+        last = now;
+        acc = 0;
+      }
       acc += Math.min(100, now - last);
       last = now;
-      if (document.hidden) acc = 0;
       while (acc >= STEP) {
         game.update();
         acc -= STEP;
@@ -89,6 +99,7 @@ export function PixelScreen({
         exitRef.current();
         return;
       }
+      if (el && el.closest("button,a,[role='button'],[role='menuitem']")) return;
       // Held Space / Enter would re-trigger drops and launches; arrows may repeat.
       if (e.repeat && (e.code === "Space" || e.code === "Enter")) {
         e.preventDefault();
@@ -127,8 +138,9 @@ export function PixelScreen({
   }, [width, height, fit]);
 
   const toGame = (e: React.PointerEvent): [number, number] => {
-    const r = canvasRef.current!.getBoundingClientRect();
-    return [((e.clientX - r.left) / r.width) * gameW, ((e.clientY - r.top) / r.height) * H];
+    const canvas = canvasRef.current!;
+    const r = canvas.getBoundingClientRect();
+    return [((e.clientX - r.left) / r.width) * canvas.width, ((e.clientY - r.top) / r.height) * H];
   };
 
   return (

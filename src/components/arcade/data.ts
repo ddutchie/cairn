@@ -18,12 +18,15 @@ export interface Label {
   kind: EntityKind;
 }
 
+export type DueScope = "overdue" | "today" | "untimed" | "later";
+
 export interface ArcadeTask {
   title: string;
   priority: Priority;
   /** Minutes after 09:00 today it's due; negative = already overdue. */
   dueMin: number;
   overdue: boolean;
+  dueScope?: DueScope;
   column: ColumnType;
 }
 
@@ -71,16 +74,19 @@ export interface ArcadeSource {
 }
 
 /** Minutes between 09:00 on `now`'s day and the end of the due day. */
-function dueMinutes(due: string | undefined, now: Date, seed: number): { dueMin: number; overdue: boolean } {
+function dueMinutes(due: string | undefined, now: Date, seed: number): { dueMin: number; overdue: boolean; dueScope: DueScope } {
   const start = new Date(now);
   start.setHours(9, 0, 0, 0);
-  if (!due) return { dueMin: 120 + Math.round(hash2(seed, 3, 9) * 400), overdue: false };
+  if (!due) return { dueMin: 120 + Math.round(hash2(seed, 3, 9) * 400), overdue: false, dueScope: "untimed" };
   const d = new Date(due.length <= 10 ? `${due}T17:00:00` : due);
-  if (Number.isNaN(d.getTime())) return { dueMin: 300, overdue: false };
+  if (Number.isNaN(d.getTime())) return { dueMin: 300, overdue: false, dueScope: "untimed" };
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59, 999);
   const mins = Math.round((d.getTime() - start.getTime()) / 60_000);
-  if (d < start) return { dueMin: Math.max(-540, Math.min(-30, mins)), overdue: true };
-  // Today's work lands inside the 09:00–18:00 shift; later work late in the day.
-  return { dueMin: Math.min(520, Math.max(45, mins)), overdue: false };
+  if (d < start) return { dueMin: Math.max(-540, Math.min(-30, mins)), overdue: true, dueScope: "overdue" };
+  if (d > endOfDay) return { dueMin: 520, overdue: false, dueScope: "later" };
+  // Today's work lands inside the 09:00–18:00 shift.
+  return { dueMin: Math.min(520, Math.max(45, mins)), overdue: false, dueScope: "today" };
 }
 
 export function buildArcadeData(src: ArcadeSource): ArcadeData {
@@ -100,30 +106,33 @@ export function buildArcadeData(src: ArcadeSource): ArcadeData {
     .sort((a, b) => b.cards.length + b.notes.length - (a.cards.length + a.notes.length))
     .slice(0, MAX_PROJECTS);
 
-  const noteIds = new Set(projects.flatMap((x) => x.notes.slice(0, MAX_NOTES).map((n) => n.id)));
-  const out: ArcadeProject[] = projects.map((x, i) => ({
+  const selected = projects.map((x) => ({
+    p: x.p,
+    tasks: [...x.cards]
+      .sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.order - b.order)
+      .slice(0, MAX_TASKS),
+    notes: [...x.notes]
+      .sort((a, b) => Number(b.isPinned) - Number(a.isPinned) || b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, MAX_NOTES),
+  }));
+  const noteIds = new Set(selected.flatMap((x) => x.notes.map((n) => n.id)));
+  const out: ArcadeProject[] = selected.map((x, i) => ({
     id: x.p.id,
     name: clean(x.p.name),
     accent: ACCENTS[i % ACCENTS.length],
     biome: BIOME_ORDER[i % BIOME_ORDER.length],
-    tasks: [...x.cards]
-      .sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.order - b.order)
-      .slice(0, MAX_TASKS)
-      .map((c, k) => ({
-        title: clean(c.title),
-        priority: c.priority,
-        column: colType.get(c.columnId) ?? "todo",
-        ...dueMinutes(c.dueDate, now, i * 31 + k),
-      })),
-    notes: [...x.notes]
-      .sort((a, b) => Number(b.isPinned) - Number(a.isPinned) || b.updatedAt.localeCompare(a.updatedAt))
-      .slice(0, MAX_NOTES)
-      .map((n) => ({
-        id: n.id,
-        title: clean(n.title),
-        words: Math.max(80, (n.contentText?.length ?? 0) * 6),
-        links: n.linkedNoteIds.filter((id) => id !== n.id && noteIds.has(id)),
-      })),
+    tasks: x.tasks.map((c, k) => ({
+      title: clean(c.title),
+      priority: c.priority,
+      column: colType.get(c.columnId) ?? "todo",
+      ...dueMinutes(c.dueDate, now, i * 31 + k),
+    })),
+    notes: x.notes.map((n) => ({
+      id: n.id,
+      title: clean(n.title),
+      words: Math.max(80, (n.contentText?.length ?? 0) * 6),
+      links: n.linkedNoteIds.filter((id) => id !== n.id && noteIds.has(id)),
+    })),
   }));
   const tags = src.tags.filter(inWs).map((t) => clean(t.name)).slice(0, 12);
   const data: ArcadeData = { projects: out, tags, labels: [], demo: false };
@@ -146,7 +155,12 @@ export function interleave(d: Pick<ArcadeData, "projects" | "tags">): Label[] {
     d.tags.map((t) => ({ label: t, kind: "tag" as const })),
   ];
   const out: Label[] = [];
-  for (let i = 0; out.length < 64 && lists.some((l) => i < l.length); i++) for (const l of lists) if (i < l.length) out.push(l[i]);
+  for (let i = 0; out.length < 64 && lists.some((l) => i < l.length); i++) {
+    for (const l of lists) {
+      if (out.length >= 64) break;
+      if (i < l.length) out.push(l[i]);
+    }
+  }
   return out;
 }
 

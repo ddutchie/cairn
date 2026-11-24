@@ -29,7 +29,7 @@ const CW = 164;
 const cardX = () => Math.round((W - CW) / 2);
 const cardY = (i: number) => Y0 + i * (CARD_H + GAP);
 
-export function createArcadeMenu(onPick: (id: ArcadeGameId) => void): GameFactory {
+export function createArcadeMenu(onPick: (id: ArcadeGameId) => void, onSelect?: (id: ArcadeGameId) => void): GameFactory {
   return () => {
     const ctx = scr.ctx, terrain = new Terrain("tropic", 5);
     const jet = playerModel(), pad = padModel(), bricks = brickModels(), boat = boatModel(), cards = cardModels(), towers = towerModels();
@@ -37,10 +37,17 @@ export function createArcadeMenu(onPick: (id: ArcadeGameId) => void): GameFactor
     const bests = CARTRIDGES.map((c) => loadBest(c.id));
     let t = 0, camR = 0, sel = 0, chosen: number | null = null, blink = 0;
 
+    const setSel = (next: number) => {
+      if (next !== sel) {
+        sel = next;
+        onSelect?.(CARTRIDGES[sel].id);
+      }
+    };
     const hitCard = (x: number, y: number) => CARTRIDGES.findIndex((_, i) => x >= cardX() && x < cardX() + CW && y >= cardY(i) && y < cardY(i) + CARD_H);
     function choose(i: number) {
       if (chosen !== null || i < 0) return;
-      chosen = sel = i;
+      chosen = i;
+      setSel(i);
       blink = BLINK;
     }
 
@@ -121,13 +128,13 @@ export function createArcadeMenu(onPick: (id: ArcadeGameId) => void): GameFactor
       down(x, y) { choose(hitCard(x, y)); },
       move(x, y) {
         const i = hitCard(x, y);
-        if (i >= 0 && chosen === null) sel = i;
+        if (i >= 0 && chosen === null) setSel(i);
       },
       up() {},
       key(code, down) {
         if (!down || chosen !== null) return false;
         if (code === "ArrowDown" || code === "ArrowUp") {
-          sel = clamp(sel + (code === "ArrowDown" ? 1 : -1), 0, CARTRIDGES.length - 1);
+          setSel(clamp(sel + (code === "ArrowDown" ? 1 : -1), 0, CARTRIDGES.length - 1));
           return true;
         }
         if (code === "Enter" || code === "Space") { choose(sel); return true; }
