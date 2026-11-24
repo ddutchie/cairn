@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState, useCallback } from "react";
-import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, CalendarDays, Zap, Settings, Search, MessageSquare, Layers, Plus, FolderOpen, Activity, ChevronLeft, ChevronDown, ChevronRight, Check, Copy, Archive, Users } from "lucide-react";
+import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, CalendarDays, Zap, Settings, Search, MessageSquare, Layers, Plus, FolderOpen, Activity, ChevronLeft, ChevronDown, ChevronRight, Check, Copy, Archive, Users, Gamepad2 } from "lucide-react";
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
 } from "@/components/ui/context-menu";
@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown";
 import { IconButton } from "@/components/ui/icon-button";
+import { useSecretTaps } from "@/components/arcade/useSecretTaps";
 import { useTodayBadge } from "@/components/today/today-view";
 import { MiniStack } from "@/components/today/today-stack";
 
@@ -55,6 +56,8 @@ export function DockSidebar() {
     toggleWorkspaceToolsCollapsed,
     conversationsCollapsed,
     toggleConversationsCollapsed,
+    arcadeUnlocked,
+    setArcadeUnlocked,
   } = useCairnStore(
     useShallow((s) => ({
       sidebarCollapsed: s.sidebarCollapsed,
@@ -80,7 +83,16 @@ export function DockSidebar() {
       toggleWorkspaceToolsCollapsed: s.toggleWorkspaceToolsCollapsed,
       conversationsCollapsed: s.conversationsCollapsed,
       toggleConversationsCollapsed: s.toggleConversationsCollapsed,
+      arcadeUnlocked: s.arcadeUnlocked,
+      setArcadeUnlocked: s.setArcadeUnlocked,
     }))
+  );
+  // Easter egg: five quick clicks on the workspace icon unlock the Arcade.
+  const secretTap = useSecretTaps(
+    useCallback(() => {
+      setArcadeUnlocked(true);
+      setView("arcade");
+    }, [setArcadeUnlocked, setView]),
   );
 
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
@@ -245,6 +257,7 @@ export function DockSidebar() {
             {!hiddenViews.has("graph") && <IconButton label="Knowledge Graph" tooltipSide="right" onClick={() => setView("graph")} className={cn("size-auto p-2", isView(activeView, "graph") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={15} /></IconButton>}
             {!hiddenViews.has("insights") && <IconButton label="Insights" data-tutorial="insights-view" tooltipSide="right" onClick={() => setView("insights")} className={cn("size-auto p-2", isView(activeView, "insights") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={15} /></IconButton>}
             {!hiddenViews.has("usage") && <IconButton label="Usage" tooltipSide="right" onClick={() => setView("usage")} className={cn("size-auto p-2", isView(activeView, "usage") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={15} /></IconButton>}
+            {arcadeUnlocked && <IconButton label="Arcade" tooltipSide="right" onClick={() => setView("arcade")} className={cn("size-auto p-2", isView(activeView, "arcade") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Gamepad2 size={15} /></IconButton>}
             <div className="w-5 h-px bg-[var(--border)] my-1" />
             <IconButton label="Settings" data-tutorial="settings-view" tooltipSide="right" onClick={() => setView("settings")} className={cn("size-auto p-2", isView(activeView, "settings") ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Settings size={15} /></IconButton>
           </div>
@@ -254,7 +267,22 @@ export function DockSidebar() {
         <div aria-hidden={collapsed} inert={collapsed ? true : undefined} className={cn("flex flex-col flex-1 min-h-0 w-full transition-opacity duration-300", collapsed ? "opacity-0 pointer-events-none absolute inset-x-0 top-0 h-0 overflow-hidden" : "opacity-100")}>
           {/* workspace header */}
           <div data-tutorial="workspace-switcher" className="flex items-center gap-2 px-3 h-11 border-b border-[var(--border-subtle)] flex-shrink-0">
-            <WorkspaceIcon name={workspace?.icon} size={16} className="text-[var(--text-tertiary)]" />
+            {/* Not a visible control: a hidden easter egg (see secretTap above). */}
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label={workspace?.name ?? "Workspace"}
+              onClick={secretTap}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  secretTap();
+                }
+              }}
+              className="flex shrink-0 outline-none"
+            >
+              <WorkspaceIcon name={workspace?.icon} size={16} className="text-[var(--text-tertiary)]" />
+            </span>
             <div className="min-w-0 flex-1">
               <div className="text-xs font-semibold truncate">{workspace?.name ?? "Workspace"}</div>
               <div className="text-2xs text-[var(--text-tertiary)]">{plural(projects.length, "project")} · local</div>
@@ -507,6 +535,7 @@ export function DockSidebar() {
                   {!hiddenViews.has("graph") && <button onClick={() => setView("graph")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "graph") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={13} /><span>Knowledge Graph</span></button>}
                   {!hiddenViews.has("insights") && <button data-tutorial="insights-view" onClick={() => setView("insights")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "insights") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={13} /><span>Insights</span></button>}
                   {!hiddenViews.has("usage") && <button onClick={() => setView("usage")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "usage") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={13} /><span>Usage</span></button>}
+                  {arcadeUnlocked && <button onClick={() => setView("arcade")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "arcade") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Gamepad2 size={13} /><span>Arcade</span></button>}
                 </div>
               </div>
             </div>

@@ -28,13 +28,13 @@ export type SettingsSection =
 export interface AppUIState {
   activeWorkspaceId: ID | null;
   activeProjectId: ID | null;
-  activeView: "overview" | "notes" | "board" | "flow" | "calendar" | "calendar-all" | "graph" | "insights" | "automations" | "today" | "usage" | "people" | "chat" | "search" | "settings" | "agent";
+  activeView: "overview" | "notes" | "board" | "flow" | "calendar" | "calendar-all" | "graph" | "insights" | "automations" | "today" | "usage" | "people" | "chat" | "search" | "settings" | "agent" | "arcade";
   sidebarCollapsed: boolean;
   chatOpen: boolean;
   searchOpen: boolean;
   activePreviewItem: { type: "note" | "task" | "person"; id: ID } | null;
   chatPanelResizing: boolean;
-  lastContentView: "overview" | "notes" | "board" | "flow" | "calendar" | "calendar-all" | "graph" | "insights" | "automations" | "today" | "usage" | "people" | "settings" | "agent";
+  lastContentView: "overview" | "notes" | "board" | "flow" | "calendar" | "calendar-all" | "graph" | "insights" | "automations" | "today" | "usage" | "people" | "settings" | "agent" | "arcade";
   seenFeatures: string[];
   tutorialActive: boolean;
   tutorialStepIndex: number;
