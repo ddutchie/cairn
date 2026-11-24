@@ -189,6 +189,8 @@ export const CALENDAR_SCOPE_KEY = "calendarScope";
 
 /** localStorage key for the dock sidebar workspace tools collapsed state (Automations → Notifications). */
 export const DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY = "dockSidebarWorkspaceCollapsed";
+/** The hidden Arcade sidebar item has been unlocked (five clicks on the workspace icon). */
+export const ARCADE_UNLOCKED_KEY = "arcadeUnlocked";
 
 /** localStorage key for the dock sidebar conversations collapsed state. */
 export const DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY = "dockSidebarConversationsCollapsed";

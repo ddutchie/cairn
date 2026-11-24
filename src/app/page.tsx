@@ -28,6 +28,7 @@ import { SettingsView } from "@/components/settings/settings-view";
 import { AutomationsView } from "@/components/automations/automations-view";
 import { TodayView } from "@/components/today/today-view";
 import { UsageView } from "@/components/usage/UsageView";
+import { ArcadeView } from "@/components/arcade/ArcadeView";
 import { PeopleView } from "@/components/people/PeopleView";
 import { NotificationCenter } from "@/components/automations/notification-center";
 import { AgentView } from "@/components/agent/AgentView";
@@ -519,6 +520,7 @@ export default function Home() {
       {lastContentView === "automations" && <AutomationsView />}
       {lastContentView === "usage" && <UsageView />}
       {lastContentView === "people" && <PeopleView />}
+      {lastContentView === "arcade" && <ArcadeView />}
       {lastContentView === "settings"  && <SettingsView />}
      {/* AgentView stays mounted to preserve terminal sessions and agent state.
          CSS-hidden when inactive so xterm + AgentChatPane refs survive view switches. */}

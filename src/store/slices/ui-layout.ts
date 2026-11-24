@@ -12,7 +12,7 @@ import { storage } from "@/lib/storage";
 import { id as newId } from "@/lib/utils";
 import type { BoardFilter, BoardView } from "@/lib/board-filters";
 import { FIRST_RUN_HIDDEN } from "@/components/layout/sidebar-utils";
-import { CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, ACTIVE_PROJECT_KEY, CALENDAR_SCOPE_KEY } from "@/lib/constants";
+import { CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, ARCADE_UNLOCKED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, ACTIVE_PROJECT_KEY, CALENDAR_SCOPE_KEY } from "@/lib/constants";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
@@ -211,6 +211,10 @@ export interface LayoutSlice extends AppUIState {
   toggleWorkspaceToolsCollapsed: () => void;
   setWorkspaceToolsCollapsed: (collapsed: boolean) => void;
 
+  /** The hidden Arcade sidebar item is unlocked. Persisted; off until found. */
+  arcadeUnlocked: boolean;
+  setArcadeUnlocked: (unlocked: boolean) => void;
+
   /** Dock sidebar conversations collapsed. Global, persisted, default expanded. */
   conversationsCollapsed: boolean;
   toggleConversationsCollapsed: () => void;
@@ -245,6 +249,7 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
   seenFeatures: [],  tutorialActive: false,
   tutorialStepIndex: 0,
   workspaceToolsCollapsed: false,
+  arcadeUnlocked: false,
   conversationsCollapsed: false,
 
   hiddenViews: new Set<ToggleableView>(FIRST_RUN_HIDDEN_VIEWS),
@@ -529,6 +534,11 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
   setWorkspaceToolsCollapsed(collapsed) {
     set({ workspaceToolsCollapsed: collapsed });
     storage.set(DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, collapsed);
+  },
+
+  setArcadeUnlocked(unlocked) {
+    set({ arcadeUnlocked: unlocked });
+    storage.set(ARCADE_UNLOCKED_KEY, unlocked);
   },
 
   toggleConversationsCollapsed() {

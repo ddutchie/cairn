@@ -28,7 +28,7 @@ import { appClient } from "@/lib/ipc/app";
 import { changesClient } from "@/lib/ipc/workspace";
 import { hasElectron } from "@/lib/ipc/client";
 import { initChangeFeedCursor, getChangeFeedCursor, setChangeFeedCursor, applyChangesetToArrays, emitChangeFeed, GRAPH_TABLES, type ChangeSet } from "./change-feed";
-import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, ACTIVE_CHAT_THREAD_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, CALENDAR_SCOPE_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, ACTIVE_CHAT_THREAD_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, CALENDAR_SCOPE_KEY, ARCADE_UNLOCKED_KEY } from "@/lib/constants";
 import { ipcResult } from "./ipc";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 
@@ -529,6 +529,8 @@ function restorePersistedUiPrefs(set: PartialSetter): void {
   if (typeof savedWorkspaceCollapsed === "boolean") {
     set({ workspaceToolsCollapsed: savedWorkspaceCollapsed });
   }
+
+  if (storage.get<boolean>(ARCADE_UNLOCKED_KEY) === true) set({ arcadeUnlocked: true });
 
   const savedConversationsCollapsed = storage.get<boolean>(DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY);
   if (typeof savedConversationsCollapsed === "boolean") {
