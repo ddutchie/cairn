@@ -106,9 +106,11 @@ export function PixelScreen({
       const el = e.target as HTMLElement | null;
       if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.type === "keydown" && e.code === "Escape" && exitRef.current) {
+      if (e.type === "keydown" && e.code === "Escape") {
+        // The game gets first refusal (Wayfinder uses it to leave an island);
+        // otherwise Escape goes back to the arcade menu.
         e.preventDefault();
-        exitRef.current();
+        if (!e.repeat && !game.key("Escape", true)) exitRef.current?.();
         return;
       }
       if (el && el.closest("button,a,[role='button'],[role='menuitem']")) return;

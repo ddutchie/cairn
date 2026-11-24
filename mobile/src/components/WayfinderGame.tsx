@@ -33,7 +33,16 @@ function onEvent(e: WayfinderEvent): void {
     case "start":
     case "deliver":
     case "escape":
+    case "dock":
+    case "escape-island":
       return haptics.impactMedium();
+    case "step":
+    case "loot":
+      return haptics.impact();
+    case "attack":
+      return haptics.impactHeavy();
+    case "hurt":
+      return haptics.warning();
     case "chart":
     case "lost":
     case "load":

@@ -189,7 +189,7 @@ class SkiaPixelSurface implements PixelSurface<SkImage, SkImage> {
 
     const srcs: ReturnType<typeof Skia.XYWHRect>[] = [];
     const xforms: ReturnType<typeof Skia.RSXform>[] = [];
-    for (let z = 0; z < m.h; z++) {
+    for (let z = 0; opts.outline !== false && z < m.h; z++) {
       const sy = z * m.d;
       for (let j = 0; j < steps; j++) {
         srcs.push(Skia.XYWHRect(0, sy, m.w, m.d));

@@ -13,6 +13,33 @@ import type { ArcadeProject } from "../pixel/arcade-data";
 import { NO_HUD, type InputMode, type PixelHud } from "../pixel/hud";
 import { clamp } from "../pixel/kinds";
 import { BAYER, BIOMES, fbm, hash2, mulberry32, rgb, type BiomeName } from "../pixel/terrain";
+import {
+  CHOICE_COOLDOWN,
+  KO_FRAMES,
+  KO_PENALTY,
+  MAX_SUPPLIES,
+  OFFER_COST,
+  RELIC_INFO,
+  RETREAT_PENALTY,
+  TRADE_COST,
+  WALK_FRAMES,
+  applyRelic,
+  dealDeck,
+  exploreLayout,
+  freshVoyage,
+  goldFor,
+  inRect,
+  isFight,
+  kindAt,
+  landRect,
+  unlucky,
+  wreckRelic,
+  type Choice,
+  type Expedition,
+  type IslandInfo,
+  type Relic,
+  type Voyage,
+} from "./expedition";
 import { PCOL } from "./models";
 
 export const WD = 640;
@@ -26,8 +53,25 @@ const MAX_STORMS = 5;
 
 export const WEIGHT: Record<Priority, number> = { low: 0.04, medium: 0.07, high: 0.1, urgent: 0.14 };
 
-export type WayfinderState = "title" | "sail" | "map" | "log";
-export type WayfinderEvent = "start" | "chart" | "lost" | "load" | "deliver" | "late" | "aground" | "kraken" | "escape" | "catch" | "done";
+export type WayfinderState = "title" | "sail" | "map" | "log" | "explore";
+export type WayfinderEvent =
+  | "start"
+  | "chart"
+  | "lost"
+  | "load"
+  | "deliver"
+  | "late"
+  | "aground"
+  | "kraken"
+  | "escape"
+  | "catch"
+  | "done"
+  | "dock"
+  | "step"
+  | "attack"
+  | "hurt"
+  | "loot"
+  | "escape-island";
 
 export interface Proj extends ArcadeProject {
   cx: number;
@@ -40,6 +84,10 @@ export interface Isle {
   links: number[];
   orphan: boolean;
   charted: boolean;
+  /** Landed on and walked all four steps this voyage. */
+  explored: boolean;
+  /** Note length, for expedition treasure. */
+  words: number;
   biome: BiomeName;
   lift: number;
   r: number;
@@ -126,6 +174,8 @@ export const FOG_TEX: Uint32Array = (() => {
   return out;
 })();
 
+const clipTitle = (s: string) => (s.length > 22 ? `${s.slice(0, 21)}.` : s);
+
 export function buildWorld(projects: ArcadeProject[]) {
   const projs: Proj[] = projects.slice(0, 6).map((p, i, all) => {
     const a = (i / Math.max(1, all.length)) * Math.PI * 2 - Math.PI / 2;
@@ -152,6 +202,8 @@ export function buildWorld(projects: ArcadeProject[]) {
       links: links[i],
       orphan,
       charted: false,
+      explored: false,
+      words: n.words,
       biome: p.biome,
       lift: 0,
       r: Math.round(9 + Math.sqrt(Math.min(n.words, 2400)) * 0.42),
@@ -170,6 +222,8 @@ export function buildWorld(projects: ArcadeProject[]) {
     biome: p.biome,
     links: [],
     charted: true,
+    explored: true,
+    words: 0,
     orphan: false,
     lift: 0,
   }));
@@ -184,6 +238,8 @@ export function buildWorld(projects: ArcadeProject[]) {
     biome: "tundra",
     links: [],
     charted: true,
+    explored: true,
+    words: 0,
     orphan: false,
     lift: 0,
   };
@@ -380,6 +436,17 @@ export class WayfinderSim {
   crew = { idle: 0, cast: 0, bite: 0, nextBite: 0, swim: "deck" as "deck" | "dive" | "swim", st: 0, sa: 0 };
   private keys: Record<string, boolean> = {};
 
+  /** Captain hearts, supplies and banked relic buffs; reset each new day. */
+  voyage: Voyage = freshVoyage();
+  /** The task crate offered at this landing's camp (moved into the hold on banking). */
+  private expCrate: Crate | null = null;
+  /** The storm brewed by this landing's overdue task. */
+  private expStorm: Storm | null = null;
+  /** The unexplored note island the boat is anchored next to, if any. */
+  nearIsland: Isle | null = null;
+  /** The running island expedition while `state === "explore"`. */
+  exp: Expedition | null = null;
+
   constructor(opts: WayfinderSpec) {
     this.W = opts.width;
     this.H = opts.height;
@@ -476,7 +543,10 @@ export class WayfinderSim {
     this.pops = [];
     this.fog.fill(0);
     this.fogVersion++;
-    for (const is of this.islands) is.charted = false;
+    for (const is of this.islands) is.charted = is.explored = false;
+    this.voyage = freshVoyage();
+    this.exp = null;
+    this.nearIsland = null;
     this.reveal(this.today.x, this.today.y, 76);
     for (const h of this.harbours) this.reveal(h.x, h.y, 58);
 
@@ -522,7 +592,15 @@ export class WayfinderSim {
       this.state = "sail";
       return;
     }
+    if (this.state === "explore") {
+      this.exploreDown(x, y);
+      return;
+    }
     if (this.state === "sail") {
+      if (this.nearIsland && inRect(landRect(this.W, this.H, this.hud, this.boat.cargo.length), x, y)) {
+        this.land(this.nearIsland);
+        return;
+      }
       const mb = this.mapButtonRect();
       if (x >= mb.x0 && x <= mb.x1 && y >= mb.y0 && y <= mb.y1) {
         this.state = "map";
@@ -542,6 +620,21 @@ export class WayfinderSim {
   }
 
   setKey(code: string, down: boolean): boolean {
+    if (this.state === "explore") {
+      if (!down) {
+        if (code in this.keys) this.keys[code] = false;
+        return false;
+      }
+      return this.exploreKey(code);
+    }
+    if (down && this.state === "sail" && this.nearIsland && (code === "KeyE" || code === "Space" || code === "Enter")) {
+      this.land(this.nearIsland);
+      return true;
+    }
+    if (down && code === "Escape" && this.state === "map") {
+      this.state = "sail";
+      return true;
+    }
     if (code === "ArrowLeft" || code === "KeyA" || code === "ArrowRight" || code === "KeyD" || code === "ArrowUp" || code === "KeyW") {
       this.keys[code] = down;
       return true;
@@ -639,7 +732,10 @@ export class WayfinderSim {
         const ax = k.x + Math.cos(a.a) * a.r, ay = k.y + Math.sin(a.a) * a.r;
         if (Math.hypot(ax - this.boat.x, ay - this.boat.y) < 6 && a.h > 0.8) {
           const c = [...this.boat.cargo].sort((p, q) => WEIGHT[q.pr] - WEIGHT[p.pr])[0];
-          if (c) {
+          if (c && this.voyage.kraken > 0) {
+            this.voyage.kraken--;
+            this.pop("KRAKEN TOOTH", "THE KRAKEN LET GO", "#fff2a0");
+          } else if (c) {
             this.boat.cargo = this.boat.cargo.filter((x) => x !== c);
             this.crates.unshift(c);
             this.pop("THE KRAKEN TOOK", c.title, "#ff5e8a");
@@ -724,6 +820,464 @@ export class WayfinderSim {
     }
   }
 
+  // ── Island expeditions ────────────────────────────────────────────────────
+
+  get holdSize(): number {
+    return 3 + this.voyage.cargo;
+  }
+
+  /** The nearest unexplored note island the boat is idling beside (slow, no kraken). */
+  findLanding(): Isle | null {
+    if (this.state !== "sail" || this.kraken.phase !== "none" || Math.abs(this.boat.v) > 0.95) return null;
+    let best: Isle | null = null, bestD = Infinity;
+    for (const is of this.islands) {
+      if (is.explored) continue;
+      const d = Math.hypot(is.x - this.boat.x, is.y - this.boat.y);
+      if (d < is.r * 1.4 + 12 && d < bestD) {
+        best = is;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+
+  /** What this island and its project bring to a landing: links, an overdue task, a waiting crate. */
+  islandInfo(is: Isle): IslandInfo {
+    const storm = is.p ? (this.storms.find((st) => st.p === is.p) ?? null) : null;
+    const crate = is.p && !is.orphan ? (this.crates.find((c) => c.p === is.p) ?? null) : null;
+    return {
+      isleIndex: is.i,
+      title: clipTitle(is.title),
+      biome: is.biome,
+      orphan: is.orphan,
+      words: is.words,
+      links: is.links.map((j) => ({ isle: j, title: this.islands[j].title })),
+      project: is.p ? { name: is.p.name, accent: is.p.accent } : null,
+      overdue: storm ? storm.title : null,
+      crate: crate ? { title: crate.title, pr: crate.pr } : null,
+      luck: this.voyage.luck,
+    };
+  }
+
+  /** Anchor beside `is` and walk inland through its deck of encounters. The sea clock stops while ashore. */
+  land(is: Isle): void {
+    if (this.state !== "sail" || is.explored) return;
+    this.boat.v = 0;
+    this.boat.a = Math.atan2(is.x - this.boat.x, -(is.y - this.boat.y));
+    this.steer = null;
+    this.keys = {};
+    this.state = "explore";
+    this.stateT = 0;
+    this.nearIsland = null;
+    const info = this.islandInfo(is), { deck, mood, routes } = dealDeck(info);
+    this.expCrate = info.crate ? (this.crates.find((c) => c.p === is.p) ?? null) : null;
+    this.expStorm = info.overdue ? (this.storms.find((st) => st.p === is.p) ?? null) : null;
+    this.exp = {
+      isleIndex: is.i,
+      title: info.title,
+      biome: is.biome,
+      orphan: is.orphan,
+      mood,
+      words: is.words,
+      rich: 1 + clamp(is.words / 1500, 0, 1),
+      luck: info.luck,
+      deck,
+      step: 0,
+      phase: "step",
+      links: info.links,
+      routes,
+      charts: [],
+      project: info.project,
+      overdue: info.overdue,
+      crate: info.crate,
+      crateTaken: false,
+      calmed: false,
+      foe: 0,
+      foeHp: 0,
+      foeMax: 0,
+      foeTurn: true,
+      scouted: false,
+      gold: 0,
+      bonus: 0,
+      relics: [],
+      sel: 0,
+      t: 0,
+      walk: WALK_FRAMES,
+      trail: 0,
+      swing: 0,
+      hit: 0,
+      hurt: 0,
+      cool: CHOICE_COOLDOWN,
+      toast: { s: mood === "lost" ? "A LOST ISLAND..." : "ASHORE!", c: mood === "lost" ? "#c7e4ff" : "#8dff9a", t: 60 },
+    };
+    this.events.push("dock");
+  }
+
+  private say(s: string, c: string): void {
+    if (this.exp) this.exp.toast = { s, c, t: 75 };
+  }
+
+  private nextStep(): void {
+    const e = this.exp!;
+    e.step++;
+    e.walk = WALK_FRAMES;
+    e.sel = 0;
+    const kind = kindAt(e);
+    if (isFight(kind)) {
+      e.foe = e.mood === "lost" ? -1 : Math.floor(hash2(e.isleIndex, e.step, 23) * 2);
+      const base = kind === "den" ? 5 : kind === "overdue" ? 4 : 3 + (e.rich >= 1.6 ? 1 : 0);
+      e.foeMax = Math.max(1, base - (e.scouted ? 1 : 0));
+      e.foeHp = e.foeMax;
+      e.foeTurn = true;
+    }
+    this.events.push("step");
+  }
+
+  private gain(e: Expedition, g: number, msg: string): void {
+    e.gold += g;
+    this.say(msg, "#fff2a0");
+    this.events.push("loot");
+  }
+
+  private heal(): void {
+    const v = this.voyage;
+    v.hp = Math.min(v.maxHp, v.hp + 1);
+    v.supplies = Math.min(MAX_SUPPLIES, v.supplies + 1);
+  }
+
+  /** Spend a supply, or a heart when there are none. Returns false if that knocked the captain out. */
+  private pay(why: string): boolean {
+    const v = this.voyage;
+    if (v.supplies > 0) {
+      v.supplies--;
+      this.say(why, "#c7e4ff");
+      return true;
+    }
+    this.hurtCaptain(`${why} -1 HEART`);
+    return this.exp!.phase === "step";
+  }
+
+  private refuse(e: Expedition, msg: string): false {
+    this.say(msg, "#ff5e8a");
+    e.cool = 0;
+    return false;
+  }
+
+  private hurtCaptain(why: string): void {
+    const e = this.exp!;
+    this.voyage.hp = Math.max(0, this.voyage.hp - 1);
+    e.hurt = 14;
+    if (!this.calm) this.shake = 3;
+    this.events.push("hurt");
+    if (this.voyage.hp <= 0) {
+      e.phase = "ko";
+      e.t = 0;
+      e.toast = null;
+    } else this.say(why, "#ff5e8a");
+  }
+
+  /** Pick option A or B on the current step. Ignored while the last choice is still settling. */
+  choose(which: Choice): boolean {
+    const e = this.exp;
+    if (this.state !== "explore" || !e || e.phase !== "step" || e.cool > 0) return false;
+    e.cool = CHOICE_COOLDOWN;
+    e.sel = which === "a" ? 0 : 1;
+    const v = this.voyage, A = which === "a", kind = kindAt(e);
+    const onward = () => {
+      if (e.phase === "step") this.nextStep();
+      return true;
+    };
+    switch (kind) {
+      case "shore":
+        if (A) {
+          e.scouted = true;
+          this.say("SCOUTED THE TRAIL", "#c7e4ff");
+        } else this.gain(e, goldFor(e, 8), `+${goldFor(e, 8)} GOLD`);
+        return onward();
+      case "fork": {
+        const r = e.routes![A ? 0 : 1];
+        e.deck.splice(e.step + 1, 0, r.kind);
+        if (r.isle >= 0 && !e.charts.includes(r.isle)) e.charts.push(r.isle);
+        this.say(r.isle >= 0 ? `TOWARD ${r.title}`.slice(0, 24) : "INTO THE WILD", "#c7e4ff");
+        return onward();
+      }
+      case "ambush":
+      case "den":
+      case "overdue":
+        if (A) {
+          e.swing = 14;
+          e.hit = 8;
+          e.foeHp--;
+          if (!this.calm) this.shake = 2;
+          this.events.push("attack");
+          if (e.foeHp <= 0) {
+            const g = goldFor(e, kind === "den" ? 18 : kind === "overdue" ? 12 : e.foe < 0 ? 14 : 10);
+            e.gold += g;
+            if (kind === "den" && !e.relics.includes("IRON HEART")) e.relics.push("IRON HEART");
+            if (kind === "overdue") {
+              e.calmed = true;
+              if (!e.relics.includes("STORM GLASS")) e.relics.push("STORM GLASS");
+            }
+            this.say(kind === "den" ? `IRON HEART! +${g}G` : kind === "overdue" ? "THE STORM EASES" : `DEFEATED! +${g}G`, "#8dff9a");
+            this.events.push("loot");
+            this.nextStep();
+            return true;
+          }
+          if (e.foeTurn) this.hurtCaptain("IT HIT BACK -1 HEART");
+          else this.say("HIT!", "#ff9a6b");
+          e.foeTurn = !e.foeTurn;
+          return true;
+        }
+        if (v.supplies > 0) {
+          v.supplies--;
+          this.say(kind === "den" ? "SLIPPED PAST" : "BAITED IT AWAY", "#c7e4ff");
+          return onward();
+        }
+        this.hurtCaptain("SCRATCHED -1 HEART");
+        return onward();
+      case "cache":
+        if (A) {
+          e.relics.push(e.orphan ? "DEEP RELIC" : "KNOT CHARM");
+          e.gold += goldFor(e, 12);
+          this.say(e.orphan ? "A DEEP RELIC!" : `KNOT CHARM +${goldFor(e, 12)}G`, "#fff2a0");
+          this.events.push("loot");
+        } else {
+          this.heal();
+          this.say("+1 HEART +1 SUPPLY", "#8dff9a");
+        }
+        return onward();
+      case "camp":
+        if (A && e.crate && !e.crateTaken) {
+          e.crateTaken = true;
+          this.say("CRATE LOADED ON THE BOAT", "#8dff9a");
+          this.events.push("loot");
+        } else if (A) this.gain(e, goldFor(e, 6), `FORAGED +${goldFor(e, 6)}G`);
+        else {
+          this.heal();
+          this.say("RESTED +1 HEART +1 SUP", "#8dff9a");
+        }
+        return onward();
+      case "bridge":
+        if (A) {
+          if (unlucky(e, 1, 0.4)) this.hurtCaptain("A PLANK SNAPPED -1 HEART");
+          else this.gain(e, goldFor(e, 14), `ACROSS! +${goldFor(e, 14)}G`);
+        } else if (!this.pay("CLIMBED DOWN -1 SUPPLY")) return true;
+        return onward();
+      case "ford":
+        if (A) {
+          if (unlucky(e, 2, 0.35)) this.hurtCaptain("SLIPPED ON A ROCK -1 HEART");
+          else {
+            v.supplies = Math.min(MAX_SUPPLIES, v.supplies + 1);
+            this.say("CAUGHT A FISH +1 SUPPLY", "#8dff9a");
+          }
+        } else this.say("WADED ACROSS", "#c7e4ff");
+        return onward();
+      case "hermit":
+        if (A) {
+          if (e.gold < TRADE_COST) return this.refuse(e, `NEED ${TRADE_COST} GOLD`);
+          e.gold -= TRADE_COST;
+          e.relics.push("LUCKY COIN");
+          this.say("A LUCKY COIN", "#fff2a0");
+          this.events.push("loot");
+        } else if (e.links.length) {
+          for (const l of e.links.slice(0, 3)) if (!e.charts.includes(l.isle)) e.charts.push(l.isle);
+          this.say("HE MARKS YOUR CHART", "#4cc9f0");
+        } else {
+          e.scouted = true;
+          this.say("HE WARNS OF WHAT'S AHEAD", "#c7e4ff");
+        }
+        return onward();
+      case "wreck":
+        if (A) {
+          if (v.supplies <= 0) return this.refuse(e, "NEED A SUPPLY");
+          v.supplies--;
+          const r = wreckRelic(e);
+          e.relics.push(r);
+          this.say(r, "#fff2a0");
+          this.events.push("loot");
+        } else {
+          v.supplies = Math.min(MAX_SUPPLIES, v.supplies + 1);
+          this.gain(e, goldFor(e, 6), `+1 SUP +${goldFor(e, 6)}G`);
+        }
+        return onward();
+      case "trap":
+        if (A) {
+          if (e.scouted) this.say("STEPPED AROUND IT", "#c7e4ff");
+          else if (!this.pay("DETOUR -1 SUPPLY")) return true;
+        } else {
+          e.gold += goldFor(e, 10);
+          if (e.scouted) this.say(`+${goldFor(e, 10)}G STASH`, "#fff2a0");
+          else this.hurtCaptain(`SNARED! +${goldFor(e, 10)}G -1 HEART`);
+          this.events.push("loot");
+        }
+        return onward();
+      case "shrine":
+        if (A) {
+          e.relics.push("SPYGLASS");
+          this.say("THE CHART GLOWS", "#4cc9f0");
+        } else {
+          if (e.gold < OFFER_COST) return this.refuse(e, `NEED ${OFFER_COST} GOLD`);
+          e.gold -= OFFER_COST;
+          e.bonus += e.orphan ? 50 : 25;
+          e.relics.push("BLESSED HOLD");
+          this.say("BLESSED BY THE CAIRN", "#fff2a0");
+        }
+        e.phase = "summary";
+        e.t = 0;
+        this.events.push("loot");
+        return true;
+    }
+  }
+
+  /** Back to the ship: banks everything after the shrine, otherwise loses unbanked treasure and a little time. */
+  retreat(): void {
+    const e = this.exp;
+    if (this.state !== "explore" || !e) return;
+    if (e.phase === "summary") return this.bank();
+    if (e.phase === "ko") return;
+    this.clock = Math.min(DAY_FRAMES, this.clock + RETREAT_PENALTY);
+    this.leaveIsland("BACK ABOARD", "TREASURE LEFT BEHIND", "#c7e4ff");
+  }
+
+  /** Clear the island: bank treasure, apply relic buffs, chart it, and sail on. */
+  bank(): void {
+    const e = this.exp;
+    if (this.state !== "explore" || !e || e.phase !== "summary") return;
+    const is = this.islands[e.isleIndex];
+    this.addScore(e.gold + e.bonus + (e.orphan ? 60 : 30));
+    for (const r of e.relics) applyRelic(this.voyage, r);
+    is.explored = true;
+    if (!is.charted) {
+      is.charted = true;
+      this.charted++;
+    }
+    if (e.relics.includes("SPYGLASS")) {
+      for (const o of this.islands) if (o.orphan && Math.hypot(o.x - is.x, o.y - is.y) < 220) this.reveal(o.x, o.y, 30);
+    }
+    // Trails taken toward linked notes chart those islands.
+    for (const j of e.charts) {
+      const o = this.islands[j];
+      if (!o) continue;
+      this.reveal(o.x, o.y, 30);
+      if (!o.charted) {
+        o.charted = true;
+        this.charted++;
+      }
+    }
+    // The camp's crate goes in the hold (if there's room) for its project's harbour.
+    if (e.crateTaken && this.expCrate) {
+      const i = this.crates.indexOf(this.expCrate);
+      if (i >= 0 && this.boat.cargo.length < this.holdSize) {
+        this.crates.splice(i, 1);
+        this.boat.cargo.push(this.expCrate);
+        this.pop("LOADED", this.expCrate.title, PCOL[this.expCrate.pr]);
+        this.events.push("load");
+      } else if (i >= 0) this.pop("HOLD FULL", "THE CRATE WAITS AT TODAY", "#ff9a6b");
+    }
+    // Beating the overdue task's foe shrinks its storm.
+    if (e.calmed && this.expStorm) this.expStorm.r = Math.max(10, Math.round(this.expStorm.r * 0.6));
+    this.leaveIsland("ISLAND EXPLORED", `${is.title} +${e.gold + e.bonus}`, "#8dff9a");
+    const fresh = e.relics.filter((r, i, all) => all.indexOf(r) === i);
+    if (fresh.length) this.pop(`RELIC: ${fresh[0]}`, RELIC_INFO[fresh[0] as Relic], "#fff2a0");
+    this.events.push("loot");
+  }
+
+  private leaveIsland(head: string, title: string, c: string): void {
+    this.exp = null;
+    this.expCrate = this.expStorm = null;
+    this.state = "sail";
+    this.stateT = 241;
+    this.boat.v = 0;
+    this.steer = null;
+    this.keys = {};
+    this.pop(head, title, c);
+    this.events.push("escape-island");
+  }
+
+  private stepExplore(): void {
+    const e = this.exp;
+    if (!e) return;
+    e.t++;
+    if (e.walk > 0) {
+      e.walk--;
+      e.trail += 1;
+    }
+    if (e.swing > 0) e.swing--;
+    if (e.hit > 0) e.hit--;
+    if (e.hurt > 0) e.hurt--;
+    if (e.cool > 0) e.cool--;
+    if (e.toast && --e.toast.t <= 0) e.toast = null;
+    if (this.shake > 0) this.shake = Math.max(0, this.shake - 0.25);
+    if (e.phase === "ko" && e.t >= KO_FRAMES) this.knockedOut();
+  }
+
+  private knockedOut(): void {
+    this.voyage.hp = 1;
+    this.expCrate = this.expStorm = null;
+    this.clock = Math.min(DAY_FRAMES, this.clock + KO_PENALTY);
+    this.leaveIsland("WASHED BACK ABOARD", "TREASURE LOST - 1 HEART", "#ff9a6b");
+  }
+
+  private exploreDown(x: number, y: number): void {
+    const e = this.exp;
+    if (!e) return;
+    const L = exploreLayout(this.W, this.H, this.hud);
+    if (e.phase === "ko") {
+      if (e.t > 40) this.knockedOut();
+      return;
+    }
+    if (e.phase === "summary") {
+      this.bank();
+      return;
+    }
+    if (inRect(L.sail, x, y)) this.retreat();
+    else if (inRect(L.a, x, y)) this.choose("a");
+    else if (inRect(L.b, x, y)) this.choose("b");
+  }
+
+  private exploreKey(code: string): boolean {
+    const e = this.exp;
+    if (!e) return false;
+    if (e.phase === "ko") {
+      if (e.t > 40 && (code === "Space" || code === "Enter" || code === "Escape")) this.knockedOut();
+      return code === "Space" || code === "Enter" || code === "Escape";
+    }
+    if (e.phase === "summary") {
+      if (code === "Escape" || code === "Enter" || code === "Space" || code === "KeyE" || code === "Digit1" || code === "Numpad1") {
+        this.bank();
+        return true;
+      }
+      return false;
+    }
+    switch (code) {
+      case "Escape":
+        this.retreat();
+        return true;
+      case "Digit1":
+      case "Numpad1":
+        this.choose("a");
+        return true;
+      case "Digit2":
+      case "Numpad2":
+        this.choose("b");
+        return true;
+      case "ArrowLeft":
+      case "KeyA":
+        e.sel = 0;
+        return true;
+      case "ArrowRight":
+      case "KeyD":
+        e.sel = 1;
+        return true;
+      case "Enter":
+      case "Space":
+      case "KeyE":
+        this.choose(e.sel === 0 ? "a" : "b");
+        return true;
+    }
+    return false;
+  }
+
   private catchSomething(): void {
     const CATCHES = ["A MACKEREL", "A SARDINE", "AN OLD BOOT", "A COD", "A TANGLE OF KELP"];
     const lost = this.islands.filter((i) => i.orphan && !i.charted), end = this.lineEnd();
@@ -777,6 +1331,11 @@ export class WayfinderSim {
   step(): void {
     this.t++;
     this.stateT++;
+    if (this.state === "explore") {
+      this.stepExplore();
+      this.stepParts();
+      return;
+    }
     if (this.state === "sail") {
       this.stepCreatures();
       this.stepKraken();
@@ -814,10 +1373,10 @@ export class WayfinderSim {
     const o = (this.boat.y | 0) * WD + (this.boat.x | 0);
     const onLane = this.LANE[o] > 0;
     const load = this.boat.cargo.reduce((s, c) => s + WEIGHT[c.pr], 0);
-    let top = (onLane ? 1.75 : 1.18) * (1 - load) * (1 + this.pod.on * 0.12);
+    let top = (onLane ? 1.75 : 1.18) * (1 - load) * (1 + this.pod.on * 0.12) * (1 + this.voyage.speed);
     const inStorm = this.storms.find((s) => Math.hypot(s.x - this.boat.x, s.y - this.boat.y) < s.r);
     if (inStorm) {
-      top *= 0.45;
+      top *= 0.45 + this.voyage.storm;
       if (!this.calm && this.t % 20 === 0) this.shake = 2;
     }
     const throttle = !!(this.steer || keyDrive);
@@ -834,7 +1393,8 @@ export class WayfinderSim {
       this.boat.y = ny;
     }
     if (this.boat.v > 0.3) this.wake(onLane);
-    this.reveal(this.boat.x, this.boat.y, 64);
+    this.reveal(this.boat.x, this.boat.y, 64 + this.voyage.fog);
+    this.nearIsland = this.findLanding();
 
     for (const is of this.islands) {
       if (!is.charted && this.fogAt(is.x, is.y) > 0.5) {
@@ -847,7 +1407,7 @@ export class WayfinderSim {
     }
 
     if (Math.hypot(this.boat.x - this.today.x, this.boat.y - this.today.y) < this.today.r + 16) {
-      while (this.boat.cargo.length < 3 && this.crates.length) {
+      while (this.boat.cargo.length < this.holdSize && this.crates.length) {
         const c = this.crates.shift()!;
         this.boat.cargo.push(c);
         this.pop("LOADED", c.title, PCOL[c.pr]);

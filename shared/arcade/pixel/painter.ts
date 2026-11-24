@@ -14,6 +14,8 @@ export interface StackOptions {
   k?: number;
   lift?: number;
   flash?: boolean;
+  /** Draw each layer's 1px ink ring (default). Large set pieces turn it off: on a big face it reads as speckle. */
+  outline?: boolean;
 }
 
 export interface AtlasHandle<Img = unknown> {

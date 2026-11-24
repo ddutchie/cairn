@@ -188,7 +188,7 @@ class CanvasPixelSurface implements PixelSurface<HTMLCanvasElement, void> {
     const hw = -(m.w >> 1);
     const hd = -(m.d >> 1);
 
-    for (let z = 0; z < m.h; z++) {
+    for (let z = 0; opts.outline !== false && z < m.h; z++) {
       const sy = z * m.d;
       for (let j = 0; j < steps; j++) {
         this.ctx.setTransform(c, s, -s, c, tx, ty - z * lift - j);
