@@ -37,7 +37,12 @@ SplashScreen.setOptions({ duration: 300, fade: true });
 const PIXEL_GAME_ROUTES = ["arcade", "task-force", "wayfinder", "inbox-zero", "stacker", "breakout"] as const;
 const PIXEL_GAME_OPTIONS = {
   title: "",
-  presentation: "fullScreenModal",
+  // Over full screen, not fullScreenModal: a full-screen modal takes the tabs
+  // out of the window, so folding or unfolding the iPhone Duo mid-game never
+  // reaches them and they come back with the side rail gone (no tab bar, the
+  // toolbar left horizontal). Kept in the window underneath, they relayout
+  // with the fold. The game paints every pixel, so nothing shows through.
+  presentation: "transparentModal",
   headerTransparent: true,
   headerStyle: { backgroundColor: "transparent" },
   headerShadowVisible: false,
