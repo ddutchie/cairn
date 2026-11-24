@@ -64,6 +64,22 @@ describe("WayfinderSim", () => {
   });
 });
 
+describe("Wayfinder fog dirty tracking", () => {
+  it("reports only the fog cells a reveal changed, once", () => {
+    const sim = new WayfinderSim({ width: 180, height: 320, projects: DEMO_ARCADE_PROJECTS });
+    sim.takeFogDirty();
+    expect(sim.takeFogDirty()).toBeNull();
+    sim.reveal(400, 300, 24);
+    const d = sim.takeFogDirty()!;
+    expect(d[0]).toBeLessThanOrEqual(50);
+    expect(d[2]).toBeGreaterThanOrEqual(49);
+    expect(d[2] - d[0]).toBeLessThanOrEqual(7);
+    expect(sim.takeFogDirty()).toBeNull();
+    sim.reveal(400, 300, 24);
+    expect(sim.takeFogDirty()).toBeNull();
+  });
+});
+
 describe("Wayfinder island expeditions", () => {
   const probe = new WayfinderSim({ width: 180, height: 320, projects: DEMO_ARCADE_PROJECTS });
   probe.setKey("Space", true);
@@ -367,7 +383,8 @@ describe("Wayfinder island expeditions", () => {
   });
 
   it("hit-tests the A/B cards and SAIL inside the safe area on a phone and a wide Duo with insets", () => {
-    const duoHud = { ...NO_HUD, top: 18, left: 30, right: 22, bottom: 16 };
+    // Unfolded Duo: a low top inset, so the top bar must also clear the rounded corners.
+    const duoHud = { ...NO_HUD, top: 5, left: 30, right: 22, bottom: 16, topLeft: 36, topRight: 34, bottomLeft: 30, bottomRight: 22 };
     for (const [w, h, hud] of [[180, 320, NO_HUD], [420, 380, duoHud]] as const) {
       const { sim, exp } = ashore(w, h, hud, ["ambush"]);
       const L = exploreLayout(w, h, hud);
@@ -377,6 +394,8 @@ describe("Wayfinder island expeditions", () => {
         expect(r.y).toBeGreaterThanOrEqual(hud.top);
       }
       expect(L.captainY).toBeLessThanOrEqual(h - hud.bottom);
+      expect(L.barLx).toBeGreaterThanOrEqual(hud.topLeft);
+      expect(L.sail.x + L.sail.w).toBeLessThanOrEqual(w - hud.topRight);
       sim.down(L.b.x + 2, L.b.y + 2);
       expect(exp.step).toBe(1);
       settle(sim);

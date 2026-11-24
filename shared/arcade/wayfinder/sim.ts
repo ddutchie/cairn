@@ -10,7 +10,7 @@
 
 import type { Priority } from "../../types/domain";
 import type { ArcadeProject } from "../pixel/arcade-data";
-import { NO_HUD, type InputMode, type PixelHud } from "../pixel/hud";
+import { NO_HUD, hudFrame, type InputMode, type PixelHud } from "../pixel/hud";
 import { clamp } from "../pixel/kinds";
 import { BAYER, BIOMES, fbm, hash2, mulberry32, rgb, type BiomeName } from "../pixel/terrain";
 import {
@@ -404,6 +404,8 @@ export class WayfinderSim {
   readonly cargoTotal: number;
   readonly fog = new Float32Array(FW * FH);
   fogVersion = 0;
+  /** Fog cells changed since the renderer last asked: [x0, y0, x1, y1] inclusive, or null. */
+  private fogDirty: [number, number, number, number] | null = [0, 0, FW - 1, FH - 1];
   private readonly rand: () => number;
 
   state: WayfinderState = "title";
@@ -494,7 +496,8 @@ export class WayfinderSim {
       for (let i = x0; i <= x1; i++) {
         const d = Math.hypot(i + 0.5 - gx, j + 0.5 - gy);
         if (d < R) {
-          const idx = j * FW + i, nv = clamp(1.3 - d / R, 0, 1);
+          // fround: the grid is float32, so compare at its precision or every reveal counts as a change.
+          const idx = j * FW + i, nv = Math.fround(clamp(1.3 - d / R, 0, 1));
           if (nv > this.fog[idx]) {
             this.fog[idx] = nv;
             changed = true;
@@ -502,7 +505,20 @@ export class WayfinderSim {
         }
       }
     }
-    if (changed) this.fogVersion++;
+    if (changed) {
+      this.fogVersion++;
+      this.markFog(x0, y0, x1, y1);
+    }
+  }
+  private markFog(x0: number, y0: number, x1: number, y1: number): void {
+    const d = this.fogDirty;
+    this.fogDirty = d ? [Math.min(d[0], x0), Math.min(d[1], y0), Math.max(d[2], x1), Math.max(d[3], y1)] : [x0, y0, x1, y1];
+  }
+  /** The fog cells changed since the last call, then forgets them (the sea renderer redraws only those). */
+  takeFogDirty(): [number, number, number, number] | null {
+    const d = this.fogDirty;
+    this.fogDirty = null;
+    return d;
   }
   private addScore(n: number): void {
     this.score += n;
@@ -543,6 +559,7 @@ export class WayfinderSim {
     this.pops = [];
     this.fog.fill(0);
     this.fogVersion++;
+    this.markFog(0, 0, FW - 1, FH - 1);
     for (const is of this.islands) is.charted = is.explored = false;
     this.voyage = freshVoyage();
     this.exp = null;
@@ -576,7 +593,7 @@ export class WayfinderSim {
   }
 
   private mapButtonRect(): { x0: number; y0: number; x1: number; y1: number } {
-    const lx = Math.max(4, this.hud.left + 4), ty = Math.max(4, this.hud.top);
+    const { lx, y: ty } = hudFrame(this.hud, this.W, this.H).top;
     return { x0: lx - 2, y0: ty + 6, x1: lx + 64, y1: ty + 22 };
   }
 

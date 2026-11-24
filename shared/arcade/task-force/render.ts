@@ -4,6 +4,7 @@
 
 import type { Priority } from "../../types/domain";
 import { fontSafe } from "../pixel/font";
+import { hudFrame } from "../pixel/hud";
 import { PRIORITY_PAL } from "../pixel/kinds";
 import { FIRE, INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel/painter";
 import { BIOMES } from "../pixel/terrain";
@@ -146,11 +147,11 @@ export class TaskForceRenderer<Img = unknown, Frame = unknown> extends PixelPain
     if (s.hurt > 0) this.rect(0, 0, s.W, s.H, "#ff2040", (s.hurt / 14) * 0.28);
 
     this.SX = this.SY = 0;
-    const hudY = Math.max(4, s.hud.top + 2);
+    const row = hudFrame(s.hud, s.W, s.H).top, hudY = row.y;
     this.band(0, hudY + 12, 0.72);
-    this.text(String(s.score).padStart(6, "0"), Math.max(4, s.hud.left), hudY, "#fff2a0");
+    this.text(String(s.score).padStart(6, "0"), row.lx, hudY, "#fff2a0");
     for (let i = 0; i < s.lives; i++) {
-      this.rect(s.W - Math.max(6, s.hud.right) - 4 - i * 8, hudY, 5, 5, "#7be3ff");
+      this.rect(row.rx - 5 - i * 8, hudY, 5, 5, "#7be3ff");
     }
     if (s.boss) {
       const bw = Math.min(100, s.W - 36);

@@ -3,6 +3,7 @@
  */
 
 import { fontSafe } from "../pixel/font";
+import { hudFrame } from "../pixel/hud";
 import { clamp, type EntityKind } from "../pixel/kinds";
 import { FIRE, INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel/painter";
 import { BIOMES, mulberry32 } from "../pixel/terrain";
@@ -123,13 +124,12 @@ export class BreakoutRenderer<Img = unknown, Frame = unknown> extends PixelPaint
     }
 
     this.SX = this.SY = 0;
-    const hud = sim.hud;
-    const top = hud.top + 4;
+    const row = hudFrame(sim.hud, W, sim.H).top, top = row.y;
     const cx = this.centreX();
     this.rect(0, 0, W, top + 10, INK, 0.6);
-    this.text(String(sim.score), 4 + hud.topLeft, top, "#ffffff");
+    this.text(String(sim.score), row.lx, top, "#ffffff");
     const best = `BEST ${sim.best}`;
-    this.text(best, W - 4 - hud.topRight - best.length * 4, top, sim.newBest ? "#fff2a0" : "#c7d0e6");
+    this.text(best, row.rx - best.length * 4, top, sim.newBest ? "#fff2a0" : "#c7d0e6");
     this.textC(`${sim.bricks.length} LEFT`, cx, top, "#7f8aa6");
     if (sim.state === "play" && sim.ball.stuck && (t >> 5) & 1) {
       this.textC(sim.inputMode === "pointer" ? "CLICK OR SPACE TO LAUNCH" : "TAP TO LAUNCH", cx, sim.padY - 32, "#ffffff");

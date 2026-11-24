@@ -4,7 +4,7 @@
  * platform code, so desktop and mobile land on the same pixels.
  */
 
-import type { PixelHud } from "../pixel/hud";
+import { hudFrame, type PixelHud } from "../pixel/hud";
 import { hash2, mulberry32, type BiomeName } from "../pixel/terrain";
 import type { Priority } from "../../types/domain";
 import { FOE_ROSTER, GHOST_FOE } from "./models";
@@ -385,6 +385,9 @@ export const inRect = (r: Rect, x: number, y: number) => x >= r.x && x < r.x + r
 export interface ExploreLayout {
   lx: number;
   rx: number;
+  /** The HUD bar's sides: it hugs the top edge, so it also clears the rounded corners. */
+  barLx: number;
+  barRx: number;
   ty: number;
   cx: number;
   /** Bottom of the HUD bar. */
@@ -401,15 +404,14 @@ export interface ExploreLayout {
   toastY: number;
 }
 
-/** Everything sits between `hud.left` and `W - hud.right`, below `hud.top` and above `hud.bottom`. */
+/** Everything sits between `hud.left` and `W - hud.right`, below `hud.top` and above `hud.bottom`; the top bar also clears the corners. */
 export function exploreLayout(W: number, H: number, hud: PixelHud): ExploreLayout {
-  const lx = Math.max(4, hud.left + 4);
-  const rx = W - Math.max(4, hud.right + 4);
-  const ty = Math.max(4, hud.top);
+  const F = hudFrame(hud, W, H);
+  const { lx, rx } = F.content, ty = F.top.y, barLx = F.top.lx, barRx = F.top.rx;
   const cx = Math.round((lx + rx) / 2);
   const avail = rx - lx;
   const barH = ty + 19;
-  const sail = { x: rx - 38, y: ty, w: 38, h: 15 };
+  const sail = { x: barRx - 38, y: ty, w: 38, h: 15 };
   const cw = Math.min(196, avail);
   const card = { x: Math.round(cx - cw / 2), y: barH + 4, w: cw, h: 78 };
   const gap = 6;
@@ -423,12 +425,12 @@ export function exploreLayout(W: number, H: number, hud: PixelHud): ExploreLayou
   const panel = { x: Math.round(cx - pw / 2), y: Math.max(barH + 8, horizon - 34), w: pw, h: 100 };
   const panelBtn = { x: panel.x + 14, y: panel.y + panel.h - 28, w: pw - 28, h: 20 };
   const toastY = H - Math.max(14, hud.bottom + 10);
-  return { lx, rx, ty, cx, barH, sail, card, a, b, panel, panelBtn, horizon, foeY, captainY, toastY };
+  return { lx, rx, barLx, barRx, ty, cx, barH, sail, card, a, b, panel, panelBtn, horizon, foeY, captainY, toastY };
 }
 
 /** The "LAND AT …" prompt shown at sea next to an unexplored note island. */
 export function landRect(W: number, H: number, hud: PixelHud, cargo: number): Rect {
-  const lx = Math.max(4, hud.left + 4), rx = W - Math.max(4, hud.right + 4);
+  const F = hudFrame(hud, W, H), { lx, rx } = F.content;
   const w = Math.min(150, rx - lx), h = 20;
-  return { x: Math.round((lx + rx - w) / 2), y: H - Math.max(10, hud.bottom + 10) - cargo * 8 - h - 8, w, h };
+  return { x: Math.round((lx + rx - w) / 2), y: F.bottom.y - 6 - cargo * 8 - h - 8, w, h };
 }

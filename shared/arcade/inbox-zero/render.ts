@@ -4,6 +4,7 @@
 
 import type { Priority } from "../../types/domain";
 import { fontSafe } from "../pixel/font";
+import { hudFrame } from "../pixel/hud";
 import { INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel/painter";
 import { hash2 } from "../pixel/terrain";
 import {
@@ -259,20 +260,19 @@ export class InboxZeroRenderer<Img = unknown, Frame = unknown> extends PixelPain
 
     // Top HUD.
     this.band(0, lay.topY, 0.7);
-    const hx = Math.max(4, s.hud.left);
-    const hy = Math.max(4, s.hud.top + 2);
+    const row = hudFrame(s.hud, s.W, s.H).top, hx = row.lx, hy = row.y;
     for (let i = 0; i < 5; i++) this.heart(hx + i * 7, hy, i < s.hearts ? "#ff5e8a" : "#3a3f55");
     const focStr = `FOCUS ${s.focus}`;
-    this.text(focStr, s.W - Math.max(4, s.hud.right) - focStr.length * 4, hy, "#fff2a0");
+    this.text(focStr, row.rx - focStr.length * 4, hy, "#fff2a0");
 
     const wv = s.waves[Math.min(s.wave, s.waves.length - 1)];
     const r2Y = hy + 10;
     this.text(`${Math.min(s.wave + 1, s.waves.length)}/${s.waves.length}`, hx, r2Y, "#c9d3ea");
     const left = s.queue.length + s.cards.length;
     const leftS = `${left} LEFT`;
-    const room = Math.max(6, Math.floor((s.W - hx - Math.max(4, s.hud.right) - leftS.length * 4 - 28) / 4));
+    const room = Math.max(6, Math.floor((row.rx - hx - leftS.length * 4 - 28) / 4));
     this.text(PixelPainter.clip(fontSafe(wv.name), room), hx + 18, r2Y, wv.accent);
-    this.text(leftS, s.W - Math.max(4, s.hud.right) - leftS.length * 4, r2Y, "#7f8aa6");
+    this.text(leftS, row.rx - leftS.length * 4, r2Y, "#7f8aa6");
 
     // Bottom tag shop.
     const sw = lay.shopW, sx0 = lay.shopX0, pad = Math.max(0, Math.floor((sw - 41) / 2));

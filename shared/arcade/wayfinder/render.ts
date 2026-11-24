@@ -8,6 +8,7 @@
 
 import type { Priority } from "../../types/domain";
 import { textWidth } from "../pixel/font";
+import { hudFrame } from "../pixel/hud";
 import { clamp, lerpHex } from "../pixel/kinds";
 import { INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel/painter";
 import { BAYER, BIOMES, fbm, hash2, mulberry32, rgb, type BiomeName } from "../pixel/terrain";
@@ -44,6 +45,9 @@ import {
 import { DAY_FRAMES, FH, FOG_TEX, FW, HD, WD, WayfinderSim, type Isle } from "./sim";
 
 const STORM_R = 22;
+/** Fog-buffer margin in world pixels each side (64 in all), so a sailing camera rarely forces a full mask rebuild. */
+const FOG_MARGIN = 32;
+const BAYER_MIN = Math.min(...BAYER), BAYER_MAX = Math.max(...BAYER);
 
 /** Backdrop per biome: sky top, horizon, sun, cloud. */
 const SKY: Record<BiomeName, [string, string, string, string]> = {
@@ -165,6 +169,13 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
   private fogH = 0;
   private fogBytes = new Uint8Array(0);
   private fogBuf = new Uint32Array(0);
+  /** 1 where the fog texture shows, per fog-buffer pixel; rebuilt only where the sea's fog changed. */
+  private fogMask = new Uint8Array(0);
+  /** Per buffer row, the clear [start, end) runs as flat pairs. */
+  private fogRuns: number[][] = [];
+  private fogColCx = new Int32Array(0);
+  private fogColAx = new Float32Array(0);
+  private fogMaskOk = false;
   private fogImg: Img | null = null;
   private fogCamX = 0;
   private fogCamY = 0;
@@ -214,10 +225,15 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
   }
 
   private allocFog(w: number, h: number): void {
-    this.fogW = Math.ceil(w / 2) + 8;
-    this.fogH = Math.ceil(h / 2) + 8;
+    this.fogW = Math.ceil(w / 2) + FOG_MARGIN;
+    this.fogH = Math.ceil(h / 2) + FOG_MARGIN;
     this.fogBytes = new Uint8Array(this.fogW * this.fogH * 4);
     this.fogBuf = new Uint32Array(this.fogBytes.buffer);
+    this.fogMask = new Uint8Array(this.fogW * this.fogH);
+    this.fogRuns = Array.from({ length: this.fogH }, () => []);
+    this.fogColCx = new Int32Array(this.fogW);
+    this.fogColAx = new Float32Array(this.fogW);
+    this.fogMaskOk = false;
     this.fogImg = null;
     this.fogVer = -1;
   }
@@ -243,43 +259,128 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
     return { x, y, jump, ph };
   }
 
+  /**
+   * The sea's fog at 2x scale. The mask (which buffer pixels are fog) is kept
+   * between frames and recomputed only where the fog changed or when the camera
+   * leaves the buffer's margin; the drifting texture has a 32-pixel period in
+   * buffer space, so it is laid down as one tile copied across the buffer and the
+   * clear runs are zeroed with fills. No per-pixel JS runs on a drift frame, so
+   * the cost no longer grows with the screen (it was the unfolded Duo's stutter).
+   */
   private drawFog(): void {
-    const s = this.sim, W = this.W, H = this.H, FOG = s.fog;
+    const s = this.sim, W = this.W, H = this.H;
     const outOfBounds =
       s.camX < this.fogCamX ||
       s.camY < this.fogCamY ||
       s.camX + W > this.fogCamX + this.fogW * 2 ||
       s.camY + H > this.fogCamY + this.fogH * 2;
     const driftTick = s.t >> 3;
-    const needRebuild =
-      !this.fogImg ||
-      outOfBounds ||
-      driftTick !== this.fogTick ||
-      (s.fogVersion !== this.fogVer && (s.t & 3) === 0);
-
-    if (needRebuild) {
-      this.fogCamX = Math.floor(s.camX / 2) * 2 - 8;
-      this.fogCamY = Math.floor(s.camY / 2) * 2 - 8;
-      this.fogVer = s.fogVersion;
-      this.fogTick = driftTick;
-      const g = (c: number, r: number) => FOG[clamp(r, 0, FH - 1) * FW + clamp(c, 0, FW - 1)];
-      for (let y = 0; y < this.fogH; y++) {
-        const wy = y * 2 + this.fogCamY;
-        const fy = wy / 8 - 0.5, cy = Math.floor(fy), ay = fy - cy;
-        const bRow = (y & 3) * 4;
-        const tRow = ((wy + driftTick) & 63) * 64;
+    const fogMoved = s.fogVersion !== this.fogVer && (s.t & 3) === 0;
+    if (!this.fogImg || outOfBounds || !this.fogMaskOk || driftTick !== this.fogTick || fogMoved) {
+      if (outOfBounds || !this.fogMaskOk) {
+        this.fogCamX = Math.floor((s.camX - FOG_MARGIN) / 2) * 2;
+        this.fogCamY = Math.floor((s.camY - FOG_MARGIN) / 2) * 2;
         for (let x = 0; x < this.fogW; x++) {
-          const wx = x * 2 + this.fogCamX;
-          const fx = wx / 8 - 0.5, cx = Math.floor(fx), ax = fx - cx;
-          const v = (g(cx, cy) * (1 - ax) + g(cx + 1, cy) * ax) * (1 - ay) + (g(cx, cy + 1) * (1 - ax) + g(cx + 1, cy + 1) * ax) * ay;
-          this.fogBuf[y * this.fogW + x] = v > BAYER[bRow + (x & 3)] ? 0 : FOG_TEX[tRow + ((wx + (s.t >> 4)) & 63)];
+          const fx = (x * 2 + this.fogCamX) / 8 - 0.5, cx = Math.floor(fx);
+          this.fogColCx[x] = cx;
+          this.fogColAx[x] = fx - cx;
         }
+        s.takeFogDirty();
+        this.maskFog(0, 0, this.fogW - 1, this.fogH - 1);
+        this.fogMaskOk = true;
+        this.fogVer = s.fogVersion;
+      } else if (fogMoved) {
+        const d = s.takeFogDirty();
+        // A changed cell feeds the bilinear lookups half a cell either side of
+        // it; an edge cell also feeds everything past the world's edge (clamped).
+        if (d) {
+          this.maskFog(
+            d[0] <= 0 ? 0 : Math.floor(((d[0] - 0.5) * 8 - this.fogCamX) / 2),
+            d[1] <= 0 ? 0 : Math.floor(((d[1] - 0.5) * 8 - this.fogCamY) / 2),
+            d[2] >= FW - 1 ? this.fogW - 1 : Math.ceil(((d[2] + 1.5) * 8 - this.fogCamX) / 2),
+            d[3] >= FH - 1 ? this.fogH - 1 : Math.ceil(((d[3] + 1.5) * 8 - this.fogCamY) / 2),
+          );
+        }
+        this.fogVer = s.fogVersion;
       }
+      this.fogTick = driftTick;
+      this.paintFog(s.t >> 4, driftTick);
       this.fogImg = this.makeImage(this.fogW, this.fogH, this.fogBytes);
     }
 
     if (this.fogImg) {
       this.imageRect(this.fogImg, 0, 0, this.fogW, this.fogH, this.fogCamX - s.camX, this.fogCamY - s.camY, this.fogW * 2, this.fogH * 2);
+    }
+  }
+
+  /** Recompute the fog mask over buffer pixels [x0..x1] x [y0..y1] (clamped) and the clear runs of those rows. */
+  private maskFog(x0: number, y0: number, x1: number, y1: number): void {
+    const FOG = this.sim.fog, fw = this.fogW, mask = this.fogMask, colCx = this.fogColCx, colAx = this.fogColAx;
+    x0 = Math.max(0, x0);
+    y0 = Math.max(0, y0);
+    x1 = Math.min(fw - 1, x1);
+    y1 = Math.min(this.fogH - 1, y1);
+    if (x0 > x1 || y0 > y1) return;
+    const bx = (this.fogCamX >> 1) & 3;
+    for (let y = y0; y <= y1; y++) {
+      const wy = y * 2 + this.fogCamY, fy = wy / 8 - 0.5, cy = Math.floor(fy), ay = fy - cy;
+      const r0 = clamp(cy, 0, FH - 1) * FW, r1 = clamp(cy + 1, 0, FH - 1) * FW;
+      const bRow = ((wy >> 1) & 3) * 4, base = y * fw;
+      let x = x0;
+      while (x <= x1) {
+        const cx = colCx[x];
+        let xe = x;
+        while (xe < x1 && colCx[xe + 1] === cx) xe++;
+        const i0 = clamp(cx, 0, FW - 1), i1 = clamp(cx + 1, 0, FW - 1);
+        const a = FOG[r0 + i0], b = FOG[r0 + i1], c = FOG[r1 + i0], d = FOG[r1 + i1];
+        if (a > BAYER_MAX && b > BAYER_MAX && c > BAYER_MAX && d > BAYER_MAX) mask.fill(0, base + x, base + xe + 1);
+        else if (a <= BAYER_MIN && b <= BAYER_MIN && c <= BAYER_MIN && d <= BAYER_MIN) mask.fill(1, base + x, base + xe + 1);
+        else {
+          const top0 = a * (1 - ay), top1 = b * (1 - ay), bot0 = c * ay, bot1 = d * ay;
+          for (let xx = x; xx <= xe; xx++) {
+            const ax = colAx[xx], v = (top0 + bot0) * (1 - ax) + (top1 + bot1) * ax;
+            mask[base + xx] = v > BAYER[bRow + ((xx + bx) & 3)] ? 0 : 1;
+          }
+        }
+        x = xe + 1;
+      }
+      const runs = this.fogRuns[y];
+      runs.length = 0;
+      let start = -1;
+      for (let xx = 0; xx < fw; xx++) {
+        if (mask[base + xx] === 0) {
+          if (start < 0) start = xx;
+        } else if (start >= 0) {
+          runs.push(start, xx);
+          start = -1;
+        }
+      }
+      if (start >= 0) runs.push(start, fw);
+    }
+  }
+
+  /** Lay the drifting fog texture over the whole buffer, then clear the revealed runs. */
+  private paintFog(driftX: number, driftY: number): void {
+    const buf = this.fogBuf, fw = this.fogW, fh = this.fogH;
+    const c0 = this.fogCamX + driftX, r0 = this.fogCamY + driftY;
+    const tw = Math.min(32, fw), th = Math.min(32, fh);
+    for (let i = 0; i < th; i++) {
+      const row = ((i * 2 + r0) & 63) * 64, base = i * fw;
+      for (let j = 0; j < tw; j++) buf[base + j] = FOG_TEX[row + ((j * 2 + c0) & 63)];
+      for (let len = tw; len < fw; ) {
+        const n = Math.min(len, fw - len);
+        buf.copyWithin(base + len, base, base + n);
+        len += n;
+      }
+    }
+    for (let rows = th; rows < fh; ) {
+      const n = Math.min(rows, fh - rows);
+      buf.copyWithin(rows * fw, 0, n * fw);
+      rows += n;
+    }
+    for (let y = 0; y < fh; y++) {
+      const runs = this.fogRuns[y], base = y * fw;
+      for (let k = 0; k < runs.length; k += 2) buf.fill(0, base + runs[k], base + runs[k + 1]);
     }
   }
 
@@ -570,8 +671,9 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
 
   private renderHud(): void {
     const s = this.sim, W = this.W, H = this.H, t = s.t, hud = s.hud;
-    const lx = Math.max(4, hud.left + 4), rx = W - Math.max(4, hud.right + 4), ty = Math.max(4, hud.top);
-    const cx = (lx + rx) / 2;
+    // The top rows hug the top edge and the cargo rows the bottom, so each clears its rounded corners.
+    const F = hudFrame(hud, W, H), lx = F.top.lx, rx = F.top.rx, ty = F.top.y;
+    const blx = F.bottom.lx, brx = F.bottom.rx, cx = F.content.cx;
     this.band(0, ty + 22, 0.6);
     this.text(s.timeAt(s.clock), lx, ty, s.clock > DAY_FRAMES * 0.85 ? ((t >> 3) & 1 ? "#ff5e8a" : "#ffffff") : "#ffffff");
     const sc = String(s.score).padStart(5, "0");
@@ -589,14 +691,14 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
     this.rect(lx, ty + 17, rx - lx, 2, INK);
     this.rect(lx, ty + 17, Math.round(((rx - lx) * s.clock) / DAY_FRAMES), 2, "#fff2a0");
 
-    const botBase = H - Math.max(10, hud.bottom + 10);
+    const botBase = F.bottom.y - 6;
     s.boat.cargo.forEach((c, i) => {
       const y = botBase - i * 8, overdue = s.clock > s.dueFrame(c);
       this.rect(0, y - 2, W, 8, INK, 0.6);
-      this.px(lx, y, PCOL[c.pr], 4);
-      this.text(PixelPainter.clip(c.title, 22), lx + 7, y, "#ffffff");
+      this.px(blx, y, PCOL[c.pr], 4);
+      this.text(PixelPainter.clip(c.title, 22), blx + 7, y, "#ffffff");
       const tm = s.timeAt(s.dueFrame(c));
-      this.text(tm, rx - textWidth(tm), y, overdue ? "#ff9a6b" : "#8dff9a");
+      this.text(tm, brx - textWidth(tm), y, overdue ? "#ff9a6b" : "#8dff9a");
     });
 
     if (s.state === "sail") {
@@ -1292,7 +1394,7 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
    * progress where the sea shows the day's.
    */
   private renderExploreHud(L: ExploreLayout, e: Expedition): void {
-    const s = this.sim, v = s.voyage, t = s.t, lx = L.lx, ty = L.ty, rx = L.sail.x - 6;
+    const s = this.sim, v = s.voyage, t = s.t, lx = L.barLx, ty = L.ty, rx = L.sail.x - 6;
     this.band(0, ty + 22, 0.6);
     const clock = s.timeAt(s.clock);
     this.text(clock, lx, ty, "#c7e4ff");
@@ -1308,7 +1410,7 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
     const sup = `SUP ${v.supplies}`;
     this.text(sup, rx - textWidth(sup), ty + 9, "#c9d3ea");
     // Trail progress, four legs, where the sea draws the day's clock.
-    const seg = (L.rx - lx - 2 * (n - 1)) / n;
+    const seg = (L.barRx - lx - 2 * (n - 1)) / n;
     for (let i = 0; i < n; i++) {
       const x = Math.round(lx + i * (seg + 2));
       this.rect(x, ty + 17, Math.round(seg), 2, INK);
