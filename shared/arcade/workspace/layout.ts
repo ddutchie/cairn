@@ -37,7 +37,18 @@ export const inRect = (r: Rect, x: number, y: number, pad = 0) => x >= r.x - pad
 /** Back wall height (windows, clock, done board). */
 export const WALL_H = 34;
 export const CELL_W = 68;
-export const CELL_H = 54;
+/**
+ * A desk's reach above and below its centre at k=1 (model scale 2): the tallest
+ * pile above, the chair and name tag below. The tag is text, so it doesn't scale.
+ */
+export const DESK_UP = 34;
+export const DESK_DOWN = 22;
+export const TAG_H = 9;
+export const deskHeight = (k: number) => Math.round((DESK_UP + DESK_DOWN) * k) + TAG_H;
+/** Floor kept clear of desks under the back wall's props. */
+export const BACK_GAP = 8;
+/** Floor kept clear along the front for the planters and the robot's pad. */
+export const FRONT_STRIP = 44;
 /** Desk footprint on screen (voxel model at k=2). */
 export const DESK_PX_W = 40;
 export const DESK_PX_D = 18;
@@ -77,6 +88,8 @@ export interface FloorLayout {
   pageCount: number;
   wall: Rect;
   doneBoard: Rect;
+  /** The wall clock, hung above the bin. */
+  clock: Pt;
   windows: Rect[];
   coffee: Pt;
   cooler: Pt;
@@ -136,11 +149,14 @@ export function layoutFloor(projects: readonly OfficeProject[], w: number, h: nu
   const floorTop = WALL_H + 10;
   const left = 16;
   const right = w - 16;
+  // Desks stand between the back wall's props and the front strip.
+  const deskTop = floorTop + BACK_GAP;
+  const room = h - FRONT_STRIP - deskTop;
   // Bigger desks when the workspace is small enough to fit them.
   const fit = (z: number) => {
     const k = z / 2;
     const maxCols = Math.max(1, Math.floor((right - left) / (CELL_W * k)));
-    const maxRows = Math.max(1, Math.floor((h - floorTop) / (CELL_H * k)));
+    const maxRows = Math.max(1, Math.floor(room / deskHeight(k)));
     return { z, k, maxCols, maxRows, per: maxCols * maxRows };
   };
   const big = fit(3);
@@ -155,13 +171,14 @@ export function layoutFloor(projects: readonly OfficeProject[], w: number, h: nu
   const rows = Math.min(maxRows, Math.max(1, Math.ceil(n / maxCols)));
   const cols = Math.min(maxCols, Math.ceil(n / rows));
   const stepX = Math.floor((right - left) / cols);
-  const stepY = Math.min(Math.round((CELL_H + 20) * k), Math.floor((h - floorTop) / rows));
-  const y0 = floorTop + Math.floor((h - floorTop - rows * stepY) / 2);
+  const tall = deskHeight(k);
+  const stepY = Math.min(tall + Math.round(20 * k), Math.floor(room / rows));
+  const y0 = deskTop + Math.max(0, Math.floor((room - rows * stepY) / 2));
   const crew = staff(projects);
   const desks: Desk[] = list.map((p, j) => {
     const i = pg * perPage + j;
     const cx = left + (j % cols) * stepX + Math.floor(stepX / 2);
-    const cy = y0 + Math.floor(j / cols) * stepY + Math.round(24 * k);
+    const cy = y0 + Math.floor(j / cols) * stepY + Math.max(0, Math.floor((stepY - tall) / 2)) + Math.round(DESK_UP * k);
     const dw = DESK_PX_W * k;
     return {
       project: p,
@@ -181,10 +198,10 @@ export function layoutFloor(projects: readonly OfficeProject[], w: number, h: nu
   });
   const coffee = { x: right - 8, y: floorTop - 2 };
   const cooler = { x: left + 6, y: floorTop - 2 };
-  const plants = [{ x: right + 6, y: h - 6 }];
+  const plants = [{ x: right + 4, y: h - 13 }];
   // Milestone plants cluster bottom-right with a staggered edge; the bottom-left stays clear for the robot.
   for (let i = 0; i < Math.max(0, Math.min(6, Math.floor(extraPlants))); i++) {
-    plants.push({ x: right - 18 - i * 26, y: h - 6 - (i % 2) * 5 });
+    plants.push({ x: right - 22 - i * 26, y: h - 13 - (i % 2) * 4 });
   }
   const firstAisle = desks.length ? desks[0].aisleY - stepY : floorTop + 6;
   const top = { aisleY: Math.max(floorTop + 6, firstAisle), laneX: left };
@@ -197,12 +214,13 @@ export function layoutFloor(projects: readonly OfficeProject[], w: number, h: nu
   const doneBoard = { x: Math.floor(w / 2) - 31, y: 4, w: 62, h: 28 };
   // The paper bin stands against the wall, left of the done board.
   const bin = { x: doneBoard.x - 12, y: floorTop + 2 };
+  const clock = { x: bin.x, y: 15 };
   const windows: Rect[] = [];
   for (let x = 12; x + 30 < w - 12; x += 46) {
     const r = { x, y: 6, w: 30, h: 20 };
-    if (r.x + r.w < doneBoard.x - 6 || r.x > doneBoard.x + doneBoard.w + 6) windows.push(r);
+    if (r.x + r.w < clock.x - 12 || r.x > doneBoard.x + doneBoard.w + 6) windows.push(r);
   }
-  return { w, h, zoom: g.z, desks, page: pg, pageCount, wall: { x: 0, y: 0, w, h: WALL_H }, doneBoard, windows, coffee, cooler, bin, plants, spots };
+  return { w, h, zoom: g.z, desks, page: pg, pageCount, wall: { x: 0, y: 0, w, h: WALL_H }, doneBoard, clock, windows, coffee, cooler, bin, plants, spots };
 }
 
 /**

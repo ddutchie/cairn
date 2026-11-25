@@ -74,3 +74,21 @@ export function bucketWeek(projects: readonly OfficeProject[], today: Date, anch
   }
   return { days, overdue };
 }
+
+/**
+ * The demo office's due dates, relative to today: its overdue cards fell due
+ * yesterday (so the wall agrees with the done board), and every other card in
+ * progress or review is spread over the next few days.
+ */
+export function withDemoDates(projects: readonly OfficeProject[], today: Date): OfficeProject[] {
+  const day = (n: number) => toDateKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() + n));
+  let next = 0;
+  return projects.map((p) => ({
+    ...p,
+    cards: p.cards.map((c) => {
+      if (c.overdue) return { ...c, dueKey: day(-1) };
+      if (c.zone !== "doing" && c.zone !== "review") return c;
+      return { ...c, dueKey: day(next++ % 4) };
+    }),
+  }));
+}

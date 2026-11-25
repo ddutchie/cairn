@@ -4,12 +4,12 @@ An idle office that mirrors the open workspace. It isn't a game with a score: yo
 
 ## The room
 
-- **One room is the workspace.** The back wall has windows, a clock and a "done this week" board (the week's done cards across every project).
+- **One room is the workspace.** The back wall has windows, a "done this week" board (the week's done cards across every project) and a clock hung above the paper bin.
 - **Each project is a desk.** Busiest projects come first. A desk's paper pile grows with its open tasks: one voxel layer each up to four, then one per two, capped at ten. Its book pile grows with its notes the same way, capped at eight. A red tab on the pile means a card is overdue. The desk's front edge is in the project's colour, and its name tag floats below it.
 - **People sit where they're busiest.** Each assignee sits at the project where they hold the most cards in progress. The busiest people choose first, and a second person on the same project stands beside the desk. Unassigned work in progress brings the contractor, in hi-vis. A lit monitor means somebody is working there.
 - **Idle life.** Seated people get up every 10–35 seconds to go to the coffee machine, the water cooler or a colleague's desk. They walk the aisles and lanes (`route`), never through a desk, and come back.
-- **Daylight follows the clock.** Sun falls through the windows by day. From 17:00 the room dims, and after dark each lit monitor is the light: a dithered pool of screen-blue light on its desk, its piles and whoever sits there, while the rest of the room stays dark. The darkness is one cached image (`nightMap`), rebuilt only when the room, the lit desks or the hour change. `calm` (Reduce Motion) keeps people at their desks.
-- **Sizes.** A workspace small enough to fit gets desks at 3× (`zoom`); otherwise they're drawn at 2×, and pages hold the rest (arrows in the header, or ← →).
+- **Daylight follows the clock.** Sun falls through the windows by day. From 17:00 the room dims, and after dark each monitor left on is the light: a dithered pool of screen-blue light on its desk, its piles and whoever sits there, while the rest of the room stays dark. The darkness is one cached image (`nightMap`), rebuilt only when the room, the lit desks or the hour change. `calm` (Reduce Motion) keeps people at their desks.
+- **Sizes.** A workspace small enough to fit gets desks at 3× (`zoom`); otherwise they're drawn at 2×, and pages hold the rest (arrows in the header, or ← →). A desk needs `deskHeight(k)` of floor (its tallest pile down to its name tag), and desks stay between the back wall's props (`BACK_GAP`) and the front strip kept for planters and the robot's pad (`FRONT_STRIP`). A test checks that no desks overlap across project counts and screen sizes. Seated people move with their desk when the floor is laid out again.
 
 ## An opened desk
 
@@ -48,6 +48,9 @@ A change for an id the agent just touched (a `tool/call` with a `cairnRef` in th
 The WEEK tab (C) swaps the floor for the week wall: seven day cork boards from the shared `week.ts` bucketing, with dated open cards pinned on their day (priority stripe, project accent chip) and a red OVERDUE tray along the bottom for everything past due. Today is gold, weekends dim. The ‹ › arrows and arrow keys page the wall week to week (the header names the range); reopening returns to this week. Clicking a pin opens that task in the side panel, exactly like a desk card; Esc or OFFICE goes back. Meeting-room events and workers walking to meetings are not built yet.
 
 ## Tuning notes
+
+- Sprite stacks turn a model's depth into screen height, so keep heads shallow and chair backs low or a seated person reads as a post. A front face only a voxel or two big gets lost: the waiting robot turns to the room and its eyes are drawn flat on its head.
+- The demo office has no due dates of its own; the week wall dates it around today (`withDemoDates`), with its overdue cards due yesterday so the wall agrees with the done board.
 
 - The office is drawn with voxel stacks (`models.ts`) like Task Force and Wayfinder: `makeModel` shades each layer and the renderer drops a shadow under each stack. Desk models are cached by their pile heights, lit state, overdue state and accent, so a model is rebuilt only when its counts change. Draw time in the harness is about 0.5 ms at 480×320.
 - A seated person's click area covers only their visible top half, so a click on the desk itself opens the project rather than the person.

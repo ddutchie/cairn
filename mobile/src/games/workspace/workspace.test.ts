@@ -6,11 +6,11 @@ import { NO_HUD } from "@cairn/shared/arcade/pixel/hud";
 import type { PixelBackend, PixelSurface } from "@cairn/shared/arcade/pixel/painter";
 import { buildOffice } from "@cairn/shared/arcade/workspace/build";
 import { CONTRACTOR, DEMO_OFFICE, zoneForColumn, type OfficeCard, type OfficeData, type OfficeProject } from "@cairn/shared/arcade/workspace/data";
-import { layoutDesk, layoutFloor, pileHeight, route, routeFree, staff } from "@cairn/shared/arcade/workspace/layout";
+import { BACK_GAP, DESK_DOWN, DESK_UP, FRONT_STRIP, layoutDesk, layoutFloor, pileHeight, TAG_H, WALL_H, route, routeFree, staff } from "@cairn/shared/arcade/workspace/layout";
 import { OfficeRenderer } from "@cairn/shared/arcade/workspace/render";
 import { daylightAt, OfficeSim } from "@cairn/shared/arcade/workspace/sim";
 import { burstLabel, diffOffice, FLURRY, groupChanges } from "@cairn/shared/arcade/workspace/events";
-import { bucketWeek, dayShort, toDateKey, weekDates } from "@cairn/shared/arcade/workspace/week";
+import { bucketWeek, dayShort, toDateKey, weekDates, withDemoDates } from "@cairn/shared/arcade/workspace/week";
 import { PLANTER_BUSH, PLANTER_TALL } from "@cairn/shared/arcade/workspace/models";
 
 const NOW = new Date(2026, 10, 25, 11, 30);
@@ -120,6 +120,26 @@ describe("the floor plan", () => {
     expect(layoutFloor(DEMO_OFFICE.projects, 480, 295, 0).zoom).toBe(3);
     const many = Array.from({ length: 24 }, (_, i) => project(`p${i}`, []));
     expect(layoutFloor(many, 480, 295, 0).zoom).toBe(2);
+  });
+
+  it("keeps desks off the back wall, the front strip and each other at any size", () => {
+    for (const [w, h] of [[480, 295], [225, 295], [360, 240], [800, 600]]) {
+      for (const n of [1, 3, 6, 12, 20]) {
+        const ps = Array.from({ length: n }, (_, i) => project(`p${i}`, []));
+        const first = layoutFloor(ps, w, h, 0);
+        for (let pg = 0; pg < first.pageCount; pg++) {
+          const f = layoutFloor(ps, w, h, pg);
+          const k = f.zoom / 2;
+          const boxes = f.desks.map((d) => ({ x0: d.cx - 22 * k, x1: d.cx + 22 * k, y0: d.cy - DESK_UP * k, y1: d.cy + DESK_DOWN * k + TAG_H }));
+          boxes.forEach((a, i) => {
+            const at = `${n} projects at ${w}x${h}, desk ${i}`;
+            expect(a.y0, at).toBeGreaterThanOrEqual(WALL_H + 10 + BACK_GAP - 1);
+            expect(a.y1, at).toBeLessThanOrEqual(h - FRONT_STRIP + 1);
+            for (const b of boxes.slice(i + 1)) expect(a.x1 <= b.x0 || b.x1 <= a.x0 || a.y1 <= b.y0 || b.y1 <= a.y0, at).toBe(true);
+          });
+        }
+      }
+    }
   });
 
   it("grows the piles with the counts, capped", () => {
@@ -252,6 +272,17 @@ describe("the office", () => {
     expect(desk.project.id).toBe("b");
     const home = again.spot === "seat" ? desk.seat : desk.side;
     expect({ x: again.x, y: again.y }).toEqual(home);
+  });
+
+  it("keeps seated people at their desk when other projects shift it", () => {
+    const busy = project("busy", [card("a", "doing", "SAM")]);
+    const s = make(office([busy]));
+    const before = { x: s.workers.get("SAM")!.x, y: s.workers.get("SAM")!.y };
+    s.setData(office([busy, ...Array.from({ length: 8 }, (_, i) => project(`other${i}`, []))]));
+    const w = s.workers.get("SAM")!;
+    const seat = s.floor.desks.find((d) => d.index === w.desk)!.seat;
+    expect(seat).not.toEqual(before);
+    expect({ x: w.x, y: w.y, mode: w.mode }).toEqual({ ...seat, mode: "sit" });
   });
 
   it("stays on the open desk when the data changes, and leaves it when the project goes", () => {
@@ -546,6 +577,22 @@ describe("the week wall", () => {
     expect(w2.overdue.map((c) => c.title)).toEqual(["MON"]);
   });
 
+  it("dates the demo office around today, so its wall agrees with the done board", () => {
+    const projects = withDemoDates(DEMO_OFFICE.projects, NOW);
+    const { days, overdue } = bucketWeek(projects, NOW);
+    expect(overdue).toHaveLength(DEMO_OFFICE.projects.flatMap((p) => p.cards).filter((c) => c.overdue).length);
+    expect(days.some((d) => d.isToday && d.cards.length > 0)).toBe(true);
+    const s = make();
+    s.setWeek(true);
+    expect(s.weekView!.tray.pins.length).toBe(s.boardStats.overdue);
+  });
+
+  it("keeps the header clock clear of the week toggle", () => {
+    const s = make();
+    s.setWeek(true);
+    expect(s.calBtn.x + s.calBtn.w).toBeLessThan(s.prevBtn.x);
+  });
+
   it("dims the weekend and keys days in order", () => {
     expect(weekDates(today()).map((d) => toDateKey(d))).toEqual([
       "2026-11-22", "2026-11-23", "2026-11-24", "2026-11-25", "2026-11-26", "2026-11-27", "2026-11-28",
@@ -721,8 +768,18 @@ describe("idle polish", () => {
 
 describe("the big clock", () => {
   const clockAt = (s: OfficeSim) => ({
-    x: s.area.x + s.floor.doneBoard.x + s.floor.doneBoard.w + 12,
-    y: s.area.y + 15,
+    x: s.area.x + s.floor.clock.x,
+    y: s.area.y + s.floor.clock.y,
+  });
+
+  it("hangs above the bin, clear of the done board and the windows", () => {
+    for (const [width, height] of [[480, 295], [225, 295]]) {
+      const f = layoutFloor(DEMO_OFFICE.projects, width, height, 0);
+      expect(f.clock.x).toBe(f.bin.x);
+      expect(f.clock.y).toBeLessThan(f.bin.y);
+      expect(f.clock.x + 7).toBeLessThan(f.doneBoard.x);
+      for (const w of f.windows) expect(w.x + w.w < f.clock.x - 7 || w.x > f.clock.x + 7).toBe(true);
+    }
   });
 
   it("opens on clock tap and closes on the next tap or Escape", () => {

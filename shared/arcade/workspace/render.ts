@@ -89,7 +89,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     const H = a.h;
     const px = new Uint8Array(W * H * 4);
     const night = [10, 15, 42];
-    const glow = [70, 150, 210];
+    const glow = [30, 125, 255];
     const R = 46 * z;
     const BANDS = 5;
     const bayer = [0, 2, 3, 1];
@@ -107,7 +107,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
         let band = Math.floor(f);
         if (f - band > (bayer[((cy >> 1) & 1) * 2 + ((cx >> 1) & 1)] + 0.5) / 4) band++;
         const light = Math.min(1, band / BANDS);
-        const alpha = dark * (0.62 * (1 - light) + 0.14 * light);
+        const alpha = dark * (0.62 * (1 - light) + 0.3 * light);
         const r = night[0] + (glow[0] - night[0]) * light;
         const g = night[1] + (glow[1] - night[1]) * light;
         const b = night[2] + (glow[2] - night[2]) * light;
@@ -151,23 +151,32 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     this.rect(p.x + 2, p.y + 2, p.w, p.h, INK, 0.5);
     this.rect(p.x, p.y, p.w, p.h, "#f4f6fa");
     this.rect(p.x, p.y, p.w, 2, "#ffffff");
+    // Everything above the toggle is the face, with the date under it.
+    const r = Math.max(12, Math.min(Math.floor((p.w - 24) / 2), Math.floor((p.h - 38) / 2)));
+    const cx = p.x + Math.floor(p.w / 2), cy = p.y + 6 + r;
     if (sim.clockDigital) {
-      const s = Math.max(3, Math.round(p.w / 50));
       const time = sim.clockText;
-      this.text(time, Math.round(p.x + (p.w - textWidth(time, s)) / 2), Math.round(p.y + p.h * 0.1), "#1d2232", s, null);
+      const k = Math.max(3, Math.floor((p.w - 24) / textWidth(time)));
+      this.text(time, Math.round(cx - textWidth(time, k) / 2), Math.round(cy - 2.5 * k), "#1d2232", k, null);
     } else {
       const [hh, mm] = sim.clockText.split(":").map(Number);
-      const r = Math.round(p.h * 0.2);
-      const cx = p.x + Math.floor(p.w / 2), cy = Math.round(p.y + p.h * 0.3);
       this.circle(cx, cy, r + 1, "#20273a");
-      this.circle(cx, cy, r, "#ffffff");
+      this.circle(cx, cy, r - 1, "#ffffff");
+      for (let i = 0; i < 12; i++) {
+        const t = (i / 12) * Math.PI * 2;
+        const size = i % 3 === 0 ? 3 : 1;
+        this.rect(Math.round(cx + Math.cos(t) * (r - 5) - size / 2), Math.round(cy + Math.sin(t) * (r - 5) - size / 2), size, size, "#20273a");
+      }
       const ma = (mm / 60) * Math.PI * 2 - Math.PI / 2;
       const ha = (((hh % 12) + mm / 60) / 12) * Math.PI * 2 - Math.PI / 2;
-      this.line(cx, cy, Math.round(cx + Math.cos(ma) * (r - 2)), Math.round(cy + Math.sin(ma) * (r - 2)), INK);
-      this.line(cx, cy, Math.round(cx + Math.cos(ha) * Math.round(r / 2)), Math.round(cy + Math.sin(ha) * Math.round(r / 2)), "#d9483b");
+      for (let o = 0; o < 2; o++) {
+        this.line(cx + o, cy, Math.round(cx + o + Math.cos(ma) * (r - 9)), Math.round(cy + Math.sin(ma) * (r - 9)), INK);
+        this.line(cx + o, cy, Math.round(cx + o + Math.cos(ha) * Math.round(r * 0.5)), Math.round(cy + Math.sin(ha) * Math.round(r * 0.5)), "#d9483b");
+      }
+      this.circle(cx, cy, 2, "#20273a");
     }
     const date = sim.dateLine;
-    this.text(date, Math.round(p.x + (p.w - textWidth(date)) / 2), Math.round(p.y + p.h * 0.58), TEXT_DIM, 1, null);
+    this.text(date, Math.round(cx - textWidth(date) / 2), cy + r + 5, TEXT_DIM, 1, null);
     const t = sim.clockToggleRect();
     if (t) {
       const label = sim.clockDigital ? "ANALOGUE" : "DIGITAL";
@@ -246,7 +255,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       this.rect(ox, oy + F.wall.h, a.w, 3, INK, 0.25);
       for (const w of F.windows) this.drawWindow(ox + w.x, oy + w.y, w.w, w.h, day);
       this.drawDoneBoard(ox + F.doneBoard.x, oy + F.doneBoard.y, F.doneBoard.w, F.doneBoard.h);
-      this.drawClock(ox + F.doneBoard.x + F.doneBoard.w + 12, oy + 15);
+      this.drawClock(ox + F.clock.x, oy + F.clock.y);
 
       // Everything that stands on the floor, back to front.
       const items: Drawable[] = [];
@@ -421,16 +430,27 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     const m = this.atlas("robot", () => ROBOT);
     const walking = r.mode === "walk";
     const bob = walking ? Math.floor(this.sim.t / 7) % 2 : 0;
-    const ang = walking ? Math.atan2(r.dx, -r.dy) : 0;
+    // Walking, it faces where it goes; working, its desk; waiting, the room (so its eyes show).
+    const ang = walking ? Math.atan2(r.dx, -r.dy) : r.mode === "idle" ? Math.PI : 0;
     const x = ox + r.x;
     const y = oy + r.y - bob;
     const z = this.sim.floor.zoom;
     this.shadow(m, x, oy + r.y, ang, z, z, 0.35, z);
     this.stack(m, x, y, ang, { k: z });
+    // Facing the room, its face is drawn flat on the head: sprite stacks lose a front face this small.
+    if (ang === Math.PI) {
+      const fx = Math.round(x - 3 * z), fy = Math.round(y - 11 * z);
+      this.rect(fx, fy, 6 * z, 3 * z, "#10131c");
+      const blink = this.sim.t % 220 < 6;
+      for (const ex of [1, 4]) this.rect(fx + ex * z, fy + (blink ? 2 : 1) * z, z, blink ? 1 : z, "#8fe0ff");
+    }
     // A working robot glows blue; a small tag says whose side it is on.
     if (r.active) this.circle(x, y - 12 * z, 3 * z, "#8fe0ff", 0.5 + 0.2 * Math.sin(this.sim.t / 9));
     const label = r.active ? "AGENT" : "IDLE";
-    this.text(label, x - Math.floor(textWidth(label) / 2), y - 11 * z - 7, r.active ? "#8fe0ff" : TEXT_DIM, 1, INK);
+    const w = textWidth(label) + 6;
+    const lx = Math.round(x - w / 2), ly = Math.round(y - 13 * z - 8);
+    this.rect(lx, ly, w, 9, "#1d2232", 0.92);
+    this.text(label, lx + 3, ly + 2, r.active ? "#8fe0ff" : TEXT, 1, null);
   }
 
   private drawNameTag(d: Desk, ox: number, oy: number): void {
@@ -676,6 +696,8 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     let right = arrows ? sim.prevBtn.x - 4 : f.top.rx - 3;
     if (focused && sim.tabBtns.length) right = sim.tabBtns[0].rect.x - 4;
     if (!focused) {
+      // With page arrows showing, the toggle button reaches the clock's corner: sit left of it.
+      if (arrows) right = sim.calBtn.x - 4;
       const clock = sim.clockText;
       right -= textWidth(clock);
       this.text(clock, right, y, TEXT_DIM, 1, null);

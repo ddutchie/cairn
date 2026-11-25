@@ -60,7 +60,7 @@ export function buildDesk(d: DeskLook): Model {
 }
 
 /** An office chair seen from behind (its back toward the viewer). */
-export const CHAIR = makeModel(7, 6, 7, (x, y, z) => {
+export const CHAIR = makeModel(7, 6, 5, (x, y, z) => {
   if (z < 2) return x === 3 && y >= 2 && y <= 3 ? LEG : null;
   if (z === 2) return x >= 1 && x <= 5 && y >= 1 && y <= 4 ? "#4a5068" : null;
   if (z >= 3 && y === 5 && x >= 1 && x <= 5) return "#3a3f55";
@@ -76,22 +76,26 @@ export function buildPerson(look: Look, sitting: boolean): Model {
   const legs = sitting ? 1 : 4;
   const body = legs + 4;
   const H = body + 4;
-  return makeModel(7, 4, H, (x, y, z) => {
-    if (z < legs) return !sitting && (x === 2 || x === 4) && y >= 1 && y <= 2 ? "#2e3346" : null;
+  return makeModel(9, 4, H, (x, y, z) => {
+    if (z < legs) return !sitting && (x === 3 || x === 5) && y >= 1 && y <= 2 ? "#2e3346" : null;
     if (z < body) {
-      if (x >= 1 && x <= 5 && y >= 1 && y <= 2) return look.shirt;
-      if ((x === 0 || x === 6) && y === 1 && z >= legs + 1) return z === legs + 1 ? look.skin : look.shirt;
+      // Torso, widening into shoulders at the top, with arms down the sides.
+      const shoulders = z === body - 1;
+      if (x >= 2 && x <= 6 && y >= 1 && y <= 2) return look.shirt;
+      if ((x === 1 || x === 7) && y >= 1 && y <= 2 && (shoulders || z >= legs + 1)) return !shoulders && z === legs + 1 ? look.skin : look.shirt;
       return null;
     }
     const hz = z - body;
-    if (x >= 2 && x <= 4 && y >= 0 && y <= 3) {
-      if (hz === 3) return look.hair;
-      // Back of the head (toward the viewer, +y) is hair; the face is at y=0.
-      if (y >= 2) return look.hair;
-      if (y === 0 && hz === 1 && (x === 2 || x === 4)) return "#1a1a22";
-      return look.skin;
-    }
-    return null;
+    // A neck, then a head wider than it with a rounded crown.
+    if (hz === 0) return x === 4 && y >= 1 && y <= 2 ? look.skin : null;
+    if (x < 2 || x > 6 || y > 2) return null;
+    if (hz === 3) return x >= 3 && x <= 5 && y === 1 ? look.hair : null;
+    // Back of the head (toward the viewer, +y) is hair with the ears showing; the face is at y=0.
+    if ((x === 2 || x === 6) && y === 1 && hz === 1) return look.skin;
+    if (y >= 1) return look.hair;
+    if (hz === 3) return look.hair;
+    if (hz === 2 && (x === 3 || x === 5)) return "#1a1a22";
+    return look.skin;
   });
 }
 
@@ -121,31 +125,29 @@ export const BIN = makeModel(6, 6, 7, (x, y, z) => {
   return z === 1 ? "#10131c" : null;
 });
 
-/** The agent's robot: a small two-tone bot on wheels, facing away from the viewer (+y is its back). */
-export const ROBOT = makeModel(7, 5, 11, (x, y, z) => {
-  // Wheels at the base corners.
-  if (z < 2) return (x === 0 || x === 6) && (y === 0 || y === 4) ? "#252a38" : null;
-  if (z < 4) {
-    if (x >= 1 && x <= 5 && y >= 1 && y <= 3) return "#3a3f55";
-    return null;
-  }
-  // Torso: a light shell with a glowing blue chest core on the face (-y).
-  if (z < 8) {
-    if (x < 1 || x > 5 || y < 0 || y > 4) return null;
-    if (y === 0 && x >= 2 && x <= 4) return z === 6 ? "#8fe0ff" : "#2b6a85";
-    if (x === 1 || x === 5) return "#9fb2cc";
-    if (y === 4) return "#c7d3e6";
+/** The agent's robot: a wide screen head on a small body on wheels, facing away from the viewer (+y is its back). */
+export const ROBOT = makeModel(9, 5, 13, (x, y, z) => {
+  // Wheels.
+  if (z < 2) return (x === 2 || x === 6) && y >= 1 && y <= 3 ? "#252a38" : null;
+  // Body with a glowing chest light on the face (-y), and an arm either side.
+  if (z < 6) {
+    if ((x === 0 || x === 8) && y === 2) return z === 2 ? "#39c6ff" : z < 5 ? "#9fb2cc" : null;
+    if ((x === 1 || x === 7) && y === 2 && z === 4) return "#7d8496";
+    if (x < 2 || x > 6 || y < 1 || y > 3) return null;
+    if (y === 1 && x === 4 && z >= 3 && z <= 4) return "#8fe0ff";
     return "#dfe6f2";
   }
-  // Head: a light cap with a dark visor and glowing eyes on the face.
-  if (z < 10) {
-    if (x < 1 || x > 5 || y < 0 || y > 4) return null;
-    if (y === 0) return x === 1 || x === 5 ? "#9fb2cc" : "#10131c";
-    if (y === 1 && x >= 2 && x <= 4) return "#39c6ff";
-    return "#e8eef7";
+  // Neck.
+  if (z === 6) return x === 4 && y === 2 ? "#565d75" : null;
+  // Head: wider than the body, a dark visor with two bright eyes on the face.
+  if (z < 11) {
+    if (x < 1 || x > 7) return null;
+    if (y === 0 && x >= 2 && x <= 6 && z >= 8 && z <= 9) return "#10131c";
+    if (y === 4 && x >= 3 && x <= 5 && z === 8) return "#9fb2cc";
+    return x === 1 || x === 7 ? "#9fb2cc" : "#e8eef7";
   }
   // A little antenna, red-tipped.
-  if (x === 2 && y === 2) return z === 10 ? "#8a93a8" : "#d9483b";
+  if (x === 4 && y === 2) return z === 11 ? "#8a93a8" : "#ff5a4a";
   return null;
 });
 

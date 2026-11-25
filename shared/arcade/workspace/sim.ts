@@ -16,7 +16,7 @@ import { mulberry32 } from "../pixel/terrain";
 import { CONTRACTOR, DEMO_OFFICE, type OfficeData, type OfficeProject } from "./data";
 import { burstLabel, diffOffice, FLURRY, groupChanges, type Burst, type OfficeChange } from "./events";
 import { inRect, layoutDesk, layoutFloor, layoutWeek, route, routeFree, type Desk, type DeskTab, type DeskView, type FloorLayout, type Pt, type Rect, type Ref, type WeekView } from "./layout";
-import { bucketWeek, weekDates, type WeekDay } from "./week";
+import { bucketWeek, weekDates, withDemoDates, type WeekDay } from "./week";
 
 export interface OfficeSpec {
   width: number;
@@ -310,8 +310,8 @@ export class OfficeSim {
   clockPanel(): { x: number; y: number; w: number; h: number } | null {
     if (!this.clockOpen) return null;
     const a = this.area;
-    const w = Math.min(300, Math.max(120, a.w - 16));
-    const h = Math.round((w * 64) / 150);
+    const w = Math.min(220, Math.max(120, a.w - 16));
+    const h = Math.min(a.h - 24, Math.round(w * 0.85));
     return { x: Math.round(a.x + (a.w - w) / 2), y: Math.round(a.y + (a.h - h) / 2), w, h };
   }
 
@@ -319,7 +319,7 @@ export class OfficeSim {
   clockToggleRect(): Rect | null {
     const p = this.clockPanel();
     if (!p) return null;
-    const w = Math.min(120, p.w - 24), h = Math.max(10, Math.round(p.h * 0.16));
+    const w = Math.min(120, p.w - 24), h = 12;
     return { x: Math.round(p.x + (p.w - w) / 2), y: p.y + p.h - h - 4, w, h };
   }
 
@@ -487,7 +487,10 @@ export class OfficeSim {
       this.weekView = null;
       return;
     }
-    const { days, overdue } = bucketWeek(this.projects, this.clock(), this.weekAnchor);
+    const today = this.clock();
+    // The demo office has no dates of its own, so its wall is dated around today.
+    const projects = this.data.demo ? withDemoDates(this.projects, today) : this.projects;
+    const { days, overdue } = bucketWeek(projects, today, this.weekAnchor);
     this.weekDays = days;
     this.weekView = layoutWeek(days, overdue, this.area);
   }
@@ -539,15 +542,19 @@ export class OfficeSim {
           if (!holder) continue;
           live.add(holder);
           const home = spot === "seat" ? d.seat : d.side;
+          // The room and this place in it: a desk can move without the room changing size.
+          const at = `${key}@${home.x},${home.y}`;
           let w = this.workers.get(holder);
           if (!w) {
-            w = { holder, look: lookFor(holder), desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", timer: this.sitTime(), tossIn: 400 + Math.floor(this.rnd() * 800), homeward: false, dx: 0, dy: -1, layoutKey: key };
+            w = { holder, look: lookFor(holder), desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", timer: this.sitTime(), tossIn: 400 + Math.floor(this.rnd() * 800), homeward: false, dx: 0, dy: -1, layoutKey: at };
             this.workers.set(holder, w);
           }
           const moved = w.desk !== d.index || w.spot !== spot;
-          if (w.layoutKey !== key) {
-            Object.assign(w, { desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", homeward: false, layoutKey: key, dx: 0, dy: -1 });
+          const newRoom = !w.layoutKey.startsWith(`${key}@`);
+          if (newRoom || (!moved && w.layoutKey !== at)) {
+            Object.assign(w, { desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", homeward: false, layoutKey: at, dx: 0, dy: -1 });
           } else if (moved) {
+            w.layoutKey = at;
             // Their work moved to another desk: walk over.
             const from = this.nearestDesk(w) ?? d;
             w.desk = d.index;
@@ -986,7 +993,7 @@ export class OfficeSim {
     if (desk) return { k: "desk", desk };
     const F = this.floor;
     if (inRect(F.doneBoard, lx, ly)) return { k: "hot", text: `DONE THIS WEEK · ${this.projects.reduce((s, p) => s + p.doneThisWeek, 0)}` };
-    if (Math.abs(lx - (F.doneBoard.x + F.doneBoard.w + 12)) <= 9 && Math.abs(ly - 15) <= 9) return { k: "clock" };
+    if (Math.abs(lx - F.clock.x) <= 9 && Math.abs(ly - F.clock.y) <= 9) return { k: "clock" };
     if (Math.abs(lx - F.coffee.x) < 8 && ly > F.coffee.y - 26 && ly < F.coffee.y + 4) return { k: "hot", text: "COFFEE" };
     if (Math.abs(lx - F.cooler.x) < 7 && ly > F.cooler.y - 30 && ly < F.cooler.y + 4) return { k: "hot", text: "WATER COOLER" };
     if (Math.abs(lx - F.bin.x) < 7 && ly > F.bin.y - 12 && ly < F.bin.y + 4) return { k: "bin" };
