@@ -253,7 +253,8 @@ export interface AnglerSpec {
   demo?: boolean;
   /**
    * Every open task and live note in `projects`, uncapped. A saved fish whose id is here is still live
-   * even if the game data left it out; without this, only the fish in `projects` count as live.
+   * even if the game data left it out. Leave it out when the lookup failed: with no way to tell what is
+   * done, every saved fish stays until a later visit can check.
    */
   liveIds?: Iterable<string>;
   seed?: number;
@@ -416,7 +417,7 @@ export class AnglerSim {
     const saved = (save?.fish ?? []).filter(validFish);
     this.liveById = byId;
     const here = new Set(this.projects.map((p) => p.id));
-    const stillLive = new Set(spec.liveIds ?? []);
+    const stillLive = spec.liveIds ? new Set(spec.liveIds) : null;
     this.tank = [];
     const gone: FishSpec[] = [];
     for (const f of saved.slice(0, TANK_MAX)) {
@@ -425,7 +426,7 @@ export class AnglerSim {
       // does a fish from a project that isn't open here (another workspace): this one can't tell if it's done.
       if (now) this.tank.push({ ...f, title: now.title, project: now.project, projectId: now.projectId, accent: now.accent });
       // Still open, just past the cap on what the game shows: it stays as caught.
-      else if (this.demo || stillLive.has(f.id) || !f.projectId || !here.has(f.projectId)) this.tank.push(f);
+      else if (this.demo || !stillLive || stillLive.has(f.id) || !f.projectId || !here.has(f.projectId)) this.tank.push(f);
       else gone.push(f);
     }
     const kept = new Set(this.tank.map((f) => f.id));

@@ -151,7 +151,8 @@ describe("angler", () => {
     // The task (or note) was finished: the fish swims home.
     const id = save.fish[0].id;
     const done = projects.map((p) => ({ ...p, tasks: p.tasks.filter((t) => t.id !== id), notes: p.notes.filter((n) => n.id !== id) }));
-    const later = make({ projects: done, save });
+    const liveIds = done.flatMap((p) => [...p.tasks.map((t) => t.id), ...p.notes.map((n) => n.id)]).filter((x): x is string => !!x);
+    const later = make({ projects: done, save, liveIds });
     expect(later.tank).toHaveLength(0);
     expect(later.banner?.text).toBe("1 FISH SWAM HOME");
     expect(later.swimmers[0].leaving).toBeGreaterThan(0);
@@ -192,6 +193,16 @@ describe("angler", () => {
     expect(make({ save: { v: 1, fish: [capped] }, liveIds: ["task-past-the-cap"] }).tank).toHaveLength(1);
     // Without it in the live ids, the task is done and the fish swims home.
     expect(make({ save: { v: 1, fish: [capped] }, liveIds: [] }).tank).toHaveLength(0);
+  });
+
+  it("lets no fish go when the live-id lookup failed", () => {
+    const [f] = fishFromProjects(projects);
+    const capped = { ...f, id: "task-past-the-cap" };
+    // No liveIds means the host couldn't read them: unknown is not done, so the fish stays and nothing is saved.
+    const s = make({ save: { v: 1, fish: [capped] } });
+    expect(s.tank).toHaveLength(1);
+    expect(s.banner).toBeNull();
+    expect(s.tankDirty).toBe(false);
   });
 
   it("skips bad saved fish one by one and keeps the good ones", () => {

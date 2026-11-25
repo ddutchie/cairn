@@ -18,12 +18,12 @@ function loadTank(): AnglerSave | null {
   }
 }
 
-/** Uncapped live ids for the tank cleanup; on a read error, an empty list (the sim then uses the game data). */
-function liveIds(projectIds: string[]): string[] {
+/** Uncapped live ids for the tank cleanup; on a read error, undefined (unknown), so the sim lets no fish go. */
+function liveIds(projectIds: string[]): string[] | undefined {
   try {
     return listArcadeLiveIds(projectIds);
   } catch {
-    return [];
+    return undefined;
   }
 }
 
