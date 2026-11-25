@@ -109,6 +109,30 @@ export const COOLER = makeModel(6, 6, 14, (x, y, z) => {
   return dx <= 2 && dy <= 2 ? (z === 13 ? "#9fd0ff" : "#7fb8ec") : null;
 });
 
+/** The agent's robot: a small boxy bot on wheels, facing away from the viewer (+y is its back). */
+export const ROBOT = makeModel(7, 5, 10, (x, y, z) => {
+  // Wheels at the base corners.
+  if (z < 2) return (x === 0 || x === 6) && (y === 0 || y === 4) ? "#252a38" : null;
+  if (z < 4) {
+    if (x >= 1 && x <= 5 && y >= 1 && y <= 3) return "#3a3f55";
+    return null;
+  }
+  // Body.
+  if (z < 8) {
+    if (x < 1 || x > 5 || y < 0 || y > 4) return null;
+    if (y === 4) return (x + z) % 2 ? "#9aa3b8" : "#7a8296"; // vents on the back
+    if (x === 1 || x === 5) return "#565d75";
+    return "#8a93a8";
+  }
+  // Head: a lighter cap with a single blue eye on the face (-y).
+  if (x >= 1 && x <= 5 && y >= 0 && y <= 4) {
+    if (y === 0 && x >= 2 && x <= 4) return z === 9 ? "#8fe0ff" : "#2b6a85";
+    if (z === 9) return "#c7cedc";
+    return "#6b7488";
+  }
+  return null;
+});
+
 export const PLANT = makeModel(9, 9, 13, (x, y, z) => {
   const dx = x - 4;
   const dy = y - 4;

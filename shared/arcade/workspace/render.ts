@@ -12,8 +12,8 @@ import { INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel
 import type { Model } from "../pixel/models";
 import { CONTRACTOR, type OfficeCard } from "./data";
 import { COL_HEAD, type Desk, type Rect } from "./layout";
-import { buildDesk, buildPerson, CHAIR, COFFEE, COOLER, deskKey, PLANT } from "./models";
-import { lookFor, type OfficeSim, type Worker } from "./sim";
+import { buildDesk, buildPerson, CHAIR, COFFEE, COOLER, deskKey, PLANT, ROBOT } from "./models";
+import { lookFor, type OfficeSim, type Robot, type Worker } from "./sim";
 
 const BG = "#10131c";
 const WALL = "#3a4258";
@@ -180,6 +180,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
         if (!sim.deskFor(w)) continue;
         items.push({ y: w.y + (w.mode === "sit" ? 0 : 0.5), draw: () => this.drawWorker(w, ox, oy) });
       }
+      if (sim.robot) items.push({ y: sim.robot.y + 0.5, draw: () => this.drawRobot(sim.robot, ox, oy) });
       const prop = (m: AtlasHandle<Img>, x: number, y: number) =>
         items.push({
           y,
@@ -302,6 +303,22 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     this.shadow(m, x, oy + w.y, ang, z, z, 0.35, z);
     this.stack(m, x, sitting ? y - Math.round(1.5 * z) : y, ang, { k: z });
     if (w.holder === CONTRACTOR && !sitting) this.rect(x - 2, y - 13 * z, 4, 2, "#f2d43a");
+  }
+
+  private drawRobot(r: Robot, ox: number, oy: number): void {
+    const m = this.atlas("robot", () => ROBOT);
+    const walking = r.mode === "walk";
+    const bob = walking ? Math.floor(this.sim.t / 7) % 2 : 0;
+    const ang = walking ? Math.atan2(r.dx, -r.dy) : 0;
+    const x = ox + r.x;
+    const y = oy + r.y - bob;
+    const z = this.sim.floor.zoom;
+    this.shadow(m, x, oy + r.y, ang, z, z, 0.35, z);
+    this.stack(m, x, y, ang, { k: z });
+    // A working robot glows blue; a small tag says whose side it is on.
+    if (r.active) this.circle(x, y - 12 * z, 3 * z, "#8fe0ff", 0.5 + 0.2 * Math.sin(this.sim.t / 9));
+    const label = r.active ? "AGENT" : "IDLE";
+    this.text(label, x - Math.floor(textWidth(label) / 2), y - 11 * z - 7, r.active ? "#8fe0ff" : TEXT_DIM, 1, INK);
   }
 
   private drawNameTag(d: Desk, ox: number, oy: number): void {
