@@ -518,16 +518,18 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       this.rect(x, y - 1, w, 9, INK, 0.75 * fade);
       this.text(f.text, x + 4, y + 1, lerpHex(BG, f.color, fade), 1, null);
     }
-    // Swishes: a ring and a label where a ball went in.
+    // Swishes: a ring and a label bursting out of the bin's mouth.
     for (const pop of sim.pops) {
       const age = sim.t - pop.t0;
       if (age < 0 || age > 40) continue;
       const f = age / 40;
-      this.circle(ox + pop.x, oy + pop.y - 4 - f * 8, 2 + f * 7, "#ffe066", 0.7 * (1 - f));
+      const mouth = (BIN.h - 1) * 2;
+      const cy = oy + pop.y - mouth - f * 6;
+      this.circle(ox + pop.x, cy, 2 + f * 7, "#ffe066", 0.7 * (1 - f));
       const w = textWidth("SWISH!") + 6;
-      this.rect(ox + pop.x - w / 2 + 1, oy + pop.y - 14 - f * 10 + 1, w, 9, INK, 0.5 * (1 - f));
-      this.rect(ox + pop.x - w / 2, oy + pop.y - 14 - f * 10, w, 9, "#f4f1e8");
-      this.text("SWISH!", ox + pop.x - w / 2 + 3, oy + pop.y - 12 - f * 10, INK, 1, null);
+      this.rect(ox + pop.x - w / 2 + 1, cy - 16 + 1, w, 9, INK, 0.5 * (1 - f));
+      this.rect(ox + pop.x - w / 2, cy - 16, w, 9, "#f4f1e8");
+      this.text("SWISH!", ox + pop.x - w / 2 + 3, cy - 14, INK, 1, null);
     }
     // Notes being written: a bubble with moving dots, and a pulse on the desk.
     for (const id of sim.writing) {
