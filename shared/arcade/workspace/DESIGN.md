@@ -33,7 +33,7 @@ The sim never writes. `setData` takes a fresh `OfficeData` (built by `build.ts` 
 - A burst folds into one label per project and kind ("+ 6 TASKS"), at most three sheets fly per burst, 24 effects play at once, and a refresh of more than 24 changes (an import, a reload) animates a sample. No animation at all for the demo office or when the workspace is switched.
 - A card that moves to a different project arrives there as "+ TASK". A project that just appeared brings its cards without announcing them.
 
-Who made a change is not known yet, so nothing is attributed. The agent's own tool calls come in the next phase.
+A change for an id the agent just touched (a `tool/call` with a `cairnRef` in the last ~2 s) is drawn in agent blue and counts as the agent's: a timing guess, not an audit log. The robot walks to the touched desk when the call starts; the change feed lands what it did. Click the robot to open the agent view.
 
 ## Tuning notes
 

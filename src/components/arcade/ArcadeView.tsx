@@ -283,7 +283,7 @@ export function ArcadeView() {
   // The office opens tasks and notes beside itself, in the same preview pane chat uses.
   const preview = useCairnStore((s) => s.activePreviewItem ?? s.activeContextPanel);
   const centred = useCairnStore((s) => s.sessionPresentation === "center");
-  const office = useMemo(() => makeOfficeFactory((ref) => setActivePreviewItem({ type: ref.type, id: ref.id })), [setActivePreviewItem]);
+  const office = useMemo(() => makeOfficeFactory((ref) => setActivePreviewItem({ type: ref.type, id: ref.id }), () => setView("agent")), [setActivePreviewItem, setView]);
   const leave = () => {
     if (game === "workspace") setActivePreviewItem(null);
     setGame(null);

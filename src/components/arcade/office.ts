@@ -7,10 +7,12 @@
 import { buildOffice } from "@cairn/shared/arcade/workspace/build";
 import type { OfficeData } from "@cairn/shared/arcade/workspace/data";
 import type { Ref } from "@cairn/shared/arcade/workspace/layout";
+import { cairnRefFromMeta } from "@cairn/shared/agent/session-event-fold";
 import { OfficeRenderer } from "@cairn/shared/arcade/workspace/render";
 import { OfficeSim } from "@cairn/shared/arcade/workspace/sim";
 import { NO_HUD } from "@cairn/shared/arcade/pixel/hud";
 import { noteFilesClient } from "@/lib/ipc/notes";
+import { sessionClient } from "@/lib/ipc/session";
 import { useCairnStore } from "@/store";
 import type { GameFactory } from "./game";
 import { createCanvasBackend } from "./pixel/canvas-backend";
@@ -35,7 +37,7 @@ const watched = (s: StoreState) => [s.projects, s.columns, s.cards, s.notes, s.w
 /** How long a burst of changes (an agent editing ten cards) settles before the office redraws them. */
 const SETTLE_MS = 250;
 
-export function makeOfficeFactory(open: (ref: Ref) => void): GameFactory {
+export function makeOfficeFactory(open: (ref: Ref) => void, onAgent: () => void = () => useCairnStore.getState().setView("agent")): GameFactory {
   return ({ canvas, width, height }) => {
     const sim = new OfficeSim({ width, height, hud: NO_HUD, inputMode: "pointer", office: officeFromStore() });
     const renderer = new OfficeRenderer(createCanvasBackend(canvas), sim);
@@ -54,12 +56,24 @@ export function makeOfficeFactory(open: (ref: Ref) => void): GameFactory {
     // A note the AI is writing shows as a bubble over its desk until the write ends.
     const offStart = noteFilesClient.onAiWriteStarted(({ noteId }) => sim.setNoteWriting(noteId, true));
     const offEnd = noteFilesClient.onAiWriteEnded(({ noteId }) => sim.setNoteWriting(noteId, false));
+    // The agent's tool calls drive the robot: it walks to the touched desk
+    // when the call starts, and the change feed lands the change it made.
+    const offEvent = sessionClient.onEvent(({ event }) => {
+      const data = (event.data ?? {}) as Record<string, unknown>;
+      if (event.type === "tool/call") {
+        const ref = cairnRefFromMeta(data.meta);
+        if (ref) sim.agentIntent(ref);
+        return;
+      }
+      if (event.type === "turn/end") sim.agentIdle();
+    });
     return {
       update: () => {
         sim.step();
         for (const e of sim.events.splice(0)) {
           // The demo office has nothing real behind it.
           if (e.k === "open" && !sim.data.demo) open(e.ref);
+          else if (e.k === "openAgent") onAgent();
         }
       },
       render: () => renderer.draw(),
@@ -72,6 +86,7 @@ export function makeOfficeFactory(open: (ref: Ref) => void): GameFactory {
         unsubscribe();
         offStart();
         offEnd();
+        offEvent();
         if (timer) clearTimeout(timer);
       },
       best: 0,
