@@ -23,6 +23,18 @@ Click a desk to look down at its project:
 
 The sim never writes. `setData` takes a fresh `OfficeData` (built by `build.ts` from the store), re-lays out the room, and keeps everyone where they are. Someone whose work moved to another desk walks over to it. An open desk stays open unless its project disappears. The desktop host rebuilds 250 ms after a burst of store changes, so a chat agent editing ten cards moves the office once.
 
+## Changes you can see
+
+`setData` diffs the new snapshot against the old one (`events.ts`, pure) and plays a few effects, so you notice work happening without watching a log:
+
+- A new task: a sheet drops onto the desk's pile and a green "+ TASK" label rises. A finished task: a sheet arcs to the done board, which pops and counts up, with a gold "DONE!". A task moved to another column: a blue "> COLUMN" label. An edited task or note: an amber "EDITED" label. Deletions show red.
+- On an open desk the same labels stack at the bottom right, and the new or changed card or note flashes green for a few seconds.
+- A note the AI is writing gets a "WRITING..." bubble and a pulse on its desk until the write ends (the desktop host forwards `note:aiWriteStarted` and `note:aiWriteEnded`).
+- A burst folds into one label per project and kind ("+ 6 TASKS"), at most three sheets fly per burst, 24 effects play at once, and a refresh of more than 24 changes (an import, a reload) animates a sample. No animation at all for the demo office or when the workspace is switched.
+- A card that moves to a different project arrives there as "+ TASK". A project that just appeared brings its cards without announcing them.
+
+Who made a change is not known yet, so nothing is attributed. The agent's own tool calls come in the next phase.
+
 ## Tuning notes
 
 - The office is drawn with voxel stacks (`models.ts`) like Task Force and Wayfinder: `makeModel` shades each layer and the renderer drops a shadow under each stack. Desk models are cached by their pile heights, lit state, overdue state and accent, so a model is rebuilt only when its counts change. Draw time in the harness is about 0.5 ms at 480×320.

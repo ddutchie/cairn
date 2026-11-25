@@ -76,7 +76,7 @@ export function buildOffice(src: OfficeSource): OfficeData {
     const notes = src.notes
       .filter((n) => n.projectId === p.id && !n.archivedAt && !n.deletedAt && n.title.trim())
       .sort((a, b) => Number(b.isPinned) - Number(a.isPinned) || b.updatedAt.localeCompare(a.updatedAt))
-      .map((n) => ({ id: n.id, title: officeTitle(n.title), pinned: n.isPinned }));
+      .map((n) => ({ id: n.id, title: officeTitle(n.title), pinned: n.isPinned, rev: n.updatedAt }));
     const columns: OfficeColumn[] = (byProject.get(p.id) ?? []).map((c) => ({ id: c.id, name: officeTitle(c.name) || "COLUMN", zone: zone.get(c.id) ?? "backlog" }));
     projects.push({ id: p.id, name: officeTitle(p.name), accent: "", columns, cards, notes, doneThisWeek });
   }

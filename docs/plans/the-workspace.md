@@ -120,7 +120,7 @@ A toggle (tab on the HUD) swaps the floor for **the week**:
 ## Phases
 
 1. **The office and opened desks (built).** `build.ts`, `layout.ts`, `models.ts`, `sim.ts` and `render.ts` in `shared/arcade/workspace/`, and the desktop host in `src/components/arcade/office.ts`. The office follows the store live (rebuilt 250 ms after a burst of changes) and people walk to their new desks. Opened at "The Workspace" in the Arcade toolbar. It doesn't animate individual changes yet.
-2. **Live events.** `diffWorkspace` + the bridge over the change feed + `note:aiWrite*`. Animations: a paper lands on a pile, a card flies to the done board, a book glows while the AI writes it. Coalescing and reset.
+2. **Live events (built).** `events.ts` diffs the office snapshots (`diffOffice`, `groupChanges`); the sim plays labels, flying sheets, a done-board pop and flashes; the desktop host forwards `note:aiWrite*` for a "writing" bubble. Bursts are coalesced and a flurry is sampled. Attribution (who made the change) waits for phase 3. It diffs the store rather than the change feed's rows, which is simpler and catches every writer; the feed's `externalTouched` can later tell you from others.
 3. **Agent presence.** `session:event` intent → the robot walks to the desk; attribution heuristic; click the robot → open the chat.
 4. **Calendar mode.** A week wall, overdue tray, meeting room.
 5. **Mobile.** `PixelGameView` host, a sync/poll bridge, card sheet / note routes; pinnable as a Workspace tool like the other games.

@@ -10,6 +10,7 @@ import type { Ref } from "@cairn/shared/arcade/workspace/layout";
 import { OfficeRenderer } from "@cairn/shared/arcade/workspace/render";
 import { OfficeSim } from "@cairn/shared/arcade/workspace/sim";
 import { NO_HUD } from "@cairn/shared/arcade/pixel/hud";
+import { noteFilesClient } from "@/lib/ipc/notes";
 import { useCairnStore } from "@/store";
 import type { GameFactory } from "./game";
 import { createCanvasBackend } from "./pixel/canvas-backend";
@@ -50,6 +51,9 @@ export function makeOfficeFactory(open: (ref: Ref) => void): GameFactory {
         sim.setData(officeFromStore());
       }, SETTLE_MS);
     });
+    // A note the AI is writing shows as a bubble over its desk until the write ends.
+    const offStart = noteFilesClient.onAiWriteStarted(({ noteId }) => sim.setNoteWriting(noteId, true));
+    const offEnd = noteFilesClient.onAiWriteEnded(({ noteId }) => sim.setNoteWriting(noteId, false));
     return {
       update: () => {
         sim.step();
@@ -66,6 +70,8 @@ export function makeOfficeFactory(open: (ref: Ref) => void): GameFactory {
       resize: (w, h) => renderer.resize(w, h),
       dispose: () => {
         unsubscribe();
+        offStart();
+        offEnd();
         if (timer) clearTimeout(timer);
       },
       best: 0,

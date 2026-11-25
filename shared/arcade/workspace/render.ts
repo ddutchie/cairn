@@ -209,6 +209,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       }
       // Name tags float above the scene (and the dark) so people never hide them.
       for (const d of F.desks) this.drawNameTag(d, ox, oy);
+      this.drawFloorFx(ox, oy);
       // A soft vignette for depth.
       for (let i = 0; i < 6; i++) {
         this.rect(a.x, a.y + a.h - 1 - i, a.w, 1, INK, 0.05 * (6 - i));
@@ -243,7 +244,9 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     this.rect(x, y, w, h, "#f4f6fa");
     this.text("DONE", x + 3, y + 3, "#3f7a36", 1, null);
     const n = `${done}`;
-    this.text(n, x + w - textWidth(n, 2) - 3, y + 3, "#3f7a36", 2, null);
+    const pop = this.sim.t - this.sim.boardPulse;
+    const popping = pop >= 0 && pop < 40;
+    this.text(n, x + w - textWidth(n, 2) - 3, y + 3 - (popping ? Math.round(3 * Math.sin((pop / 40) * Math.PI)) : 0), popping && pop % 8 < 4 ? "#ffb347" : "#3f7a36", 2, null);
     this.text("THIS WEEK", x + 3, y + h - 7, TEXT_DIM, 1, null);
   }
 
@@ -328,6 +331,81 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     if (sim.tab === "board") this.drawBoard();
     else this.drawNotes();
     if (sim.daylight < 1) this.rect(a.x, a.y, a.w, a.h, NIGHT, 0.25 * (1 - sim.daylight));
+    // What just changed here floats up the right edge.
+    let row = 0;
+    for (const f of sim.fx) {
+      if (f.k !== "label" || f.project !== p.id) continue;
+      const age = sim.t - f.t0;
+      if (age < 0 || age > f.life) continue;
+      const fade = Math.min(1, (f.life - age) / 30);
+      const w = textWidth(f.text) + 8;
+      const x = a.x + a.w - w - 6;
+      const y = a.y + a.h - 18 - row * 12;
+      this.rect(x, y, w, 9, INK, 0.7 * fade);
+      this.text(f.text, x + 4, y + 2, lerpHex(BG, f.color, fade), 1, null);
+      row++;
+    }
+  }
+
+  /** Effects over the office floor: labels rising from desks, sheets flying, writing bubbles. */
+  private drawFloorFx(ox: number, oy: number): void {
+    const sim = this.sim;
+    const F = sim.floor;
+    const desk = (id: string) => F.desks.find((d) => d.project.id === id);
+    const s = F.zoom / 2;
+    const rows = new Map<string, number>();
+    for (const f of sim.fx) {
+      const d = desk(f.project);
+      const age = sim.t - f.t0 - f.delay;
+      if (!d || age < 0 || age > f.life) continue;
+      const p = age / f.life;
+      if (f.k === "paper") {
+        let x: number, y: number;
+        if (f.to === "desk") {
+          // Drops from above onto the pile, bouncing once.
+          x = ox + d.cx - 12 * s;
+          y = oy + d.cy - 14 * s - (1 - p * p) * 38 * s;
+        } else {
+          // Lifts off the desk and arcs to the done board.
+          const bx = ox + F.doneBoard.x + F.doneBoard.w / 2;
+          const by = oy + F.doneBoard.y + F.doneBoard.h / 2;
+          x = ox + d.cx + (bx - (ox + d.cx)) * p;
+          y = oy + d.cy - 14 * s + (by - (oy + d.cy - 14 * s)) * p - Math.sin(p * Math.PI) * 26;
+        }
+        this.rect(Math.round(x) + 1, Math.round(y) + 2, 4, 5, INK, 0.3);
+        this.rect(Math.round(x), Math.round(y), 4, 5, "#f3eedf");
+        this.rect(Math.round(x), Math.round(y), 4, 1, f.color);
+        if (f.to === "board" && p > 0.9) this.circle(Math.round(x) + 2, Math.round(y) + 2, 5 * (p - 0.9) * 10, f.color, 0.5 * (1 - p) * 10, true);
+        continue;
+      }
+      const fade = Math.min(1, (f.life - age) / 30);
+      const rise = 8 + 18 * Math.min(1, age / 40);
+      // Several labels over one desk stack upward instead of overlapping.
+      const row = rows.get(f.project) ?? 0;
+      rows.set(f.project, row + 1);
+      const y = oy + d.cy - 36 * s - rise - row * 11;
+      const w = textWidth(f.text) + 8;
+      const x = Math.round(ox + d.cx - w / 2);
+      this.rect(x, y - 1, w, 9, INK, 0.75 * fade);
+      this.text(f.text, x + 4, y + 1, lerpHex(BG, f.color, fade), 1, null);
+    }
+    // Notes being written: a bubble with moving dots, and a pulse on the desk.
+    for (const id of sim.writing) {
+      const p = sim.projectOfNote(id);
+      const d = p && desk(p.id);
+      if (!d || !p) continue;
+      const dots = ".".repeat(1 + (Math.floor(sim.t / 14) % 3));
+      const label = `WRITING${dots}`;
+      const w = textWidth("WRITING...") + 8;
+      const x = Math.round(ox + d.cx - w / 2);
+      const y = oy + d.cy - 36 * s - 4;
+      const pulse = 0.12 + 0.1 * Math.sin(sim.t / 8);
+      this.rect(ox + d.cx - 25 * s, oy + d.cy - 12 * s, 50 * s, 26 * s, p.accent, pulse);
+      this.rect(x + 1, y + 1, w, 9, INK, 0.4);
+      this.rect(x, y, w, 9, "#f4f1e8");
+      this.strokeRect(x, y, w, 9, p.accent);
+      this.text(label, x + 4, y + 2, INK, 1, null);
+    }
   }
 
   private drawBoard(): void {
@@ -374,6 +452,8 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       this.rect(ix - 2, y + 2 - lift, textWidth(initials) + 4, 8, lookFor(c.assignee!).shirt);
       this.text(initials, ix, y + 4 - lift, INK, 1, null);
     }
+    const born = this.sim.fresh.get(c.id);
+    if (born !== undefined && (this.sim.t - born) % 30 < 20) this.strokeRect(x - 2, y - 2 - lift, w + 4, h + 4, "#7cc46a");
     if (opened || hovered) this.strokeRect(x - 1, y - 1 - lift, w + 2, h + 2, opened ? "#ffffff" : HOVER);
   }
 
@@ -393,6 +473,9 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       const hovered = sim.hover?.rect === n || (sim.hover?.rect && sim.hover.rect.x === n.x && sim.hover.rect.y === n.y);
       const opened = sim.opened?.ref.id === n.ref.id;
       if (hovered || opened) this.rect(n.x, n.y, n.w, n.h, opened ? "#ffffff" : HOVER, 0.45);
+      const born = sim.fresh.get(n.ref.id);
+      if (born !== undefined && (sim.t - born) % 30 < 20) this.rect(n.x, n.y, n.w, n.h, "#7cc46a", 0.35);
+      if (sim.writing.has(n.ref.id)) this.text(`WRITING${".".repeat(1 + (Math.floor(sim.t / 14) % 3))}`, n.x + n.w - textWidth("WRITING...") - 2, n.y + 2, "#c45a2a", 1, null);
       const c = n.pinned ? "#e3c04a" : BOOKS[hashId(n.ref.id) % BOOKS.length];
       this.rect(n.x + 2, n.y + 1, 4, 8, c);
       this.rect(n.x + 2, n.y + 1, 1, 8, "#ffffff", 0.35);

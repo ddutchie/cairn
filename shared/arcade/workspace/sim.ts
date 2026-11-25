@@ -14,6 +14,7 @@ import { clip, textWidth } from "../pixel/font";
 import { hudFrame, NO_HUD, type InputMode, type PixelHud } from "../pixel/hud";
 import { mulberry32 } from "../pixel/terrain";
 import { CONTRACTOR, DEMO_OFFICE, type OfficeData, type OfficeProject } from "./data";
+import { burstLabel, diffOffice, FLURRY, groupChanges, type Burst, type OfficeChange } from "./events";
 import { inRect, layoutDesk, layoutFloor, route, type Desk, type DeskTab, type DeskView, type FloorLayout, type Pt, type Rect, type Ref } from "./layout";
 
 export interface OfficeSpec {
@@ -78,7 +79,34 @@ export interface Hover {
   desk?: number;
 }
 
+/** A short-lived effect over the office, started by a change. */
+export interface Fx {
+  /** `label` floats text up from a desk; `paper` flies a sheet (down onto a pile, or off to the done board). */
+  k: "label" | "paper";
+  project: string;
+  text: string;
+  color: string;
+  t0: number;
+  life: number;
+  /** Papers: which way it flies. */
+  to?: "desk" | "board";
+  /** Stagger, so several papers don't fly as one. */
+  delay: number;
+}
+
 const HEADER = 13;
+const FX_CAP = 24;
+const FRESH_FRAMES = 150;
+const KIND_COLOR: Record<OfficeChange["k"], string> = {
+  "task.added": "#7cc46a",
+  "task.moved": "#5b8dd6",
+  "task.done": "#ffe066",
+  "task.removed": "#d9483b",
+  "task.updated": "#e3a23b",
+  "note.added": "#7cc46a",
+  "note.updated": "#e3a23b",
+  "note.removed": "#d9483b",
+};
 const FOOTER = 12;
 const WALK = 0.4;
 const SKINS = ["#f2c9a0", "#d9a57a", "#b97f56", "#8a5a3b", "#5e3d28"];
@@ -141,6 +169,15 @@ export class OfficeSim {
   tabBtns: { tab: DeskTab; rect: Rect }[] = [];
   notesPrevBtn = ZERO;
   notesNextBtn = ZERO;
+  /** Effects in flight, and what the last refresh changed (for tests and the host). */
+  fx: Fx[] = [];
+  lastChanges: OfficeChange[] = [];
+  /** Ids of cards and notes that just arrived or changed, with the frame they did (a flash on an open desk). */
+  fresh = new Map<string, number>();
+  /** Notes the AI is writing right now, by id. */
+  writing = new Set<string>();
+  /** When the done board last counted up, for its pop. */
+  boardPulse = -999;
   private lastFocus: number | null = null;
   private readonly rnd: () => number;
   private readonly clock: () => Date;
@@ -187,7 +224,10 @@ export class OfficeSim {
   /** A fresh workspace snapshot: the layout follows, workers stay put where they still have a desk. */
   setData(d: OfficeData): void {
     const was = this.focused?.id;
+    const prev = this.data;
     this.data = d.projects.length ? d : DEMO_OFFICE;
+    this.lastChanges = diffOffice(prev, this.data);
+    this.react(this.lastChanges);
     if (was) {
       const i = this.projects.findIndex((p) => p.id === was);
       this.focus = i >= 0 ? i : null;
@@ -196,6 +236,44 @@ export class OfficeSim {
     this.bubble = null;
     this.layout();
     if (this.pointer) this.move(this.pointer.x, this.pointer.y);
+  }
+
+  /** Start the effects for a refresh's changes: a few per project and kind, and a sample of a flurry. */
+  private react(changes: readonly OfficeChange[]): void {
+    if (!changes.length) return;
+    const bursts = groupChanges(changes.length > FLURRY ? changes.slice(0, FLURRY) : changes);
+    for (const b of bursts) {
+      for (const id of b.ids) if (b.kind !== "task.removed" && b.kind !== "note.removed" && b.kind !== "task.done") this.fresh.set(id, this.t);
+      this.spawn(b);
+    }
+    if (changes.some((c) => c.k === "task.done")) this.boardPulse = this.t + 60;
+  }
+
+  private spawn(b: Burst): void {
+    const color = KIND_COLOR[b.kind];
+    const room = FX_CAP - this.fx.length;
+    if (room <= 0) return;
+    this.fx.push({ k: "label", project: b.project, text: burstLabel(b), color, t0: this.t, life: 90, delay: 0 });
+    // A few sheets fly: down onto the pile for a new task, up to the done board for a finished one.
+    const sheets = Math.min(3, b.ids.length, room - 1);
+    if (b.kind === "task.added") for (let i = 0; i < sheets; i++) this.fx.push({ k: "paper", project: b.project, text: "", color, t0: this.t, life: 36, to: "desk", delay: i * 8 });
+    if (b.kind === "task.done") for (let i = 0; i < sheets; i++) this.fx.push({ k: "paper", project: b.project, text: "", color, t0: this.t, life: 70, to: "board", delay: i * 10 });
+  }
+
+  /** The AI started (or finished) writing a note: its desk shows a writing bubble while it lasts. */
+  setNoteWriting(noteId: string, on: boolean): void {
+    if (on) this.writing.add(noteId);
+    else this.writing.delete(noteId);
+  }
+
+  /** The desk (project id) a note sits at, if it's in this office. */
+  projectOfNote(noteId: string): OfficeProject | undefined {
+    return this.projects.find((p) => p.notes.some((n) => n.id === noteId));
+  }
+
+  /** True while an effect or flash is still playing, so a host can stop redrawing a still office. */
+  get busy(): boolean {
+    return this.fx.length > 0 || this.writing.size > 0 || this.fresh.size > 0;
   }
 
   resize(width: number, height: number, hud?: PixelHud): void {
@@ -316,6 +394,8 @@ export class OfficeSim {
     this.t++;
     if (this.t % 60 === 0) this.tickClock();
     if (this.opened && this.t - this.opened.t > 40) this.opened = null;
+    if (this.fx.length) this.fx = this.fx.filter((f) => this.t - f.t0 < f.life + f.delay);
+    if (this.fresh.size) for (const [id, t] of this.fresh) if (this.t - t > FRESH_FRAMES) this.fresh.delete(id);
     for (const w of this.workers.values()) this.stepWorker(w);
   }
 

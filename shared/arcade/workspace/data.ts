@@ -29,6 +29,8 @@ export interface OfficeNote {
   id: string;
   title: string;
   pinned: boolean;
+  /** Changes whenever the note is edited (its updated-at), so an edit can be told from a rename. */
+  rev?: string;
 }
 
 export interface OfficeColumn {

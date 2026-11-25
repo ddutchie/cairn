@@ -9,6 +9,7 @@ import { CONTRACTOR, DEMO_OFFICE, zoneForColumn, type OfficeCard, type OfficeDat
 import { layoutDesk, layoutFloor, pileHeight, route, staff } from "@cairn/shared/arcade/workspace/layout";
 import { OfficeRenderer } from "@cairn/shared/arcade/workspace/render";
 import { daylightAt, OfficeSim } from "@cairn/shared/arcade/workspace/sim";
+import { burstLabel, diffOffice, FLURRY, groupChanges } from "@cairn/shared/arcade/workspace/events";
 
 const NOW = new Date(2026, 10, 25, 11, 30);
 const clock = () => NOW;
@@ -304,5 +305,141 @@ describe("the office", () => {
     r.resize(320, 320);
     r.draw();
     expect(frames).toBe(4);
+  });
+});
+
+describe("what changed", () => {
+  const a = () => project("a", [card("1", "backlog"), card("2", "doing", "SAM"), card("3", "doing", "SAM")], 2);
+  const b = () => project("b", [card("4", "review")], 1);
+  const base = () => office([a(), b()]);
+
+  it("reports nothing for an identical refresh, the demo office, or a switched workspace", () => {
+    expect(diffOffice(base(), base())).toEqual([]);
+    expect(diffOffice(DEMO_OFFICE, base())).toEqual([]);
+    expect(diffOffice(base(), DEMO_OFFICE)).toEqual([]);
+    expect(diffOffice(base(), office([project("z", [card("9", "doing")])]))).toEqual([]);
+  });
+
+  it("sees new, moved, edited and finished tasks", () => {
+    const next = base();
+    next.projects[0].cards = [
+      card("1", "backlog", null, { title: "RENAMED" }),
+      { ...card("2", "review", "SAM"), columnId: "c-review" },
+      card("5", "backlog"),
+    ];
+    // Card 3 left the open cards and the week's done count rose: it was finished.
+    next.projects[0].doneThisWeek = 1;
+    const kinds = diffOffice(base(), next).map((c) => `${c.k}:${c.id}`).sort();
+    expect(kinds).toEqual(["task.added:5", "task.done:3", "task.moved:2", "task.updated:1"]);
+  });
+
+  it("calls a card that left without a done count a deletion", () => {
+    const next = base();
+    next.projects[0].cards = next.projects[0].cards.slice(0, 2);
+    expect(diffOffice(base(), next)).toEqual([{ k: "task.removed", project: "a", id: "3" }]);
+  });
+
+  it("reports a card that moved to another project as arriving there, not as news in a new project", () => {
+    const next = base();
+    next.projects[0].cards = next.projects[0].cards.slice(1);
+    next.projects[1].cards = [...next.projects[1].cards, card("1", "backlog")];
+    expect(diffOffice(base(), next)).toEqual([{ k: "task.added", project: "b", id: "1" }]);
+    // A project that just appeared brings its cards without announcing them.
+    expect(diffOffice(base(), office([a(), b(), project("c", [card("7", "doing")])]))).toEqual([]);
+  });
+
+  it("tells a note edit from a rename and sees notes come and go", () => {
+    const prev = office([a()]);
+    prev.projects[0].notes = [{ id: "n1", title: "ONE", pinned: false, rev: "1" }, { id: "n2", title: "TWO", pinned: false, rev: "1" }];
+    const next = office([a()]);
+    next.projects[0].notes = [{ id: "n1", title: "ONE", pinned: false, rev: "2" }, { id: "n3", title: "THREE", pinned: false, rev: "1" }];
+    expect(diffOffice(prev, next).map((c) => `${c.k}:${c.id}`).sort()).toEqual(["note.added:n3", "note.removed:n2", "note.updated:n1"]);
+  });
+
+  it("folds a burst into one label per project and kind, with the target column for moves", () => {
+    const next = base();
+    next.projects[0].cards = Array.from({ length: 6 }, (_, i) => card(`new${i}`, "backlog"));
+    next.projects[1].cards = [{ ...card("4", "doing", "RIO"), columnId: "c-doing" }];
+    const bursts = groupChanges(diffOffice(base(), next));
+    const added = bursts.find((x) => x.kind === "task.added")!;
+    expect(added.ids).toHaveLength(6);
+    expect(burstLabel(added)).toBe("+ 6 TASKS");
+    expect(burstLabel(bursts.find((x) => x.kind === "task.moved")!)).toBe("> DOING");
+    expect(burstLabel({ project: "a", kind: "task.done", ids: ["1"], column: null, zone: null })).toBe("DONE!");
+  });
+
+  it("starts effects from a refresh: a label and a sheet per burst, capped, and a sample of a flurry", () => {
+    const s = make(base());
+    const next = base();
+    next.projects[0].cards = [...next.projects[0].cards, card("n1", "backlog"), card("n2", "backlog")];
+    s.setData(next);
+    expect(s.fx.filter((f) => f.k === "label").map((f) => f.text)).toEqual(["+ 2 TASKS"]);
+    expect(s.fx.filter((f) => f.k === "paper")).toHaveLength(2);
+    expect(s.fresh.has("n1")).toBe(true);
+    expect(s.busy).toBe(true);
+    for (let i = 0; i < 400; i++) s.step();
+    expect(s.fx).toEqual([]);
+    expect(s.fresh.size).toBe(0);
+    expect(s.busy).toBe(false);
+
+    const big = base();
+    big.projects[0].cards = Array.from({ length: FLURRY * 3 }, (_, i) => card(`bulk${i}`, "backlog"));
+    s.setData(big);
+    expect(s.fx.length).toBeLessThanOrEqual(24);
+    expect(s.fresh.size).toBeLessThanOrEqual(FLURRY);
+  });
+
+  it("pops the done board when a card is finished", () => {
+    const s = make(base());
+    const next = base();
+    next.projects[0].cards = next.projects[0].cards.slice(0, 2);
+    next.projects[0].doneThisWeek = 1;
+    s.setData(next);
+    expect(s.fx.some((f) => f.k === "paper" && f.to === "board")).toBe(true);
+    expect(s.boardPulse).toBeGreaterThan(s.t);
+  });
+
+  it("shows a bubble while the AI writes a note, and clears it when it stops", () => {
+    const s = make(base());
+    s.setNoteWriting("a-n0", true);
+    expect(s.projectOfNote("a-n0")?.id).toBe("a");
+    expect(s.busy).toBe(true);
+    s.setNoteWriting("a-n0", false);
+    expect(s.busy).toBe(false);
+  });
+
+  it("draws the effects without throwing, on the floor and on an open desk", () => {
+    const backend: PixelBackend<unknown, number> = {
+      createSurface(width, height): PixelSurface<unknown, number> {
+        let w = width, h = height;
+        return {
+          get W() { return w; },
+          get H() { return h; },
+          resize(nw, nh) { w = nw; h = nh; },
+          clear() {}, snapshot() { return 1; }, toImage() { return null; },
+          drawRect() {}, drawStrokeRect() {}, drawCircle() {}, drawLine() {}, drawImage() {}, drawImageRect() {},
+          drawTintedImage() {}, drawSprite() {}, drawStack() {}, drawShadow() {}, drawGlyphs() {},
+          clipRect(_x, _y, _w, _h, fn) { fn(); },
+        };
+      },
+      makeImage: () => ({}),
+      makeAtlas: (model) => ({ model, image: {}, shadow: {} }),
+    };
+    const s = make(base());
+    const r = new OfficeRenderer(backend, s);
+    const next = base();
+    next.projects[0].cards = [...next.projects[0].cards.slice(1), card("n1", "backlog")];
+    next.projects[0].doneThisWeek = 1;
+    s.setData(next);
+    s.setNoteWriting("a-n0", true);
+    for (let i = 0; i < 30; i++) {
+      s.step();
+      r.draw();
+    }
+    s.setFocus(0);
+    s.setTab("notes");
+    r.draw();
+    s.setTab("board");
+    r.draw();
   });
 });
