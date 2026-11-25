@@ -90,6 +90,27 @@ export function listArcadeProjects(now = new Date()): ArcadeProject[] {
   }));
 }
 
+/**
+ * Every open task and live note in these projects, with none of the per-project caps the games use.
+ * Angler checks its saved fish against this, so a task that didn't make the cut isn't taken for done.
+ */
+export function listArcadeLiveIds(projectIds: string[]): string[] {
+  if (!projectIds.length) return [];
+  const db = getDb();
+  const marks = projectIds.map(() => "?").join(", ");
+  const tasks = db.getAllSync<{ id: string }>(
+    `SELECT c.id FROM task_cards c LEFT JOIN board_columns col ON col.id = c.column_id
+     WHERE c.project_id IN (${marks}) AND c.deleted_at IS NULL AND c.archived_at IS NULL
+       AND COALESCE(col.type, '') <> 'done'`,
+    ...projectIds,
+  );
+  const notes = db.getAllSync<{ id: string }>(
+    `SELECT id FROM notes WHERE project_id IN (${marks}) AND type = 'note' AND ${LIVE} AND ${NOT_CONFLICT}`,
+    ...projectIds,
+  );
+  return [...tasks.map((t) => t.id), ...notes.map((n) => n.id)];
+}
+
 /** Load live workspace projects if rich enough for Wayfinder / Inbox Zero, else fall back to demo. */
 export function loadArcadeProjects(now = new Date()): { projects: ArcadeProject[]; demo: boolean } {
   try {

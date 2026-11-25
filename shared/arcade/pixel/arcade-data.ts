@@ -43,6 +43,11 @@ export interface ArcadeData {
   tags: string[];
   labels: Label[];
   demo: boolean;
+  /**
+   * Every open task and live note in `projects`, before the per-project caps trim what the games show.
+   * Angler checks saved fish against this, so a task that simply didn't make the cut isn't taken for done.
+   */
+  liveIds?: string[];
 }
 
 export const ACCENTS = ["#2ec4b6", "#e3a23b", "#5b8dd6", "#d9483b", "#7cc46a", "#c45aa8"];

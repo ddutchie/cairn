@@ -21,6 +21,7 @@ The day's clockwork beats (sluice lock, crate move, flare, squall, ebb) are minu
 - A **compass strip** under the HUD shows only places the Wick *knows*: seen within 210 units, mentioned by an islander, or read in the hut ledger. Each NPC teaches the places they talk about.
 - A lead **glows** when its moment is near (the mill before the lock, the mast during the flare, the lamp before the squall, the flats at ebb), so the clockwork reads without a quest log.
 - The HUD's second row names the **next beat you know about** and its time (`SLUICE LOCKS 2:38`).
+- **The crate move waits for the culprit.** The move is due at `MOVE_F`, or 900 frames after the Wick first nears the dock, whichever is sooner. The culprit heads for the crate from shortly before the scheduled time, or as soon as an early move is set, and the crate moves only once they are standing at it. You witness it only if you're at the dock then. A culprit who can't get there within `MOVE_GRACE` (40 s), such as Ios coming down from the summit, lets the crate go unseen, and the harbour ledger names them instead.
 
 ## The Shore
 - The lowest terrace is a **beach** that shelves into the sea. The Wick can't swim: open water blocks, but tide pools and the wet edge can be waded (`isSea` averages the ground over a few steps).

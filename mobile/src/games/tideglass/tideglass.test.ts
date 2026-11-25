@@ -8,7 +8,10 @@ import {
   CLIFFS,
   CYCLE_FRAMES,
   isSea,
+  CULPRIT_DOCK,
   DOCK_POS,
+  MOVE_F,
+  MOVE_GRACE,
   HUT_POS,
   LIGHTHOUSE_POS,
   MILL_POS,
@@ -182,10 +185,60 @@ describe("TideglassSim", () => {
     expect(sim.secrets.has("missed-ferry")).toBe(true);
   });
 
+  /** Steps until the crate moves; records whether the culprit was at the crate in that frame. */
+  const stepToMove = (sim: TideglassSim, max: number) => {
+    for (let i = 0; i < max && !sim.moveFired; i++) {
+      sim.wick.x = DOCK_POS.x;
+      sim.wick.y = DOCK_POS.y;
+      sim.step();
+    }
+    return sim.moveFired;
+  };
+
+  it("only lets you witness the scheduled move once the culprit is at the crate", () => {
+    for (const culprit of [0, 1, 2, 3]) {
+      const sim = startSim();
+      sim.culprit = culprit;
+      sim.wick.x = DOCK_POS.x;
+      sim.wick.y = DOCK_POS.y;
+      sim.moveAt = 0; // no early move
+      sim.advanceClock(Math.round(CYCLE_FRAMES * (MOVE_F - 0.031)));
+      expect(stepToMove(sim, Math.round(CYCLE_FRAMES * 0.031) + MOVE_GRACE + 10)).toBe(true);
+      // Witnessed means the culprit really was there; otherwise it went unseen.
+      if (sim.witnessedMove) expect(sim.culpritAtDock).toBe(true);
+      else expect(sim.crateAtDock).toBe(false);
+    }
+  });
+
+  it("an early move, set off at the dock, waits for the culprit (even from the summit)", () => {
+    const sim = startSim();
+    // Ios (or whoever) starts far up the mountain.
+    Object.assign(sim.npcs[sim.culprit], { x: 540, y: 200, path: [], repath: 0 });
+    sim.wick.x = DOCK_POS.x;
+    sim.wick.y = DOCK_POS.y;
+    sim.step();
+    expect(sim.moveAt).toBeGreaterThan(0);
+    stepToMove(sim, 900 + MOVE_GRACE + 10);
+    expect(sim.moveFired).toBe(true);
+    if (sim.witnessedMove) expect(sim.culpritAtDock).toBe(true);
+  });
+
+  it("lets the crate go unseen when the culprit never makes it, and the ledger still names them", () => {
+    const sim = startSim();
+    sim.wick.x = DOCK_POS.x;
+    sim.wick.y = DOCK_POS.y;
+    Object.assign(sim.npcs[sim.culprit], { x: 540, y: 200 });
+    // Jump past the move and its grace without the culprit walking (no steps).
+    sim.advanceClock(Math.round(CYCLE_FRAMES * MOVE_F) + MOVE_GRACE + 1);
+    expect(sim.moveFired).toBe(true);
+    expect(sim.witnessedMove).toBe(false);
+  });
+
   it("witnesses the crate move and reports it at the hut", () => {
     const sim = startSim();
     sim.wick.x = DOCK_POS.x;
     sim.wick.y = DOCK_POS.y;
+    Object.assign(sim.npcs[sim.culprit], CULPRIT_DOCK);
     sim.advanceClock(Math.round(CYCLE_FRAMES * 0.46));
     expect(sim.crateAtDock).toBe(false);
     expect(sim.witnessedMove).toBe(true);

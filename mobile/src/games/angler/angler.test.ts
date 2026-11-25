@@ -185,6 +185,15 @@ describe("angler", () => {
     expect(s.tankDirty).toBe(false);
   });
 
+  it("keeps a fish whose task is still open but past the cap on what the game shows", () => {
+    const [f] = fishFromProjects(projects);
+    // Same project, but the task isn't in the (capped) game data: only the uncapped live ids know it.
+    const capped = { ...f, id: "task-past-the-cap" };
+    expect(make({ save: { v: 1, fish: [capped] }, liveIds: ["task-past-the-cap"] }).tank).toHaveLength(1);
+    // Without it in the live ids, the task is done and the fish swims home.
+    expect(make({ save: { v: 1, fish: [capped] }, liveIds: [] }).tank).toHaveLength(0);
+  });
+
   it("skips bad saved fish one by one and keeps the good ones", () => {
     const [good] = fishFromProjects(projects);
     const fish = [{ ...good, size: 8.5 }, { ...good, species: "constructor" }, { ...good, size: 999 }, good];

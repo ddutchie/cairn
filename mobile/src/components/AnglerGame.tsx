@@ -1,5 +1,5 @@
 import { getMeta, setMeta } from "@/db";
-import { loadArcadeProjects } from "@/db/arcade";
+import { listArcadeLiveIds, loadArcadeProjects } from "@/db/arcade";
 import { haptics } from "@/haptics";
 import { PixelGameView, type PixelGame, type PixelGameSpec } from "@/components/PixelGameView";
 import { skiaBackend } from "@/games/pixel/skia-backend";
@@ -18,6 +18,15 @@ function loadTank(): AnglerSave | null {
   }
 }
 
+/** Uncapped live ids for the tank cleanup; on a read error, an empty list (the sim then uses the game data). */
+function liveIds(projectIds: string[]): string[] {
+  try {
+    return listArcadeLiveIds(projectIds);
+  } catch {
+    return [];
+  }
+}
+
 function saveTank(save: AnglerSave): boolean {
   try {
     setMeta(TANK_KEY, JSON.stringify(save));
@@ -30,7 +39,7 @@ function saveTank(save: AnglerSave): boolean {
 
 function createAngler({ width, height, hud, best }: PixelGameSpec): PixelGame<AnglerEvent> {
   const { projects, demo } = loadArcadeProjects();
-  const sim = new AnglerSim({ width, height, hud, inputMode: "touch", best, projects, demo, save: loadTank() });
+  const sim = new AnglerSim({ width, height, hud, inputMode: "touch", best, projects, demo, liveIds: demo ? [] : liveIds(projects.map((p) => p.id)), save: loadTank() });
   const renderer = new AnglerRenderer(skiaBackend, sim);
   return {
     events: sim.events,

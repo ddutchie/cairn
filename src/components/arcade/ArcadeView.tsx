@@ -196,7 +196,7 @@ const ANGLER_TANK_KEY = "arcadeAngler:tank";
 
 const createAngler: GameFactory = ({ canvas, width, height, data, best }) => {
   const save = storage.get<AnglerSave>(ANGLER_TANK_KEY);
-  const sim = new AnglerSim({ width, height, hud: NO_HUD, inputMode: "pointer", best, projects: data.projects, demo: data.demo, save });
+  const sim = new AnglerSim({ width, height, hud: NO_HUD, inputMode: "pointer", best, projects: data.projects, demo: data.demo, liveIds: data.liveIds, save });
   const renderer = new AnglerRenderer(createCanvasBackend(canvas), sim);
   return {
     update: () => {

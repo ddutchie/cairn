@@ -102,7 +102,9 @@ export function buildArcadeData(src: ArcadeSource): ArcadeData {
     })),
   }));
   const tags = src.tags.filter(inWs).map((t) => cleanArcadeTitle(t.name)).slice(0, 12);
-  const data: ArcadeData = { projects: out, tags, labels: [], demo: false };
+  // Uncapped: every open task and live note in the projects shown, for Angler's tank cleanup.
+  const liveIds = projects.flatMap((x) => [...x.cards.map((c) => c.id), ...x.notes.map((n) => n.id)]);
+  const data: ArcadeData = { projects: out, tags, labels: [], demo: false, liveIds };
   data.labels = interleave(data);
   return enough(data) ? data : DEMO_DATA;
 }

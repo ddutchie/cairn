@@ -251,6 +251,11 @@ export interface AnglerSpec {
   save?: AnglerSave | null;
   /** Playing the demo workspace: keep saved fish even when their ids aren't in it. */
   demo?: boolean;
+  /**
+   * Every open task and live note in `projects`, uncapped. A saved fish whose id is here is still live
+   * even if the game data left it out; without this, only the fish in `projects` count as live.
+   */
+  liveIds?: Iterable<string>;
   seed?: number;
 }
 
@@ -411,6 +416,7 @@ export class AnglerSim {
     const saved = (save?.fish ?? []).filter(validFish);
     this.liveById = byId;
     const here = new Set(this.projects.map((p) => p.id));
+    const stillLive = new Set(spec.liveIds ?? []);
     this.tank = [];
     const gone: FishSpec[] = [];
     for (const f of saved.slice(0, TANK_MAX)) {
@@ -418,7 +424,8 @@ export class AnglerSim {
       // A fish whose task is done (or whose note is gone) swims off. The demo keeps what it has, and so
       // does a fish from a project that isn't open here (another workspace): this one can't tell if it's done.
       if (now) this.tank.push({ ...f, title: now.title, project: now.project, projectId: now.projectId, accent: now.accent });
-      else if (this.demo || !f.projectId || !here.has(f.projectId)) this.tank.push(f);
+      // Still open, just past the cap on what the game shows: it stays as caught.
+      else if (this.demo || stillLive.has(f.id) || !f.projectId || !here.has(f.projectId)) this.tank.push(f);
       else gone.push(f);
     }
     const kept = new Set(this.tank.map((f) => f.id));

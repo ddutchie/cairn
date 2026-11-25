@@ -43,6 +43,10 @@ export const CHEST_POS = { x: 540, y: 1188 };
 export const CYCLE_FRAMES = 60 * 720; // 12-minute day
 export const LOCK_F = 0.22; // Mira locks the sluice
 export const MOVE_F = 0.45; // crate is moved (or on first dock approach)
+/** Once the move is due, how long it waits for the culprit to reach the dock before the crate goes unseen. */
+export const MOVE_GRACE = 2400;
+/** Where the culprit stands to move the crate. */
+export const CULPRIT_DOCK = { x: DOCK_POS.x - 6, y: DOCK_POS.y - 10 };
 export const FLARE_F = 0.6; // flare window 0.60–0.78
 export const FLARE_END_F = 0.78;
 export const EBB_F = 0.8; // tide drops, causeway walkable
@@ -862,10 +866,14 @@ export class TideglassSim {
     if (!this.moveFired && this.moveAt < 0 && Math.hypot(this.wick.x - DOCK_POS.x, this.wick.y - DOCK_POS.y) < 150) {
       this.moveAt = this.cycleTick + 900;
     }
-    if (!this.moveFired && (f >= MOVE_F || (this.moveAt > 0 && this.cycleTick >= this.moveAt))) {
+    // The move happens when it's due and the culprit has got to the crate. Someone who can't make it in
+    // MOVE_GRACE frames (Ios from the summit, say) leaves it to go unseen: only the ledger tells then.
+    const dueAt = this.moveAt > 0 ? Math.min(this.moveAt, Math.round(MOVE_F * CYCLE_FRAMES)) : Math.round(MOVE_F * CYCLE_FRAMES);
+    const there = this.culpritAtDock;
+    if (!this.moveFired && this.cycleTick >= dueAt && (there || this.cycleTick >= dueAt + MOVE_GRACE)) {
       this.moveFired = true;
       this.crateAtDock = false;
-      const near = Math.hypot(this.wick.x - DOCK_POS.x, this.wick.y - DOCK_POS.y) < 70;
+      const near = there && Math.hypot(this.wick.x - DOCK_POS.x, this.wick.y - DOCK_POS.y) < 70;
       if (near) {
         this.witnessedMove = true;
         this.log(`${this.culpritName()} MOVED THE CARGO CRATE. REPORT AT THE HUT.`);
@@ -1145,6 +1153,12 @@ export class TideglassSim {
       default:
         return false;
     }
+  }
+
+  /** The culprit is standing at the crate. */
+  get culpritAtDock(): boolean {
+    const c = this.npcs[this.culprit];
+    return Boolean(c) && Math.hypot(c.x - CULPRIT_DOCK.x, c.y - CULPRIT_DOCK.y) < 24;
   }
 
   private npcHint(id: Npc["id"]): string {
@@ -1531,11 +1545,11 @@ export class TideglassSim {
         }
       }
       // Whoever the culprit is visits the dock around the move beat (covers the early, dock-triggered move too).
-      const driftWindow = (f >= MOVE_F - 0.03 && f <= MOVE_F + 0.03) ||
-        (this.moveAt > 0 && !this.moveFired && this.cycleTick >= this.moveAt - 600);
+      // From a little before the scheduled move (or as soon as an early one is set) until the crate is moved.
+      const driftWindow = !this.moveFired && (f >= MOVE_F - 0.03 || this.moveAt > 0);
       if (n.id === this.npcs[this.culprit].id && driftWindow) {
-        tx = DOCK_POS.x - 6;
-        ty = DOCK_POS.y - 10;
+        tx = CULPRIT_DOCK.x;
+        ty = CULPRIT_DOCK.y;
       }
       // Walk the trail: recompute the route when the stop changes or the
       // old route runs out, then follow it waypoint by waypoint.
