@@ -215,7 +215,9 @@ describe("the office", () => {
     expect(s.bubble?.worker.holder).toBe("SAM");
     const line = s.bubble!.lines[0];
     s.down(line.rect.x + 2, line.rect.y + 2);
-    expect(s.events.at(-1)?.ref.type).toBe("task");
+    const opened = s.events.at(-1);
+    expect(opened?.k).toBe("open");
+    if (opened?.k === "open") expect(opened.ref.type).toBe("task");
     expect(s.bubble).toBeNull();
   });
 
