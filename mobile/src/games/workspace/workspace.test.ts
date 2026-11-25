@@ -443,3 +443,62 @@ describe("what changed", () => {
     r.draw();
   });
 });
+
+describe("the agent's robot", () => {
+  const a = () => project("a", [card("1", "backlog"), card("2", "doing", "SAM")], 1);
+  const b = () => project("b", [card("3", "backlog")], 0);
+
+  it("docks idle, walks to the touched desk on intent, and works there", () => {
+    const s = make(office([a(), b()]));
+    expect(s.robot.mode).toBe("idle");
+    expect(s.robot.active).toBe(false);
+    s.agentIntent({ type: "task", id: "3" });
+    expect(s.robot.desk).toBe(1);
+    expect(s.robot.mode).toBe("walk");
+    expect(s.robot.active).toBe(true);
+    for (let i = 0; i < 3000 && s.robot.mode === "walk"; i++) s.step();
+    expect(s.robot.mode).toBe("work");
+    const d = s.floor.desks.find((x) => x.index === 1)!;
+    expect({ x: s.robot.x, y: s.robot.y }).toEqual({ x: d.side.x, y: d.side.y });
+  });
+
+  it("stays put when the intent names nothing in the office", () => {
+    const s = make(office([a()]));
+    s.agentIntent({ type: "note", id: "missing" });
+    expect(s.robot.active).toBe(true);
+    expect(s.robot.desk).toBeNull();
+  });
+
+  it("opens the agent chat when clicked", () => {
+    const s = make(office([a(), b()]));
+    s.down(s.sx(s.robot.x), s.sy(s.robot.y) - 4);
+    expect(s.events.at(-1)).toEqual({ k: "openAgent" });
+  });
+
+  it("attributes a change that follows its intent to the agent", () => {
+    const s = make(office([a(), b()]));
+    s.agentIntent({ type: "task", id: "n1" });
+    const next = office([a(), b()]);
+    next.projects[0].cards = [...next.projects[0].cards, card("n1", "backlog")];
+    s.setData(next);
+    expect(s.fx.some((f) => f.agent)).toBe(true);
+    // An unrelated change is nobody's in particular.
+    const s2 = make(office([a(), b()]));
+    const other = office([a(), b()]);
+    other.projects[1].cards = [...other.projects[1].cards, card("zzz", "backlog")];
+    s2.setData(other);
+    expect(s2.fx.some((f) => f.agent)).toBe(false);
+  });
+
+  it("powers down on idle and walks home", () => {
+    const s = make(office([a(), b()]));
+    s.agentIntent({ type: "task", id: "3" });
+    for (let i = 0; i < 3000 && s.robot.mode === "walk"; i++) s.step();
+    expect(s.robot.mode).toBe("work");
+    s.agentIdle();
+    expect(s.robot.active).toBe(false);
+    for (let i = 0; i < 6000 && s.robot.mode !== "idle"; i++) s.step();
+    expect(s.robot.mode).toBe("idle");
+    expect(s.robot.desk).toBeNull();
+  });
+});

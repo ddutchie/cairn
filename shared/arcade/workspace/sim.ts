@@ -29,7 +29,7 @@ export interface OfficeSpec {
   clock?: () => Date;
 }
 
-export type OfficeEvent = { k: "open"; ref: Ref };
+export type OfficeEvent = { k: "open"; ref: Ref } | { k: "openAgent" };
 
 export interface Look {
   shirt: string;
@@ -55,9 +55,29 @@ export interface Worker {
   layoutKey: string;
 }
 
+/** The agent's robot: docks by the cooler, walks to whatever its tool calls touch. */
+export interface Robot {
+  x: number;
+  y: number;
+  path: Pt[];
+  /** Idle at the dock, walking, or working at a desk. */
+  mode: "idle" | "walk" | "work";
+  /** Desk index it is at (or heading to), null at the dock. */
+  desk: number | null;
+  /** Ref its current tool call touched, if any. */
+  ref: Ref | null;
+  timer: number;
+  dx: number;
+  dy: number;
+  /** True while a tool call is in flight (glows). */
+  active: boolean;
+  layoutKey: string;
+}
+
 export type Hit =
   | { k: "desk"; desk: Desk }
   | { k: "worker"; worker: Worker }
+  | { k: "robot" }
   | { k: "hot"; text: string }
   | { k: "card"; ref: Ref; rect: Rect; text: string }
   | { k: "note"; ref: Ref; rect: Rect; text: string }
@@ -92,7 +112,12 @@ export interface Fx {
   to?: "desk" | "board";
   /** Stagger, so several papers don't fly as one. */
   delay: number;
+  /** True when the change followed an agent tool call for the same id (phase 3 attribution). */
+  agent?: boolean;
 }
+
+/** A tool call started within this many frames of a change attributes it to the agent (~2 s). */
+export const AGENT_WINDOW = 120;
 
 const HEADER = 13;
 const FX_CAP = 24;
@@ -156,6 +181,11 @@ export class OfficeSim {
   floor!: FloorLayout;
   view: DeskView | null = null;
   workers = new Map<string, Worker>();
+  robot!: Robot;
+  /** Tool-call intents by id, with the frame they arrived (attribution window). */
+  intents = new Map<string, number>();
+  /** Ids whose change followed an intent: shown with the agent colour. For tests and hosts. */
+  agentMade = new Set<string>();
   hover: Hover | null = null;
   bubble: Bubble | null = null;
   events: OfficeEvent[] = [];
@@ -241,6 +271,12 @@ export class OfficeSim {
   /** Start the effects for a refresh's changes: a few per project and kind, and a sample of a flurry. */
   private react(changes: readonly OfficeChange[]): void {
     if (!changes.length) return;
+    // Attribution: a change for an id the agent just touched is the agent's.
+    // It is a timing guess, not an audit log (plan phase 3).
+    for (const c of changes) {
+      const id = "id" in c ? (c as { id: string }).id : null;
+      if (id && this.intents.has(id) && this.t - (this.intents.get(id) ?? -9999) <= AGENT_WINDOW) this.agentMade.add(id);
+    }
     const bursts = groupChanges(changes.length > FLURRY ? changes.slice(0, FLURRY) : changes);
     for (const b of bursts) {
       for (const id of b.ids) if (b.kind !== "task.removed" && b.kind !== "note.removed" && b.kind !== "task.done") this.fresh.set(id, this.t);
@@ -250,14 +286,50 @@ export class OfficeSim {
   }
 
   private spawn(b: Burst): void {
-    const color = KIND_COLOR[b.kind];
+    const agent = b.ids.some((id) => this.agentMade.has(id));
+    const color = agent ? "#8fe0ff" : KIND_COLOR[b.kind];
     const room = FX_CAP - this.fx.length;
     if (room <= 0) return;
-    this.fx.push({ k: "label", project: b.project, text: burstLabel(b), color, t0: this.t, life: 90, delay: 0 });
+    this.fx.push({ k: "label", project: b.project, text: burstLabel(b), color, t0: this.t, life: 90, delay: 0, agent });
     // A few sheets fly: down onto the pile for a new task, up to the done board for a finished one.
     const sheets = Math.min(3, b.ids.length, room - 1);
-    if (b.kind === "task.added") for (let i = 0; i < sheets; i++) this.fx.push({ k: "paper", project: b.project, text: "", color, t0: this.t, life: 36, to: "desk", delay: i * 8 });
-    if (b.kind === "task.done") for (let i = 0; i < sheets; i++) this.fx.push({ k: "paper", project: b.project, text: "", color, t0: this.t, life: 70, to: "board", delay: i * 10 });
+    if (b.kind === "task.added") for (let i = 0; i < sheets; i++) this.fx.push({ k: "paper", project: b.project, text: "", color, t0: this.t, life: 36, to: "desk", delay: i * 8, agent });
+    if (b.kind === "task.done") for (let i = 0; i < sheets; i++) this.fx.push({ k: "paper", project: b.project, text: "", color, t0: this.t, life: 70, to: "board", delay: i * 10, agent });
+  }
+
+  /** The agent started a tool call touching a task or note: the robot walks to its desk. */
+  agentIntent(ref: Ref): void {
+    this.intents.set(ref.id, this.t);
+    if (this.intents.size > 60) this.intents.delete(this.intents.keys().next().value!);
+    const i = this.projects.findIndex((p) => p.cards.some((c) => c.id === ref.id) || p.notes.some((n) => n.id === ref.id));
+    const desk = i >= 0 ? this.floor.desks.find((d) => d.index === i) : null;
+    const r = this.robot;
+    r.ref = ref;
+    r.active = true;
+    if (!desk) {
+      r.timer = 240;
+      if (r.mode === "idle") r.mode = "work";
+      return;
+    }
+    if (r.desk === desk.index && (r.mode === "work" || r.mode === "idle")) {
+      r.mode = "work";
+      r.timer = 300;
+      return;
+    }
+    const from = this.nearestDesk(r) ?? desk;
+    r.desk = desk.index;
+    r.path = route(r, { x: desk.side.x, y: desk.side.y }, from, desk);
+    r.mode = "walk";
+    r.timer = 300;
+  }
+
+  /** The agent's turn ended with no more tool calls in flight: the robot powers down. */
+  agentIdle(): void {
+    const r = this.robot;
+    if (!r) return;
+    r.active = false;
+    r.ref = null;
+    if (r.mode === "work") r.timer = Math.min(r.timer, 120);
   }
 
   /** The AI started (or finished) writing a note: its desk shows a writing bubble while it lasts. */
@@ -273,7 +345,7 @@ export class OfficeSim {
 
   /** True while an effect or flash is still playing, so a host can stop redrawing a still office. */
   get busy(): boolean {
-    return this.fx.length > 0 || this.writing.size > 0 || this.fresh.size > 0;
+    return this.fx.length > 0 || this.writing.size > 0 || this.fresh.size > 0 || (this.robot?.mode === "walk" && this.robot.path.length > 0);
   }
 
   resize(width: number, height: number, hud?: PixelHud): void {
@@ -292,6 +364,7 @@ export class OfficeSim {
     this.view = p ? layoutDesk(p, this.deskArea, this.notesPage) : null;
     if (this.view) this.notesPage = this.view.notesPage;
     this.syncWorkers();
+    this.syncRobot();
     this.layoutHeader();
   }
 
@@ -335,6 +408,34 @@ export class OfficeSim {
       }
     }
     for (const k of [...this.workers.keys()]) if (!live.has(k)) this.workers.delete(k);
+  }
+
+  /** Where the robot docks: beside the water cooler, out of the walkways. */
+  private dock(): Pt {
+    return { x: this.floor.cooler.x + 16, y: this.floor.cooler.y + 12 };
+  }
+
+  private syncRobot(): void {
+    const key = `${this.floor.w}x${this.floor.h}p${this.page}`;
+    const home = this.dock();
+    if (!this.robot) {
+      this.robot = { x: home.x, y: home.y, path: [], mode: "idle", desk: null, ref: null, timer: 0, dx: 0, dy: -1, active: false, layoutKey: key };
+      return;
+    }
+    const r = this.robot;
+    if (r.layoutKey !== key) {
+      // A new room: dock unless it was working a desk still on this page.
+      const still = r.desk !== null && this.floor.desks.some((d) => d.index === r.desk);
+      if (still) {
+        const d = this.floor.desks.find((d) => d.index === r.desk)!;
+        r.x = d.side.x;
+        r.y = d.side.y;
+        r.path = [];
+      } else {
+        Object.assign(r, { x: home.x, y: home.y, path: [], mode: "idle" as const, desk: null, dx: 0, dy: -1 });
+      }
+      r.layoutKey = key;
+    }
   }
 
   private nearestDesk(p: Pt): Desk | null {
@@ -396,7 +497,67 @@ export class OfficeSim {
     if (this.opened && this.t - this.opened.t > 40) this.opened = null;
     if (this.fx.length) this.fx = this.fx.filter((f) => this.t - f.t0 < f.life + f.delay);
     if (this.fresh.size) for (const [id, t] of this.fresh) if (this.t - t > FRESH_FRAMES) this.fresh.delete(id);
+    if (this.intents.size) for (const [id, t] of this.intents) if (this.t - t > AGENT_WINDOW + 600) this.intents.delete(id);
     for (const w of this.workers.values()) this.stepWorker(w);
+    this.stepRobot();
+  }
+
+  private stepRobot(): void {
+    const r = this.robot;
+    if (!r) return;
+    if (r.mode === "walk") {
+      const next = r.path[0];
+      if (!next) {
+        if (r.desk === null) {
+          r.mode = "idle";
+          r.timer = 0;
+          r.dx = 0;
+          r.dy = -1;
+        } else {
+          r.mode = "work";
+          r.timer = r.active ? 300 : 120;
+          r.dx = 0;
+          r.dy = -1;
+        }
+        return;
+      }
+      const dx = next.x - r.x;
+      const dy = next.y - r.y;
+      const dist = Math.hypot(dx, dy);
+      r.dx = dx / (dist || 1);
+      r.dy = dy / (dist || 1);
+      if (dist <= WALK) {
+        r.x = next.x;
+        r.y = next.y;
+        r.path.shift();
+      } else {
+        r.x += r.dx * WALK;
+        r.y += r.dy * WALK;
+      }
+      return;
+    }
+    if (r.mode === "work" && !this.calm) {
+      if (--r.timer > 0) return;
+      // Done working: back to the dock when idle, or keep waiting at the desk while active.
+      if (r.active && r.desk !== null) {
+        r.timer = 300;
+        return;
+      }
+      const home = this.dock();
+      const from = this.nearestDesk(r) ?? this.floor.desks[0];
+      if (!from) {
+        r.x = home.x;
+        r.y = home.y;
+        r.mode = "idle";
+        r.desk = null;
+        return;
+      }
+      r.path = route(r, home, from, from);
+      r.mode = "walk";
+      r.desk = null;
+      return;
+    }
+    if (r.mode === "idle" && r.active && r.desk !== null) r.mode = "work";
   }
 
   private stepWorker(w: Worker): void {
@@ -476,6 +637,12 @@ export class OfficeSim {
 
     const lx = x - this.area.x;
     const ly = y - this.area.y;
+    // The robot first (it stands in front of desks), then workers, nearest the viewer first.
+    const r = this.robot;
+    if (r) {
+      const k = this.floor.zoom / 2;
+      if (lx >= r.x - 6 * k && lx <= r.x + 6 * k && ly >= r.y - 22 * k && ly <= r.y + 2) return { k: "robot" };
+    }
     // Workers first (they stand in front of desks), nearest the viewer first.
     const ws = [...this.workers.values()].filter((w) => this.deskFor(w)).sort((a, b) => b.y - a.y);
     for (const w of ws) {
@@ -533,6 +700,11 @@ export class OfficeSim {
         return;
       case "worker":
         this.openBubble(h.worker);
+        return;
+      case "robot":
+        this.bubble = null;
+        this.opened = null;
+        this.events.push({ k: "openAgent" });
         return;
       case "back":
         this.setFocus(null);
@@ -667,6 +839,13 @@ export class OfficeSim {
         const who = h.worker.holder === CONTRACTOR ? "UNASSIGNED WORK" : h.worker.holder;
         const where = this.projects[h.worker.desk]?.name ?? "";
         return { text: `${who} · ${mine.length} IN PROGRESS${where ? ` · AT ${where}` : ""}`, rect: null };
+      }
+      case "robot": {
+        const at = this.robot?.desk !== null && this.robot?.desk !== undefined
+          ? (this.projects[this.robot.desk]?.name ?? "")
+          : "";
+        const what = this.robot?.active ? "WORKING" : "IDLE";
+        return { text: `AGENT · ${what}${at ? ` · AT ${at}` : ""} · ${tap} TO OPEN CHAT`, rect: null };
       }
       case "hot":
         return { text: h.text, rect: null };
