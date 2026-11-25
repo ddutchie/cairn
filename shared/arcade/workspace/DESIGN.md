@@ -35,6 +35,10 @@ The sim never writes. `setData` takes a fresh `OfficeData` (built by `build.ts` 
 
 A change for an id the agent just touched (a `tool/call` with a `cairnRef` in the last ~2 s) is drawn in agent blue and counts as the agent's: a timing guess, not an audit log. The robot walks to the touched desk when the call starts; the change feed lands what it did. Click the robot to open the agent view.
 
+## Calendar mode
+
+The WEEK tab (C) swaps the floor for the week wall: seven day cork boards from the shared `week.ts` bucketing, with dated open cards pinned on their day (priority stripe, project accent chip) and a red OVERDUE tray along the bottom for everything past due. Today is gold, weekends dim. Clicking a pin opens that task in the side panel, exactly like a desk card; Esc or OFFICE goes back. Meeting-room events and workers walking to meetings are not built yet.
+
 ## Tuning notes
 
 - The office is drawn with voxel stacks (`models.ts`) like Task Force and Wayfinder: `makeModel` shades each layer and the renderer drops a shadow under each stack. Desk models are cached by their pile heights, lit state, overdue state and accent, so a model is rebuilt only when its counts change. Draw time in the harness is about 0.5 ms at 480×320.

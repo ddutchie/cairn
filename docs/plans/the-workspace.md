@@ -1,6 +1,6 @@
 # The Workspace — idle office view of the live workspace
 
-Status: phases 1–3 built on `feat/the-workspace` (2026-11-25): the office, live changes, and the agent robot. The rest is planned.
+Status: phases 1–4 built on `feat/the-workspace` (2026-11-25): the office, live changes, the agent robot, and the week wall. The rest is planned.
 
 ## Idea
 
@@ -122,7 +122,7 @@ A toggle (tab on the HUD) swaps the floor for **the week**:
 1. **The office and opened desks (built).** `build.ts`, `layout.ts`, `models.ts`, `sim.ts` and `render.ts` in `shared/arcade/workspace/`, and the desktop host in `src/components/arcade/office.ts`. The office follows the store live (rebuilt 250 ms after a burst of changes) and people walk to their new desks. Opened at "The Workspace" in the Arcade toolbar. It doesn't animate individual changes yet.
 2. **Live events (built).** `events.ts` diffs the office snapshots (`diffOffice`, `groupChanges`); the sim plays labels, flying sheets, a done-board pop and flashes; the desktop host forwards `note:aiWrite*` for a "writing" bubble. Bursts are coalesced and a flurry is sampled. Attribution (who made the change) waits for phase 3. It diffs the store rather than the change feed's rows, which is simpler and catches every writer; the feed's `externalTouched` can later tell you from others.
 3. **Agent presence (built).** `session:event` intent → the robot walks to the desk (`agentIntent`); attribution heuristic (`AGENT_WINDOW`, agent-blue labels); click the robot → open the chat (`openAgent` → agent view).
-4. **Calendar mode.** A week wall, overdue tray, meeting room.
+4. **Calendar mode (built: the wall).** The WEEK tab (C) swaps the floor for seven day boards with due tasks pinned on their day and a red overdue tray; clicking a pin opens it. Weekends dim, today is gold. Not built: calendar events as appointment cards, the meeting room, workers walking to meetings.
 5. **Mobile.** `PixelGameView` host, a sync/poll bridge, card sheet / note routes; pinnable as a Workspace tool like the other games.
 6. **Idle polish.** More routines, decor from milestones, ambient sound.
 7. **Pixel chat (the easter egg's easter egg).** While the office is open, restyle the chat panel to match: pixel font for messages, chunky bordered bubbles, and the agent's avatar as the office robot. This should be a theme layer only (a `data-pixel` attribute on the chat root that swaps CSS variables and fonts), never a second chat component, so behaviour can't drift. Respect the font-scale setting and keep code blocks readable: monospace stays monospace.
