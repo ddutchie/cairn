@@ -99,6 +99,8 @@ export interface FloorLayout {
   bin: Pt;
   /** The printer, right of the done board: new notes print here. */
   printer: Pt;
+  /** The office cairn: a stack of stones on the front strip, between the robot's pad and the cooler. */
+  cairn: Pt;
   /** The light switch on the back wall, left of the first window. */
   lightSwitch: Rect;
   /** Planters stand along the back wall, in front of the windows first. */
@@ -109,7 +111,10 @@ export interface FloorLayout {
   backWalk: { aisleY: number; laneX: number };
 }
 
-export type SpotKind = "coffee" | "cooler" | "printer";
+/** Half the width of the cairn's raked-sand tray. */
+export const CAIRN_TRAY = 17;
+
+export type SpotKind = "coffee" | "cooler" | "printer" | "cairn";
 
 export interface Spot {
   kind: SpotKind;
@@ -228,35 +233,55 @@ export function layoutFloor(projects: readonly OfficeProject[], w: number, h: nu
   const printer = { x: doneBoard.x + doneBoard.w + 12, y: floorTop + 2 };
   const clock = { x: bin.x, y: 15 };
   const front = (x: number) => ({ x, y: h - 12 });
+  // Centred in the free strip between the robot's pad (x ≤ 31) and the cooler's two talkers.
+  const cairn = { x: Math.round((44 + cooler.x - 54) / 2), y: h - 13 };
   const spots: Spot[] = [
     { kind: "coffee", front: true, at: front(coffee.x - 12), aisleY: h - 12, laneX: left },
     { kind: "cooler", front: true, at: front(cooler.x - 12), aisleY: h - 12, laneX: left },
     { kind: "printer", at: { x: printer.x, y: printer.y + 6 }, ...top },
+    // They stand at the sand garden's edge, not on the raked sand.
+    { kind: "cairn", front: true, at: front(cairn.x - CAIRN_TRAY - 4), aisleY: h - 12, laneX: left },
   ];
   // Windows fill the wall either side of the clock and the done board, smaller on a narrow wall.
   const windows: Rect[] = [];
   const fitWindows = (from: number, to: number) => {
     const span = to - from;
-    const ww = span >= 100 ? 30 : 22;
-    const gap = ww === 30 ? 16 : 10;
+    // A phone's wall left of the clock is only ~20px: a narrow window still fits there.
+    const ww = span >= 100 ? 30 : span >= 22 ? 22 : 16;
+    const gap = ww === 30 ? 16 : ww === 22 ? 10 : 8;
     const n = Math.floor((span + gap) / (ww + gap));
     let x = from + Math.floor((span - (n * ww + (n - 1) * gap)) / 2);
     for (let i = 0; i < n; i++, x += ww + gap) windows.push({ x, y: 6, w: ww, h: 20 });
   };
   // Room for the clock as a small flip clock too (34px wide, hung a little left of the bin).
-  fitWindows(12, clock.x - 26);
+  // The light switch ends at x 8, the flip clock's housing starts at clock.x - 23.
+  fitWindows(10, clock.x - 25);
+  const leftWindows = windows.length;
   fitWindows(doneBoard.x + doneBoard.w + 6, w - 10);
   // Planters in front of the windows (the corner plant first), then in the gaps along the wall.
+  // Never in front of the done board (a tall plant hides its numbers), and clear of the bin and printer.
   const slots: number[] = [];
-  const free = (x: number) => x > left - 4 && x < right + 4 && [bin.x, printer.x].every((a) => Math.abs(a - x) >= 14) && slots.every((q) => Math.abs(q - x) >= 22);
-  for (const win of windows) {
+  const free = (x: number) =>
+    x > left - 4 &&
+    x < right + 4 &&
+    (x < doneBoard.x - 8 || x > doneBoard.x + doneBoard.w + 8) &&
+    [bin.x, printer.x].every((a) => Math.abs(a - x) >= 18) &&
+    slots.every((q) => Math.abs(q - x) >= 22);
+  // Windows alternate sides, outermost first, so a few planters spread across the room.
+  const lefts = windows.slice(0, leftWindows), rights = windows.slice(leftWindows).reverse();
+  const order: Rect[] = [];
+  for (let i = 0; i < Math.max(lefts.length, rights.length); i++) {
+    if (lefts[i]) order.push(lefts[i]);
+    if (rights[i]) order.push(rights[i]);
+  }
+  for (const win of order) {
     const x = Math.round(win.x + win.w / 2);
     if (free(x)) slots.push(x);
   }
   for (let x = left; x <= right; x += 9) if (free(x)) slots.push(x);
   const plants = slots.slice(0, 1 + Math.max(0, Math.min(6, Math.floor(extraPlants)))).map((x) => ({ x, y: floorTop - 2 }));
   const lightSwitch = { x: 3, y: 12, w: 5, h: 8 };
-  return { w, h, zoom: g.z, desks, page: pg, pageCount, perPage, wall: { x: 0, y: 0, w, h: WALL_H }, doneBoard, clock, windows, coffee, cooler, bin, printer, lightSwitch, plants, spots, backWalk: top };
+  return { w, h, zoom: g.z, desks, page: pg, pageCount, perPage, wall: { x: 0, y: 0, w, h: WALL_H }, doneBoard, clock, windows, coffee, cooler, bin, printer, cairn, lightSwitch, plants, spots, backWalk: top };
 }
 
 /**

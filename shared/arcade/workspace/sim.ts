@@ -15,7 +15,7 @@ import { hudFrame, NO_HUD, type InputMode, type PixelHud } from "../pixel/hud";
 import { mulberry32 } from "../pixel/terrain";
 import { CONTRACTOR, DEMO_OFFICE, type OfficeData, type OfficeProject } from "./data";
 import { burstLabel, diffOffice, FLURRY, groupChanges, type Burst, type OfficeChange } from "./events";
-import { inRect, layoutDesk, layoutFloor, layoutWeek, route, routeFree, type Desk, type DeskTab, type DeskView, type FloorLayout, type Pt, type Rect, type Ref, type Spot, type SpotKind, type WeekView } from "./layout";
+import { CAIRN_TRAY, inRect, layoutDesk, layoutFloor, layoutWeek, route, routeFree, type Desk, type DeskTab, type DeskView, type FloorLayout, type Pt, type Rect, type Ref, type Spot, type SpotKind, type WeekView } from "./layout";
 import { bucketWeek, toDateKey, weekDates, withDemoDates, type WeekDay } from "./week";
 
 export interface OfficeSpec {
@@ -85,7 +85,8 @@ export type Errand =
   | { k: "water"; plant: number }
   | { k: "print"; project: string }
   | { k: "deliver"; project: string }
-  | { k: "visit" };
+  | { k: "visit" }
+  | { k: "stack" };
 
 /** Anyone who walks the floor along a path. */
 interface Walker {
@@ -181,6 +182,7 @@ export type Hit =
   | { k: "coffee" }
   | { k: "cooler" }
   | { k: "printer" }
+  | { k: "cairn" }
   | { k: "plant"; i: number }
   | { k: "board" }
   | { k: "boardRow"; index: number | null }
@@ -260,6 +262,53 @@ const WALK = 0.4;
 /** How long a printout takes, a celebration lasts, and a spoken line shows. */
 export const PRINT_FRAMES = 50;
 export const PARTY_FRAMES = 90;
+/** The cairn: stones it keeps after a fall, how tall it can stand safely, and the most it can hold. */
+export const CAIRN_BASE = 2;
+export const CAIRN_SAFE = 5;
+export const CAIRN_MAX = 10;
+/** Frames a stone sways the cairn for, and that fallen stones lie on the floor. */
+export const CAIRN_SWAY = 70;
+export const CAIRN_FALL = 120;
+
+/** The office cairn's state: placed stones, the tallest it has stood, and its last sway and fall. */
+export interface CairnState {
+  stones: number;
+  best: number;
+  placedAt: number;
+  swayAt: number;
+  /** Decided when the stone is placed: this sway ends in a fall. */
+  falls: boolean;
+  fallAt: number;
+  /** How many stones came down in the last fall. */
+  fallen: number;
+}
+
+const CAIRN_GREYS = ["#7a7268", "#9a9083", "#5f6066", "#aaa192", "#8a7a68", "#727a80", "#b0a898"];
+/** Stone widths up the cairn: narrowing, but unevenly, like a real stack. */
+const CAIRN_WIDTHS = [15, 12, 13, 10, 11, 8, 9, 7, 6, 5];
+
+/** Stone `i` up the cairn (0 is the base): wide flat ones at the bottom, smaller toward the top. */
+export function cairnStone(i: number): { w: number; h: number; dx: number; color: string } {
+  const r = (i * 37 + 11) % 7;
+  return {
+    w: CAIRN_WIDTHS[Math.min(i, CAIRN_WIDTHS.length - 1)],
+    h: i < 2 ? 5 : i % 3 === 1 ? 4 : 3,
+    dx: [0, 1, -1, 2, -2, 1, -1][r] ?? 0,
+    color: CAIRN_GREYS[(i * 3 + r) % CAIRN_GREYS.length],
+  };
+}
+
+/** Planter `i` along the back wall: every third milestone is a bonsai, the rest alternate snake-plant and pothos. */
+export function planterKind(i: number): "tall" | "bush" | "bonsai" {
+  return i % 3 === 2 ? "bonsai" : i % 2 ? "bush" : "tall";
+}
+
+/** The cairn's height in pixels for `n` stones. */
+export function cairnHeight(n: number): number {
+  let h = 0;
+  for (let i = 0; i < n; i++) h += cairnStone(i).h;
+  return h;
+}
 export const SAY_FRAMES = 160;
 /** Frames the big clock takes to zoom off the wall, or back onto it. */
 export const CLOCK_ZOOM = 12;
@@ -420,6 +469,8 @@ export class OfficeSim {
   /** When the coffee machine last brewed and the cooler last gurgled (steam, bubbles). */
   steamAt = -999;
   coolerAt = -999;
+  /** The office cairn: people stack stones on it; past five each stone sways it and may topple it. */
+  cairn: CairnState = { stones: 3, best: 3, placedAt: -999, swayAt: -999, falls: false, fallAt: -999, fallen: 0 };
   /** Planters by floor index: when last touched (a sway) and watered (drops). */
   plantTouched = new Map<number, number>();
   plantWatered = new Map<number, number>();
@@ -995,6 +1046,7 @@ export class OfficeSim {
     this.stepPapers();
     this.stepRobot();
     this.stepPrinter();
+    this.stepCairn();
     this.stepJanitor();
     this.stepCat();
   }
@@ -1132,7 +1184,61 @@ export class OfficeSim {
         return;
       case "visit":
         return;
+      case "stack":
+        // Too late if it is already swaying or down: they look at the mess instead.
+        if (this.cairnBusy) w.say = { text: this.cairnFalling ? "WHOA..." : "OH NO", t0: this.t };
+        else this.addStone();
+        w.timer = 70;
+        return;
     }
+  }
+
+  /** The cairn is swaying from its last stone, or its stones are still on the floor. */
+  get cairnBusy(): boolean {
+    const c = this.cairn;
+    return this.t - c.swayAt < CAIRN_SWAY || this.t - c.fallAt < CAIRN_FALL;
+  }
+
+  /** Swaying toward a fall right now. */
+  get cairnFalling(): boolean {
+    return this.cairn.falls && this.t - this.cairn.swayAt < CAIRN_SWAY;
+  }
+
+  /** One more stone. Past five it sways, and the taller it stands the likelier the sway ends in a fall. */
+  addStone(): void {
+    const c = this.cairn;
+    if (this.cairnBusy) return;
+    c.stones = Math.min(CAIRN_MAX, c.stones + 1);
+    c.best = Math.max(c.best, c.stones);
+    c.placedAt = this.t;
+    if (c.stones > CAIRN_SAFE) {
+      c.swayAt = this.t;
+      c.falls = c.stones >= CAIRN_MAX || this.rnd() < (c.stones - CAIRN_SAFE) * 0.2;
+    }
+  }
+
+  /** A sway that was going to fall does: the top stones scatter and whoever stacked the last one reacts. */
+  private stepCairn(): void {
+    const c = this.cairn;
+    if (!c.falls || this.t - c.swayAt < CAIRN_SWAY) return;
+    c.falls = false;
+    c.fallAt = this.t;
+    c.fallen = c.stones - CAIRN_BASE;
+    c.stones = CAIRN_BASE;
+    const s = this.spot("cairn");
+    for (const w of this.workers.values()) {
+      if (w.errand?.k === "stack" && s && Math.abs(w.x - s.at.x) + Math.abs(w.y - s.at.y) < 4) w.say = { text: "WHOOPS!", t0: this.t };
+    }
+  }
+
+  private tapCairn(): void {
+    if (this.cairnBusy) return;
+    const s = this.spot("cairn");
+    const w = s && !this.calm ? this.idleWorker(s.at) : null;
+    const d = w && this.deskFor(w);
+    // Someone walks over with a stone; with nobody free (or Reduce Motion) it just goes on.
+    if (w && s && d) this.sendTo(w, s.at, this.walkway(s, d), { k: "stack" });
+    else this.addStone();
   }
 
   /** The coffee machine makes a cup: steam, and one more on today's count. */
@@ -1614,12 +1720,15 @@ export class OfficeSim {
     const roll = this.rnd();
     const others = this.floor.desks.filter((x) => x.index !== d.index);
     const plants = this.floor.plants.length;
-    if (roll < 0.12 && plants) {
+    const cairn = this.spot("cairn");
+    if (roll >= 0.12 && roll < 0.2 && cairn && !this.cairnBusy) {
+      this.sendTo(w, cairn.at, this.walkway(cairn, d), { k: "stack" });
+    } else if (roll < 0.12 && plants) {
       const i = Math.floor(this.rnd() * plants);
       const at = this.plantSpot(i)!;
       this.sendTo(w, at, this.plantWalk(), { k: "water", plant: i });
     } else if (roll < 0.7 || !others.length) {
-      const spots = this.floor.spots.filter((s) => s.kind !== "printer");
+      const spots = this.floor.spots.filter((s) => s.kind === "coffee" || s.kind === "cooler");
       const s = spots[Math.floor(this.rnd() * spots.length)];
       this.sendTo(w, s.at, this.walkway(s, d), s.kind === "coffee" ? { k: "coffee" } : { k: "chat", text: this.rnd() < 0.5 ? this.gossip() : "" });
     } else {
@@ -1686,10 +1795,14 @@ export class OfficeSim {
     if (Math.abs(lx - F.cooler.x) < 7 && ly > F.cooler.y - 30 && ly < F.cooler.y + 4) return { k: "cooler" };
     if (Math.abs(lx - F.bin.x) < 7 && ly > F.bin.y - 12 && ly < F.bin.y + 4) return { k: "bin" };
     if (Math.abs(lx - F.printer.x) < 9 && ly > F.printer.y - 16 && ly < F.printer.y + 4) return { k: "printer" };
+    // The stones, or anywhere on their sand garden.
+    if (Math.abs(lx - F.cairn.x) < 7 && ly > F.cairn.y - cairnHeight(this.cairn.stones) - 3 && ly < F.cairn.y + 5) return { k: "cairn" };
+    if (Math.abs(lx - F.cairn.x) <= CAIRN_TRAY && ly >= F.cairn.y - 7 && ly <= F.cairn.y + 5) return { k: "cairn" };
     for (let i = F.plants.length - 1; i >= 0; i--) {
       const p = F.plants[i];
       // The visible leaves only, so the window above stays clickable for its blinds.
-      const tall = i % 2 ? 16 : 22;
+      const kind = planterKind(i);
+      const tall = kind === "tall" ? 22 : kind === "bonsai" ? 18 : 16;
       if (Math.abs(lx - p.x) < 9 && ly > p.y - tall && ly < p.y + 5) return { k: "plant", i };
     }
     if (inRect(F.lightSwitch, lx, ly, 3)) return { k: "lights" };
@@ -1765,6 +1878,9 @@ export class OfficeSim {
         return;
       case "plant":
         this.tapPlant(h.i);
+        return;
+      case "cairn":
+        this.tapCairn();
         return;
       case "printer":
         // A test page: it prints, and nobody comes for it.
@@ -1970,6 +2086,12 @@ export class OfficeSim {
       }
       case "cooler":
         return { text: `WATER COOLER · ${tap} FOR A CHAT`, rect: null };
+      case "cairn": {
+        const c = this.cairn;
+        if (this.cairnFalling || this.t - c.fallAt < CAIRN_FALL) return { text: `CAIRN · ${this.t - c.fallAt < CAIRN_FALL ? "TOPPLED!" : "WOBBLING..."} · BEST ${c.best}`, rect: null };
+        if (this.t - c.swayAt < CAIRN_SWAY) return { text: `CAIRN · WOBBLING... · ${c.stones} STONES`, rect: null };
+        return { text: `CAIRN · ${c.stones} STONES · BEST ${c.best} · ${tap} TO ADD ONE`, rect: null };
+      }
       case "printer":
         return { text: this.printing ? "PRINTER · PRINTING..." : "PRINTER · NEW NOTES PRINT HERE", rect: null };
       case "plant":

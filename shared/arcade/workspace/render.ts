@@ -12,9 +12,9 @@ import { INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel
 import type { Model } from "../pixel/models";
 import { rgb } from "../pixel/terrain";
 import { CONTRACTOR, type OfficeCard } from "./data";
-import { COL_HEAD, type Desk, type Rect } from "./layout";
-import { buildDesk, buildPerson, BIN, CAT, CAT_ASLEEP, CHAIR, COFFEE, COOLER, deskKey, PLANTER_BUSH, PLANTER_TALL, PRINTER, ROBOT } from "./models";
-import { cleanerLook, CLOCK_ZOOM, lookKey, PARTY_FRAMES, PRINT_FRAMES, type Janitor, type OfficeSim, type Robot, type Worker } from "./sim";
+import { CAIRN_TRAY, COL_HEAD, type Desk, type Rect } from "./layout";
+import { buildDesk, buildPerson, BIN, CAT, CAT_ASLEEP, CHAIR, COFFEE, COOLER, deskKey, PLANTER_BONSAI, PLANTER_BUSH, PLANTER_TALL, PRINTER, ROBOT } from "./models";
+import { CAIRN_FALL, CAIRN_SWAY, cairnHeight, cairnStone, planterKind, cleanerLook, CLOCK_ZOOM, lookKey, PARTY_FRAMES, PRINT_FRAMES, type Janitor, type OfficeSim, type Robot, type Worker } from "./sim";
 
 const BG = "#10131c";
 const WALL = "#3a4258";
@@ -47,6 +47,9 @@ const hashId = (s: string) => {
 type Drawable = { y: number; draw: () => void };
 /** The flip clock's width on the wall. */
 const WALL_FLIP = 30;
+/** Footer ticker: frames held at each end, and pixels slid per frame. */
+const TICKER_HOLD = 90;
+const TICKER_SPEED = 0.5;
 
 export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter<Img, Frame> {
   private readonly sim: OfficeSim;
@@ -223,6 +226,8 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
 
   /** The minute the flip clock last showed, and when its cards started turning. */
   private flip: { from: string; to: string; t0: number } | null = null;
+  /** The footer ticker: which text is scrolling and since when. */
+  private ticker = { text: "", t0: 0 };
 
   /**
    * The big pixel clock: analogue or digital, the date under it, tap anywhere to close.
@@ -330,6 +335,89 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
   }
 
   /** Flip cards for HH:MM: lighter top halves, a split line and hinges, each card on its own shadow. */
+  /**
+   * The office cairn at its base (x, y): stones from wide to small, a sway after each stone past five
+   * that grows into a fall or dies away, and the fallen stones scattered round it for a while.
+   */
+  private drawCairn(x: number, y: number): void {
+    const sim = this.sim;
+    const c = sim.cairn;
+    const swayAge = sim.t - c.swayAt;
+    const fallAge = sim.t - c.fallAt;
+    // Sway: grows when it is going to fall, dies away when it settles. Reduce Motion keeps it still.
+    let amp = 0;
+    if (!sim.calm && swayAge < CAIRN_SWAY) amp = c.falls ? 0.6 + 2.4 * (swayAge / CAIRN_SWAY) : 1.6 * (1 - swayAge / CAIRN_SWAY);
+    const lean = amp * Math.sin(swayAge / 4);
+    // Just placed: the new top stone drops the last pixel or two.
+    const settle = sim.t - c.placedAt < 6 ? Math.round((6 - (sim.t - c.placedAt)) / 3) : 0;
+    this.drawSandGarden(x, y);
+    this.rect(x - 8, y - 1, 16, 2, INK, 0.18);
+    let top = y;
+    for (let i = 0; i < c.stones; i++) {
+      const s = cairnStone(i);
+      const up = c.stones > 1 ? i / (c.stones - 1) : 0;
+      const sx = Math.round(x + s.dx + lean * up * up - s.w / 2);
+      const sy = top - s.h - (i === c.stones - 1 ? settle : 0);
+      this.stone(sx, sy, s.w, s.h, s.color);
+      top -= s.h;
+    }
+    // Fallen stones: they tumble out in short arcs, lie a while, then fade as someone tidies them away.
+    if (fallAge < CAIRN_FALL) {
+      let h = cairnHeight(c.stones);
+      for (let j = 0; j < c.fallen; j++) {
+        const s = cairnStone(c.stones + j);
+        const side = j % 2 ? 1 : -1;
+        const tx = x + side * (9 + ((j * 7) % 13)) + (c.stones + j) % 3;
+        const ty = y + 2 + ((j * 5) % 5);
+        const f = sim.calm ? 1 : Math.min(1, fallAge / (14 + j * 2));
+        const fromY = y - h - s.h;
+        const arc = Math.sin(f * Math.PI) * (5 + j);
+        const px = Math.round(x + (tx - x) * f - s.w / 2);
+        const py = Math.round(fromY + (ty - fromY) * f - arc);
+        const fade = fallAge > CAIRN_FALL - 30 ? (CAIRN_FALL - fallAge) / 30 : 1;
+        this.stone(px, py - s.h + 2, s.w, s.h, s.color, fade);
+        h += s.h;
+      }
+    }
+  }
+
+  /**
+   * The cairn's Japanese sand garden: a low wooden frame round raked sand, straight rake lines with
+   * rings raked round the cairn's base, and a mossy rock in the corner.
+   */
+  private drawSandGarden(x: number, y: number): void {
+    const T = CAIRN_TRAY;
+    const top = y - 7, bottom = y + 5;
+    this.rect(x - T + 1, top + 1, T * 2, bottom - top, INK, 0.3);
+    this.rect(x - T, top, T * 2 + 1, bottom - top + 1, "#5c3f28");
+    this.rect(x - T, top, T * 2 + 1, 1, "#8a6644");
+    const SAND = "#d8cba6", RAKE = "#bfb08a";
+    this.rect(x - T + 1, top + 1, T * 2 - 1, bottom - top - 1, SAND);
+    // Rows of rake lines, broken round the base by concentric rings.
+    for (let yy = top + 2; yy < bottom; yy++) {
+      for (let xx = x - T + 1; xx < x + T; xx++) {
+        const d = Math.hypot((xx - x) / 1.9, yy - (y - 1));
+        const line = d < 6.4 ? Math.abs(d - 4.2) < 0.55 || Math.abs(d - 6) < 0.45 : (yy - top) % 2 === 0;
+        if (line) this.rect(xx, yy, 1, 1, RAKE);
+      }
+    }
+    // A mossy rock in the far corner.
+    const rx = x + T - 6, ry = top + 2;
+    this.rect(rx, ry + 1, 4, 2, "#6f6c68");
+    this.rect(rx + 1, ry, 2, 1, "#8b8780");
+    this.rect(rx, ry, 2, 1, "#6f8a4a");
+  }
+
+  /** One flat stone: a lit top edge and a dark underside, corners rounded off. */
+  private stone(x: number, y: number, w: number, h: number, color: string, alpha = 1): void {
+    const dark = lerpHex(color, "#1a1a1a", 0.45);
+    this.rect(x + 1, y, w - 2, h, dark, alpha);
+    this.rect(x, y + 1, w, h - 2, dark, alpha);
+    this.rect(x + 1, y + 1, w - 2, h - 2, color, alpha);
+    // Lit from the top left, like the room.
+    this.rect(x + 2, y + 1, Math.max(1, w - 5), 1, lerpHex(color, "#ffffff", 0.35), alpha);
+  }
+
   private drawFlipClock(cx: number, cy: number, W: number, maxH: number): void {
     const sim = this.sim;
     const time = sim.clockText;
@@ -487,11 +575,13 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       prop(this.atlas("cooler", () => COOLER), F.cooler.x, F.cooler.y);
       prop(this.atlas("bin", () => BIN), F.bin.x, F.bin.y);
       prop(this.atlas("printer", () => PRINTER), F.printer.x, F.printer.y);
-      // Planters alternate tall snake-plants and bushy pothos down the row; a touch makes one sway.
+      items.push({ y: F.cairn.y, draw: () => this.drawCairn(ox + F.cairn.x, oy + F.cairn.y) });
+      // Planters alternate tall snake-plants and bushy pothos down the row, every third a bonsai; a touch makes one sway.
       F.plants.forEach((p, i) => {
         const age = sim.t - (sim.plantTouched.get(i) ?? -999);
         const sway = age < 40 ? Math.round(Math.sin(age / 2.5) * 2 * (1 - age / 40)) : 0;
-        prop(this.atlas(i % 2 ? "planter-bush" : "planter-tall", () => (i % 2 ? PLANTER_BUSH : PLANTER_TALL)), p.x + sway, p.y);
+        const kind = planterKind(i);
+        prop(this.atlas(`planter-${kind}`, () => (kind === "bonsai" ? PLANTER_BONSAI : kind === "bush" ? PLANTER_BUSH : PLANTER_TALL)), p.x + sway, p.y);
       });
       // The robot's charging pad, bottom-left: lit while it is docked.
       if (sim.robot) {
@@ -700,6 +790,10 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       } else if (e.k === "deliver") {
         this.rect(hx - 1, hy - 2, 4, 5, "#f3eedf");
         this.rect(hx - 1, hy - 2, 4, 1, "#c9c2b2");
+      } else if (e.k === "stack" && !w.homeward && w.mode === "walk") {
+        // A stone for the cairn, on the way there.
+        this.rect(hx, hy, 4, 3, "#a39e94");
+        this.rect(hx + 1, hy, 2, 1, "#c4bfb5");
       } else if (e.k === "coffee" && w.homeward) {
         this.rect(hx, hy, 2, 3, "#f2f2f2");
         if ((sim.t >> 3) % 2) this.rect(hx + 1, hy - 2, 1, 1, "#e8ecf4", 0.6);
@@ -1125,7 +1219,8 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       const clock = sim.clockText;
       right -= textWidth(clock);
       this.text(clock, right, y, TEXT_DIM, 1, null);
-      right -= 6;
+      // The toggle keeps its place by the arrows even when there are none: the title stops before it.
+      right = Math.min(right - 6, sim.calBtn.x - 4);
     }
     const title = focused ? sim.focused!.name : "THE WORKSPACE";
     const sub = focused ? "" : ` · ${sim.data.workspace}`;
@@ -1148,8 +1243,23 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     const sim = this.sim;
     const f = sim.frame;
     const y = f.bottom.y - 8;
-    const max = Math.floor((f.bottom.rx - f.bottom.lx - 6) / 4);
+    const lx = f.bottom.lx + 3;
+    const avail = f.bottom.rx - f.bottom.lx - 6;
     const text = sim.hover?.text ?? sim.hint;
-    this.text(clip(text, max), f.bottom.lx + 3, y, sim.hover ? TEXT : TEXT_DIM, 1, null);
+    const color = sim.hover ? TEXT : TEXT_DIM;
+    const over = textWidth(text) - avail;
+    if (over <= 0) {
+      this.text(text, lx, y, color, 1, null);
+      return;
+    }
+    // Too long for the strip: a ticker that holds, slides to the end, holds, and starts over.
+    // It restarts when the text changes; Reduce Motion jumps between the two ends instead.
+    if (this.ticker.text !== text) this.ticker = { text, t0: sim.t };
+    const slide = over / TICKER_SPEED;
+    const t = (sim.t - this.ticker.t0) % (TICKER_HOLD * 2 + slide);
+    const offset = sim.calm
+      ? (t < TICKER_HOLD + slide / 2 ? 0 : over)
+      : Math.min(over, Math.max(0, (t - TICKER_HOLD) * TICKER_SPEED));
+    this.clip(lx, y - 1, avail, 7, () => this.text(text, lx - Math.round(offset), y, color, 1, null));
   }
 }

@@ -8,7 +8,7 @@ import { buildOffice } from "@cairn/shared/arcade/workspace/build";
 import { CONTRACTOR, DEMO_OFFICE, zoneForColumn, type OfficeCard, type OfficeData, type OfficeProject } from "@cairn/shared/arcade/workspace/data";
 import { BACK_GAP, DESK_DOWN, DESK_UP, FRONT_STRIP, inRect, layoutDesk, layoutFloor, pileHeight, TAG_H, WALL_H, route, routeFree, staff } from "@cairn/shared/arcade/workspace/layout";
 import { OfficeRenderer } from "@cairn/shared/arcade/workspace/render";
-import { castLooks, daylightAt, lookFor, OfficeSim, PARTY_FRAMES, seasonAt } from "@cairn/shared/arcade/workspace/sim";
+import { CAIRN_BASE, CAIRN_FALL, CAIRN_MAX, CAIRN_SWAY, castLooks, daylightAt, lookFor, OfficeSim, PARTY_FRAMES, seasonAt } from "@cairn/shared/arcade/workspace/sim";
 import { burstLabel, diffOffice, FLURRY, groupChanges } from "@cairn/shared/arcade/workspace/events";
 import { bucketWeek, dayShort, toDateKey, weekDates, withDemoDates } from "@cairn/shared/arcade/workspace/week";
 import { PLANTER_BUSH, PLANTER_TALL } from "@cairn/shared/arcade/workspace/models";
@@ -985,6 +985,26 @@ describe("office life", () => {
   const crew = () => office([project("a", [card("1", "doing", "SAM"), card("2", "doing", "KIM")]), project("b", [card("3", "doing", "ADA")])]);
   const sim = (data: OfficeData = crew(), clock = noon) => new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: data, clock, seed: 3 });
   const tap = (s: OfficeSim, x: number, y: number) => s.down(s.area.x + x, s.area.y + y);
+
+  it("keeps planters off the done board and away from the bin and printer, with windows on both sides of a phone", () => {
+    for (const w of [180, 193, 250, 480, 640, 960]) {
+      const f = layoutFloor(DEMO_OFFICE.projects, w, 300, 0, 6);
+      for (const p of f.plants) {
+        expect(p.x < f.doneBoard.x - 8 || p.x > f.doneBoard.x + f.doneBoard.w + 8).toBe(true);
+        expect(Math.abs(p.x - f.bin.x)).toBeGreaterThanOrEqual(18);
+        expect(Math.abs(p.x - f.printer.x)).toBeGreaterThanOrEqual(18);
+      }
+      // The cairn stands clear of the robot's pad (x ≤ 31) and the cooler's two talkers.
+      expect(f.cairn.x - 20).toBeGreaterThan(31);
+      expect(f.cairn.x + 9).toBeLessThan(f.cooler.x - 24);
+      // Windows never reach the flip clock's housing.
+      for (const win of f.windows) expect(win.x + win.w <= f.clock.x - 23 || win.x >= f.doneBoard.x + f.doneBoard.w).toBe(true);
+      if (w >= 193) {
+        expect(f.windows.some((win) => win.x < f.clock.x)).toBe(true);
+        expect(f.windows.some((win) => win.x > f.doneBoard.x)).toBe(true);
+      }
+    }
+  });
   const run = (s: OfficeSim, n: number, until?: () => boolean) => {
     for (let i = 0; i < n && !until?.(); i++) s.step();
   };
@@ -1002,6 +1022,35 @@ describe("office life", () => {
     s.calm = true;
     tap(s, F.coffee.x, F.coffee.y - 4);
     expect(s.cupsToday).toBe(2);
+  });
+
+  it("sends someone with a stone for the cairn; too tall, it sways and topples", () => {
+    const s = sim();
+    const F = s.floor;
+    const c = s.cairn;
+    expect(s.hit(s.area.x + F.cairn.x, s.area.y + F.cairn.y - 4)).toMatchObject({ k: "cairn" });
+    const before = c.stones;
+    tap(s, F.cairn.x, F.cairn.y - 4);
+    expect([...s.workers.values()].some((w) => w.errand?.k === "stack")).toBe(true);
+    run(s, 3000, () => c.stones > before);
+    expect(c.stones).toBe(before + 1);
+    // At the top it always falls: a sway first, then back down to the base, the best kept.
+    s.calm = true;
+    run(s, CAIRN_SWAY + CAIRN_FALL, () => !s.cairnBusy);
+    c.stones = CAIRN_MAX - 1;
+    tap(s, F.cairn.x, F.cairn.y - 4);
+    expect(c.stones).toBe(CAIRN_MAX);
+    expect(s.cairnFalling).toBe(true);
+    // Busy while it sways: another tap adds nothing.
+    tap(s, F.cairn.x, F.cairn.y - 4);
+    expect(c.stones).toBe(CAIRN_MAX);
+    run(s, CAIRN_SWAY + 2, () => c.stones === CAIRN_BASE);
+    expect(c.stones).toBe(CAIRN_BASE);
+    expect(c.fallen).toBe(CAIRN_MAX - CAIRN_BASE);
+    expect(c.best).toBe(CAIRN_MAX);
+    run(s, CAIRN_FALL + 2, () => !s.cairnBusy);
+    tap(s, F.cairn.x, F.cairn.y - 4);
+    expect(c.stones).toBe(CAIRN_BASE + 1);
   });
 
   it("gathers two people at the cooler to talk about the latest change", () => {

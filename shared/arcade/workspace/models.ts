@@ -220,6 +220,35 @@ export const PLANTER_TALL = makeModel(9, 9, 15, (x, y, z) => {
   return null;
 });
 
+/**
+ * A bonsai on a low wooden stand: a shallow glazed pot, a trunk that twists as it climbs, and flat
+ * foliage pads. Kept to 12 layers so it stands lower than the snake-plant.
+ */
+export const PLANTER_BONSAI = makeModel(9, 9, 13, (x, y, z) => {
+  // Stand: four dark legs, then a slab.
+  if (z < 2) return (x === 1 || x === 7) && (y === 2 || y === 6) ? "#3a2a1e" : null;
+  if (z === 2) return x >= 1 && x <= 7 && y >= 2 && y <= 6 ? ((x + y) % 2 ? "#6b4a30" : "#5c3f28") : null;
+  // A shallow glazed pot, wider than deep, with a pale rim.
+  if (z === 3 || z === 4) {
+    const wall = x === 2 || x === 6 || y === 3 || y === 5;
+    if (x >= 2 && x <= 6 && y >= 3 && y <= 5 && wall) return z === 4 ? "#8aa0bd" : "#4f6380";
+    if (z === 4 && x >= 3 && x <= 5 && y === 4) return "#6f8a4a"; // moss
+    return null;
+  }
+  // The trunk climbs and twists: left, then across to the right, then back to the crown.
+  const trunk: Record<number, number> = { 5: 4, 6: 3, 7: 3, 8: 4, 9: 5, 10: 5, 11: 4 };
+  if (trunk[z] !== undefined && x === trunk[z] && y === 4) return z % 2 ? "#7a5a3e" : "#5e4530";
+  // Branches out to the pads.
+  if (z === 6 && y === 4 && (x === 2 || x === 1)) return "#5e4530";
+  if (z === 9 && y === 4 && (x === 6 || x === 7)) return "#5e4530";
+  // Flat cloud pads: low left, middle right, crown on top, each a light top over a dark underside.
+  const pad = (cx: number, pz: number, r: number) => (z === pz || z === pz + 1) && Math.hypot(x - cx, (y - 4) * 1.3) <= r;
+  for (const [cx, pz, r] of [[1.3, 7, 1.5], [7, 10, 1.5], [4, 12, 2]] as const) {
+    if (pad(cx, pz, r)) return z === pz ? "#2f6a32" : (x + y) % 3 === 0 ? "#9bd075" : "#4f9a46";
+  }
+  return null;
+});
+
 /** A low planter with a bushy pothos mound spilling over the rim. */
 export const PLANTER_BUSH = makeModel(9, 9, 10, (x, y, z) => {
   if (z < 4) {
