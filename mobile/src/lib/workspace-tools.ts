@@ -10,7 +10,7 @@ import { CARTRIDGES, type ArcadeGameId } from "@cairn/shared/arcade/menu";
 
 /** Where the Workspace tab sends you, and what the pinned accessory can show. */
 type BaseToolId = "today" | "people" | "graph" | "usage" | "sync";
-/** The arcade and its games join the tools once the arcade is unlocked. */
+/** The arcade and its cartridges (the office among them) join the tools once the arcade is unlocked. */
 export type ToolId = BaseToolId | "arcade" | ArcadeGameId;
 
 export interface WorkspaceTool {
@@ -24,7 +24,7 @@ export interface WorkspaceTool {
 const titleCase = (s: string) => s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
 const sentenceCase = (s: string) => (s.charAt(0) + s.slice(1).toLowerCase()).replace(/\b3d\b/g, "3D");
 
-/** The arcade picker, then every game, in menu order. */
+/** The arcade picker, then every cartridge in menu order (the office mirror first). */
 export const ARCADE_TOOLS: ToolId[] = ["arcade", ...CARTRIDGES.map((c) => c.id)];
 type ToolSymbol = "sun.max" | "person.2" | "point.3.connected.trianglepath.dotted" | "chart.bar" | "arrow.triangle.2.circlepath" | "gamecontroller";
 
@@ -34,9 +34,11 @@ export const isArcadeTool = (id: ToolId): boolean => ARCADE_TOOLS.includes(id);
 
 export const WORKSPACE_TOOLS: Record<ToolId, WorkspaceTool> = {
   arcade: { id: "arcade", title: "Arcade", href: "/arcade" as Href, blurb: "Your workspace as pixel games" },
+  office: { id: "office", title: "Office", href: "/office" as Href, blurb: "Your workspace as a pixel office" },
   ...(Object.fromEntries(
-    CARTRIDGES.map((c) => [c.id, { id: c.id, title: titleCase(c.name), href: `/${c.id}` as Href, blurb: sentenceCase(c.blurb) }]),
-  ) as Record<ArcadeGameId, WorkspaceTool>),
+    // The office has its own entry below, with its own name.
+    CARTRIDGES.filter((c) => c.id !== "office").map((c) => [c.id, { id: c.id, title: titleCase(c.name), href: `/${c.id}` as Href, blurb: sentenceCase(c.blurb) }]),
+  ) as Record<Exclude<ArcadeGameId, "office">, WorkspaceTool>),
   today: { id: "today", title: "Today", href: "/workspace/today" as Href, blurb: "What needs you today" },
   people: { id: "people", title: "People", href: "/workspace/people" as Href, blurb: "Who you work with, and their teams" },
   graph: { id: "graph", title: "Knowledge graph", href: "/workspace/graph" as Href, blurb: "Projects, notes and tasks as a map" },

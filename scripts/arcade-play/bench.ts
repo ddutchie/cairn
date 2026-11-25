@@ -18,6 +18,8 @@ import { PowderRunSim } from "@cairn/shared/arcade/powder-run/sim";
 import { PowderRunRenderer } from "@cairn/shared/arcade/powder-run/render";
 import { AnglerSim } from "@cairn/shared/arcade/angler/sim";
 import { AnglerRenderer } from "@cairn/shared/arcade/angler/render";
+import { OfficeSim } from "@cairn/shared/arcade/workspace/sim";
+import { OfficeRenderer } from "@cairn/shared/arcade/workspace/render";
 import { BasecampSim } from "@cairn/shared/arcade/basecamp/sim";
 import { BasecampRenderer } from "@cairn/shared/arcade/basecamp/render";
 import { WayfinderSim } from "@cairn/shared/arcade/wayfinder/sim";
@@ -28,6 +30,7 @@ const GAMES: Record<string, [any, any]> = {
   tideglass: [TideglassSim, TideglassRenderer],
   "powder-run": [PowderRunSim, PowderRunRenderer],
   angler: [AnglerSim, AnglerRenderer],
+  workspace: [OfficeSim, OfficeRenderer],
   basecamp: [BasecampSim, BasecampRenderer],
   wayfinder: [WayfinderSim, WayfinderRenderer],
 };

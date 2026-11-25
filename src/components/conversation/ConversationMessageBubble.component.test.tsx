@@ -75,3 +75,13 @@ describe("ConversationMessageBubble live turn", () => {
     expect(screen.getByText("Streaming reply, more")).toBeInTheDocument();
   });
 });
+
+describe("ConversationMessageBubble theme hooks", () => {
+  it("marks the agent's avatar so a theme can swap it, and not the user's", () => {
+    const agent = renderBubble(base);
+    expect(agent.container.querySelector('[data-avatar="bot"] svg')).not.toBeNull();
+    agent.unmount();
+    const user = renderBubble({ ...base, role: "user" });
+    expect(user.container.querySelector('[data-avatar="bot"]')).toBeNull();
+  });
+});

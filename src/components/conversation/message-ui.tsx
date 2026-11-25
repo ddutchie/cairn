@@ -32,6 +32,8 @@ export function MessageAvatar({ role, size = "md", className }: MessageAvatarPro
 
   return (
     <div
+      // A styling hook: the pixel chat theme swaps the agent's icon for the office robot.
+      data-avatar={role === "assistant" || role === "bot" ? "bot" : role}
       className={cn(
         "rounded-full flex items-center justify-center flex-shrink-0 mt-0.5",
         sizeClasses[size],

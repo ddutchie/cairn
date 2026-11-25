@@ -78,6 +78,22 @@ export class ArcadeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     this.rect(rx, ry, rw, rh, "#0c1428");
     this.clip(rx, ry, rw, rh, () => {
       switch (c.id) {
+        case "office": {
+          // A desk with its monitor on, a paper pile, and somebody's chair.
+          this.rect(rx, ry, rw, rh, "#80613f");
+          for (let y = ry + 6; y < ry + rh; y += 7) this.rect(rx, y, rw, 1, "#6c5034");
+          this.rect(rx, ry, rw, 9, "#3a4258");
+          this.rect(rx + 5, ry + 2, 9, 5, "#8fd0ff");
+          this.rect(cx - 15, cy, 30, 8, "#a87a4c");
+          this.rect(cx - 15, cy + 8, 30, 2, "#2ec4b6");
+          this.rect(cx - 12, cy - 4, 6, 8, "#f3eedf");
+          this.rect(cx - 5, cy - 8, 10, 8, "#252a38");
+          this.rect(cx - 4, cy - 7, 8, 6, (t >> 4) % 5 === 0 ? "#6cc8f0" : "#8fe0ff");
+          this.rect(cx - 4, cy + 7 + ((t >> 5) & 1), 8, 4, "#c45aa8");
+          this.rect(cx - 3, cy + 4 + ((t >> 5) & 1), 6, 4, "#f2d06b");
+          this.rect(cx - 5, cy + 11, 10, 5, "#3a3f55");
+          break;
+        }
         case "task-force": {
           this.rect(rx, ry, rw, rh, BIOMES.tropic.water[0]);
           const iy = ry + ((t * 0.4) % (rh + 12)) - 8;

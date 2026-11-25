@@ -5,7 +5,7 @@
  * sidebar unlock it; all game logic & pixel rendering live in @cairn/shared/arcade.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, EyeOff } from "lucide-react";
 import { ArcadeMenu, CARTRIDGES } from "@cairn/shared/arcade/menu";
 import { ArcadeRenderer } from "@cairn/shared/arcade/menu-render";
@@ -34,7 +34,9 @@ import { useCairnStore } from "@/store";
 import { IconButton } from "@/components/ui/icon-button";
 import { ViewToolbar } from "@/components/ui/view-toolbar";
 import { Tooltip } from "@/components/ui/tooltip";
+import { PreviewPane } from "@/components/chat/PreviewPane";
 import { buildArcadeData } from "./data";
+import { makeOfficeFactory } from "./office";
 import type { ArcadeGameId, GameFactory } from "./game";
 import { createCanvasBackend } from "./pixel/canvas-backend";
 import { loadBest, PixelScreen } from "./PixelScreen";
@@ -215,7 +217,8 @@ const createAngler: GameFactory = ({ canvas, width, height, data, best }) => {
   };
 };
 
-const GAMES: Record<ArcadeGameId, GameFactory> = {
+/** Every cartridge but the office, whose factory needs this view's callbacks. */
+const GAMES: Record<Exclude<ArcadeGameId, "office">, GameFactory> = {
   "task-force": createTaskForce,
   stacker: createStacker,
   breakout: createBreakout,
@@ -274,9 +277,25 @@ function makeMenuFactory(onPick: (id: ArcadeGameId) => void, onSelect: (id: Arca
 
 export function ArcadeView() {
   const [game, setGame] = useState<ArcadeGameId | null>(null);
-  const [menuSel, setMenuSel] = useState<ArcadeGameId>("task-force");
+  const [menuSel, setMenuSel] = useState<ArcadeGameId>("office");
   const setArcadeUnlocked = useCairnStore((s) => s.setArcadeUnlocked);
   const setView = useCairnStore((s) => s.setView);
+  const setActivePreviewItem = useCairnStore((s) => s.setActivePreviewItem);
+  // The office opens tasks and notes beside itself, in the same preview pane chat uses.
+  const preview = useCairnStore((s) => s.activePreviewItem ?? s.activeContextPanel);
+  const centred = useCairnStore((s) => s.sessionPresentation === "center");
+  const office = useMemo(() => makeOfficeFactory((ref) => setActivePreviewItem({ type: ref.type, id: ref.id }), () => setView("agent")), [setActivePreviewItem, setView]);
+  // Chat takes the office's pixel style while the office is on screen.
+  const setOfficeOpen = useCairnStore((s) => s.setOfficeOpen);
+  useEffect(() => {
+    if (game !== "office") return;
+    setOfficeOpen(true);
+    return () => setOfficeOpen(false);
+  }, [game, setOfficeOpen]);
+  const leave = () => {
+    if (game === "office") setActivePreviewItem(null);
+    setGame(null);
+  };
 
   // Read the workspace when a game starts, not on every store change, so a
   // background sync never restarts a run.
@@ -294,7 +313,7 @@ export function ArcadeView() {
   }, [game]);
 
   const menu = useMemo(() => makeMenuFactory((id) => setGame(id), (id) => setMenuSel(id)), []);
-  const title = game ? CARTRIDGES.find((c) => c.id === game)?.name : undefined;
+  const title = game === "office" ? "The Workspace" : game ? CARTRIDGES.find((c) => c.id === game)?.name : undefined;
 
   return (
     <div className="flex flex-col flex-1 min-h-0 min-w-0">
@@ -302,14 +321,20 @@ export function ArcadeView() {
         title={
           <span className="flex items-center gap-1.5">
             {game && (
-              <IconButton label="Back to the arcade" onClick={() => setGame(null)} className="size-auto p-1">
+              <IconButton label="Back to the arcade" onClick={leave} className="size-auto p-1">
                 <ArrowLeft size={13} />
               </IconButton>
             )}
             {title ? `Arcade · ${title}` : "Arcade"}
           </span>
         }
-        description={data.demo ? "Playing with a demo workspace (yours is a bit empty)" : "Your workspace, as games. Nothing here changes it."}
+        description={
+          game === "office"
+            ? "Your workspace as an office. Click a desk for its board and notes, and a card or note to open it."
+            : data.demo
+              ? "Playing with a demo workspace (yours is a bit empty)"
+              : "Your workspace, as games. Nothing here changes it."
+        }
         actions={
           <>
             <span className="text-2xs text-[var(--text-tertiary)]">{game ? "Esc for the menu" : "Pick a game"}</span>
@@ -328,8 +353,13 @@ export function ArcadeView() {
           </>
         }
       />
-      {game ? (
-        <PixelScreen key={game} id={game} factory={GAMES[game]} data={data} onExit={() => setGame(null)} />
+      {game === "office" ? (
+        <div className="flex flex-1 min-h-0 min-w-0">
+          <PixelScreen key="office" id="office" factory={office} data={data} onExit={leave} />
+          {preview && !centred && <PreviewPane />}
+        </div>
+      ) : game ? (
+        <PixelScreen key={game} id={game} factory={GAMES[game]} data={data} onExit={leave} />
       ) : (
         <>
           <div role="listbox" aria-label="Arcade games" className="sr-only">

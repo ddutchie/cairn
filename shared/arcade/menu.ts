@@ -1,12 +1,14 @@
 /**
  * The Cairn Arcade: pixel cartridge picker shared across mobile and desktop.
- * Five cartridges in a centred column, clear of iPhone Duo side rails and safe
+ * The cartridges in a centred column, a page at a time, clear of iPhone Duo side rails and safe
  * areas, with keyboard (Arrows + Enter) and pointer hover selection on desktop.
  */
 
 import { NO_HUD, type InputMode, type PixelHud } from "./pixel/hud";
 
 export type ArcadeGameId =
+  /** The Workspace: the idle office, not a game with a score. Its id matches the phone's /office route. */
+  | "office"
   | "task-force"
   | "wayfinder"
   | "inbox-zero"
@@ -38,6 +40,7 @@ const GAP = 6;
 const BLINK = 14;
 
 export const CARTRIDGES: Omit<Cartridge, "best" | "x" | "y" | "w" | "h">[] = [
+  { id: "office", name: "THE WORKSPACE", title: "THE WORKSPACE", blurb: "YOUR WORKSPACE AS AN OFFICE", accent: "#ffe066", bestKey: "office_best" },
   { id: "task-force", name: "TASK FORCE", title: "TASK FORCE", blurb: "SHOOT DOWN YOUR BACKLOG", accent: "#2ec4b6", bestKey: "taskforce_best" },
   { id: "wayfinder", name: "WAYFINDER", title: "WAYFINDER", blurb: "SAIL YOUR NOTES", accent: "#47a3e6", bestKey: "wayfinder_best" },
   { id: "inbox-zero", name: "INBOX ZERO", title: "INBOX ZERO", blurb: "DEFEND YOUR BOARD", accent: "#7cc46a", bestKey: "inboxzero_best" },

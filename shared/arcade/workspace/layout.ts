@@ -1,0 +1,542 @@
+/**
+ * Where everything in the office goes. Pure and deterministic, so the sim can
+ * hit-test exactly what the renderer draws.
+ *
+ * The office is one room for the whole workspace, seen from above at a slant
+ * (voxel models stack upward on screen). The back wall carries the windows,
+ * the clock and the "done this week" board; each project gets a desk on the
+ * floor, its paper pile as tall as its open tasks and its book pile as tall as
+ * its notes. Clicking a desk opens that project: its board, or its notes.
+ */
+
+import type { OfficeCard, OfficeProject } from "./data";
+import { CONTRACTOR } from "./data";
+
+export interface Pt {
+  x: number;
+  y: number;
+}
+
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** What a click opens. */
+export interface Ref {
+  type: "task" | "note";
+  id: string;
+}
+
+export const inRect = (r: Rect, x: number, y: number, pad = 0) => x >= r.x - pad && x < r.x + r.w + pad && y >= r.y - pad && y < r.y + r.h + pad;
+
+// ── The floor ──────────────────────────────────────────────────────────
+
+/** Back wall height (windows, clock, done board). */
+export const WALL_H = 34;
+export const CELL_W = 68;
+/**
+ * A desk's reach above and below its centre at k=1 (model scale 2): the tallest
+ * pile above, the chair and name tag below. The tag is text, so it doesn't scale.
+ */
+export const DESK_UP = 34;
+export const DESK_DOWN = 22;
+export const TAG_H = 9;
+export const deskHeight = (k: number) => Math.round((DESK_UP + DESK_DOWN) * k) + TAG_H;
+/** Floor kept clear of desks under the back wall's props. */
+export const BACK_GAP = 8;
+/** Floor kept clear along the front for the planters and the robot's pad. */
+export const FRONT_STRIP = 44;
+/** Desk footprint on screen (voxel model at k=2). */
+export const DESK_PX_W = 40;
+export const DESK_PX_D = 18;
+
+export interface Desk {
+  project: OfficeProject;
+  /** Index into the office's projects. */
+  index: number;
+  /** Ground centre of the desk. */
+  cx: number;
+  cy: number;
+  /** Click area: the desk, its piles and the name tag under it. */
+  hit: Rect;
+  /** Where its main worker sits (in front of the desk, facing it). */
+  seat: Pt;
+  /** Where a second worker stands, beside the desk. */
+  side: Pt;
+  /** Walkway row below this desk row. */
+  aisleY: number;
+  /** Walkway column left of this desk. */
+  laneX: number;
+  /** Who sits here (null: nobody in progress), and who stands beside. */
+  holder: string | null;
+  visitor: string | null;
+  /** Pile heights in voxels, from the counts. */
+  paper: number;
+  books: number;
+}
+
+export interface FloorLayout {
+  w: number;
+  h: number;
+  /** Model scale: 2 normally, 3 when few desks leave room to show them larger. */
+  zoom: number;
+  desks: Desk[];
+  page: number;
+  pageCount: number;
+  /** Desks a full page holds (the last page may hold fewer). */
+  perPage: number;
+  wall: Rect;
+  doneBoard: Rect;
+  /** The wall clock, hung above the bin. */
+  clock: Pt;
+  windows: Rect[];
+  coffee: Pt;
+  cooler: Pt;
+  /** The paper bin: tossed balls score in it, misses land on the floor for the robot. */
+  bin: Pt;
+  /** The printer, right of the done board: new notes print here. */
+  printer: Pt;
+  /** The office cairn: a stack of stones on the front strip, between the robot's pad and the cooler. */
+  cairn: Pt;
+  /** The light switch on the back wall, left of the first window. */
+  lightSwitch: Rect;
+  /** Planters stand along the back wall, in front of the windows first. */
+  plants: Pt[];
+  /** Errand spots, each with the walkway that reaches it. */
+  spots: Spot[];
+  /** The walkway along the back wall (the printer, the planters). */
+  backWalk: { aisleY: number; laneX: number };
+}
+
+/** Half the width of the cairn's raked-sand tray. */
+export const CAIRN_TRAY = 17;
+
+export type SpotKind = "coffee" | "cooler" | "printer" | "cairn";
+
+export interface Spot {
+  kind: SpotKind;
+  /** On the front strip: reached along the strip from the walker's own lane. */
+  front?: boolean;
+  at: Pt;
+  aisleY: number;
+  laneX: number;
+}
+
+/** Voxel layers for `n` items: one per item up to 4, then one per two, capped. */
+export const pileHeight = (n: number, cap = 10): number => (n <= 0 ? 0 : Math.min(cap, n <= 4 ? n : 4 + Math.ceil((n - 4) / 2)));
+
+/**
+ * Who works where. Each person sits at the project where they hold the most
+ * cards in progress (ties: the earlier desk); a second person on the same
+ * project stands beside it. Unassigned work in progress brings the contractor.
+ */
+export function staff(projects: readonly OfficeProject[]): { holder: string | null; visitor: string | null }[] {
+  const count = new Map<string, number[]>();
+  projects.forEach((p, i) => {
+    for (const c of p.cards) {
+      if (c.zone !== "doing" || !c.assignee) continue;
+      const row = count.get(c.assignee) ?? projects.map(() => 0);
+      row[i]++;
+      count.set(c.assignee, row);
+    }
+  });
+  const out = projects.map(() => ({ holder: null as string | null, visitor: null as string | null }));
+  // Busiest people pick first so a desk goes to whoever is most on it.
+  const people = [...count.entries()].sort((a, b) => Math.max(...b[1]) - Math.max(...a[1]) || a[0].localeCompare(b[0]));
+  for (const [who, row] of people) {
+    const order = row
+      .map((n, i) => [n, i] as const)
+      .filter(([n]) => n > 0)
+      .sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+    for (const [, i] of order) {
+      if (!out[i].holder) {
+        out[i].holder = who;
+        break;
+      }
+      if (!out[i].visitor) {
+        out[i].visitor = who;
+        break;
+      }
+    }
+  }
+  projects.forEach((p, i) => {
+    if (!out[i].holder && p.cards.some((c) => c.zone === "doing" && !c.assignee)) out[i].holder = CONTRACTOR;
+  });
+  return out;
+}
+
+export function layoutFloor(projects: readonly OfficeProject[], w: number, h: number, page: number, extraPlants = 0): FloorLayout {
+  w = Math.max(160, Math.floor(w));
+  h = Math.max(150, Math.floor(h));
+  const floorTop = WALL_H + 10;
+  const left = 16;
+  const right = w - 16;
+  // Desks stand between the back wall's props and the front strip.
+  const deskTop = floorTop + BACK_GAP;
+  const room = h - FRONT_STRIP - deskTop;
+  // Bigger desks when the workspace is small enough to fit them.
+  const fit = (z: number) => {
+    const k = z / 2;
+    const maxCols = Math.max(1, Math.floor((right - left) / (CELL_W * k)));
+    const maxRows = Math.max(1, Math.floor(room / deskHeight(k)));
+    return { z, k, maxCols, maxRows, per: maxCols * maxRows };
+  };
+  const big = fit(3);
+  const g = projects.length <= big.per ? big : fit(2);
+  const { k, maxCols, maxRows } = g;
+  const perPage = g.per;
+  const pageCount = Math.max(1, Math.ceil(projects.length / perPage));
+  const pg = Math.min(Math.max(0, page), pageCount - 1);
+  const list = projects.slice(pg * perPage, (pg + 1) * perPage);
+  // As few rows as fit, spread over the floor and centred in it.
+  const n = Math.max(1, list.length);
+  const rows = Math.min(maxRows, Math.max(1, Math.ceil(n / maxCols)));
+  const cols = Math.min(maxCols, Math.ceil(n / rows));
+  const stepX = Math.floor((right - left) / cols);
+  const tall = deskHeight(k);
+  const stepY = Math.min(tall + Math.round(20 * k), Math.floor(room / rows));
+  const y0 = deskTop + Math.max(0, Math.floor((room - rows * stepY) / 2));
+  const crew = staff(projects);
+  const desks: Desk[] = list.map((p, j) => {
+    const i = pg * perPage + j;
+    const cx = left + (j % cols) * stepX + Math.floor(stepX / 2);
+    const cy = y0 + Math.floor(j / cols) * stepY + Math.max(0, Math.floor((stepY - tall) / 2)) + Math.round(DESK_UP * k);
+    const dw = DESK_PX_W * k;
+    return {
+      project: p,
+      index: i,
+      cx,
+      cy,
+      hit: { x: cx - dw / 2 - 3, y: cy - 30 * k, w: dw + 6, h: 50 * k },
+      seat: { x: cx, y: cy + Math.round(14 * k) },
+      side: { x: cx + Math.round(dw / 2 + 7 * k), y: cy + Math.round(6 * k) },
+      aisleY: cy + Math.round(26 * k),
+      laneX: cx - Math.floor(stepX / 2) + 3,
+      holder: crew[i].holder,
+      visitor: crew[i].visitor,
+      paper: pileHeight(p.cards.length),
+      books: pileHeight(p.notes.length, 8),
+    };
+  });
+  // The coffee machine and the water cooler stand in the bottom-right corner, on the front strip.
+  const coffee = { x: right - 6, y: h - 13 };
+  const cooler = { x: right - 30, y: h - 13 };
+  const firstAisle = desks.length ? desks[0].aisleY - stepY : floorTop + 6;
+  const top = { aisleY: Math.max(floorTop + 6, firstAisle), laneX: left };
+  // The done board carries DONE this week and the OVERDUE count.
+  const doneBoard = { x: Math.floor(w / 2) - 31, y: 4, w: 62, h: 28 };
+  // The paper bin stands against the wall, left of the done board; the printer right of it.
+  const bin = { x: doneBoard.x - 12, y: floorTop + 2 };
+  const printer = { x: doneBoard.x + doneBoard.w + 12, y: floorTop + 2 };
+  const clock = { x: bin.x, y: 15 };
+  const front = (x: number) => ({ x, y: h - 12 });
+  // Centred in the free strip between the robot's pad (x ≤ 31) and the cooler's two talkers.
+  const cairn = { x: Math.round((44 + cooler.x - 54) / 2), y: h - 13 };
+  const spots: Spot[] = [
+    { kind: "coffee", front: true, at: front(coffee.x - 12), aisleY: h - 12, laneX: left },
+    { kind: "cooler", front: true, at: front(cooler.x - 12), aisleY: h - 12, laneX: left },
+    { kind: "printer", at: { x: printer.x, y: printer.y + 6 }, ...top },
+    // They stand at the sand garden's edge, not on the raked sand.
+    { kind: "cairn", front: true, at: front(cairn.x - CAIRN_TRAY - 4), aisleY: h - 12, laneX: left },
+  ];
+  // Windows fill the wall either side of the clock and the done board, smaller on a narrow wall.
+  const windows: Rect[] = [];
+  const fitWindows = (from: number, to: number) => {
+    const span = to - from;
+    // A phone's wall left of the clock is only ~20px: a narrow window still fits there.
+    const ww = span >= 100 ? 30 : span >= 22 ? 22 : 16;
+    const gap = ww === 30 ? 16 : ww === 22 ? 10 : 8;
+    const n = Math.floor((span + gap) / (ww + gap));
+    let x = from + Math.floor((span - (n * ww + (n - 1) * gap)) / 2);
+    for (let i = 0; i < n; i++, x += ww + gap) windows.push({ x, y: 6, w: ww, h: 20 });
+  };
+  // Room for the clock as a small flip clock too (34px wide, hung a little left of the bin).
+  // The light switch ends at x 8, the flip clock's housing starts at clock.x - 23.
+  fitWindows(10, clock.x - 25);
+  const leftWindows = windows.length;
+  fitWindows(doneBoard.x + doneBoard.w + 6, w - 10);
+  // Planters in front of the windows (the corner plant first), then in the gaps along the wall.
+  // Never in front of the done board (a tall plant hides its numbers), and clear of the bin and printer.
+  const slots: number[] = [];
+  const free = (x: number) =>
+    x > left - 4 &&
+    x < right + 4 &&
+    (x < doneBoard.x - 8 || x > doneBoard.x + doneBoard.w + 8) &&
+    [bin.x, printer.x].every((a) => Math.abs(a - x) >= 18) &&
+    slots.every((q) => Math.abs(q - x) >= 22);
+  // Windows alternate sides, outermost first, so a few planters spread across the room.
+  const lefts = windows.slice(0, leftWindows), rights = windows.slice(leftWindows).reverse();
+  const order: Rect[] = [];
+  for (let i = 0; i < Math.max(lefts.length, rights.length); i++) {
+    if (lefts[i]) order.push(lefts[i]);
+    if (rights[i]) order.push(rights[i]);
+  }
+  for (const win of order) {
+    const x = Math.round(win.x + win.w / 2);
+    if (free(x)) slots.push(x);
+  }
+  for (let x = left; x <= right; x += 9) if (free(x)) slots.push(x);
+  const plants = slots.slice(0, 1 + Math.max(0, Math.min(6, Math.floor(extraPlants)))).map((x) => ({ x, y: floorTop - 2 }));
+  const lightSwitch = { x: 3, y: 12, w: 5, h: 8 };
+  return { w, h, zoom: g.z, desks, page: pg, pageCount, perPage, wall: { x: 0, y: 0, w, h: WALL_H }, doneBoard, clock, windows, coffee, cooler, bin, printer, cairn, lightSwitch, plants, spots, backWalk: top };
+}
+
+/**
+ * A walk from `a` to `b` along the walkways: down to the aisle below `a`'s
+ * row, over to a lane, along the lane to `b`'s aisle, across, and up.
+ */
+export function route(a: Pt, b: Pt, from: { aisleY: number; laneX: number }, to: { aisleY: number; laneX: number }): Pt[] {
+  const out: Pt[] = [];
+  const push = (x: number, y: number) => {
+    const last = out[out.length - 1] ?? a;
+    if (last.x !== x || last.y !== y) out.push({ x, y });
+  };
+  push(a.x, from.aisleY);
+  if (from.aisleY !== to.aisleY) {
+    push(from.laneX, from.aisleY);
+    push(from.laneX, to.aisleY);
+  }
+  push(b.x, to.aisleY);
+  push(b.x, b.y);
+  return out;
+}
+
+/**
+ * A walk that goes around desks instead of through them, for the robot's
+ * fetch and windup trips (workers keep the aisle routes above). Breadth-first
+ * search on a coarse grid over the room, `blocks` as inflated desk footprints,
+ * with no corner-cutting; straight when the line is clear. Returns waypoints
+ * in floor coords, ending at (or beside, when blocked) `b`.
+ */
+export function routeFree(a: Pt, b: Pt, blocks: Rect[], w: number, h: number, cell = 10): Pt[] {
+  const clear = (x: number, y: number) => !blocks.some((r) => x >= r.x - 3 && x < r.x + r.w + 3 && y >= r.y - 3 && y < r.y + r.h + 3);
+  const nx = Math.max(1, Math.ceil(w / cell)), ny = Math.max(1, Math.ceil(h / cell));
+  const gx = (x: number) => Math.max(0, Math.min(nx - 1, Math.floor(x / cell)));
+  const gy = (y: number) => Math.max(0, Math.min(ny - 1, Math.floor(y / cell)));
+  const cellBlocked = (ix: number, iy: number) => !clear(ix * cell + cell / 2, iy * cell + cell / 2);
+  // Snap a blocked endpoint to the nearest free cell (the robot tidies from beside the desk).
+  const snap = (ix: number, iy: number): [number, number] => {
+    if (!cellBlocked(ix, iy)) return [ix, iy];
+    for (let r = 1; r < 8; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const x = ix + dx, y = iy + dy;
+          if (x >= 0 && y >= 0 && x < nx && y < ny && !cellBlocked(x, y)) return [x, y];
+        }
+      }
+    }
+    return [ix, iy];
+  };
+  const [sx, sy] = snap(gx(a.x), gy(a.y));
+  const [tx, ty] = snap(gx(b.x), gy(b.y));
+  // Stop on the exact point when it is clear; otherwise stop beside it (pickup needs no contact).
+  const goal: Pt = clear(b.x, b.y) ? { x: b.x, y: b.y } : { x: tx * cell + cell / 2, y: ty * cell + cell / 2 };
+  const seesClear = (from: Pt, to: Pt): boolean => {
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    for (let d = 2; d < dist; d += 2) {
+      const f = d / dist;
+      if (!clear(from.x + (to.x - from.x) * f, from.y + (to.y - from.y) * f)) return false;
+    }
+    return true;
+  };
+  if (seesClear({ x: a.x, y: a.y }, goal)) return [{ x: Math.round(goal.x), y: Math.round(goal.y) }];
+  const key = (x: number, y: number) => y * nx + x;
+  const prev = new Map<number, number>();
+  const seen = new Set<number>([key(sx, sy)]);
+  const queue: [number, number][] = [[sx, sy]];
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  while (queue.length) {
+    const [cx, cy] = queue.shift()!;
+    if (cx === tx && cy === ty) break;
+    for (const [dx, dy] of DIRS) {
+      const x = cx + dx, y = cy + dy;
+      if (x < 0 || y < 0 || x >= nx || y >= ny || seen.has(key(x, y)) || cellBlocked(x, y)) continue;
+      // No cutting corners through a blocked cell.
+      if (dx !== 0 && dy !== 0 && (cellBlocked(cx + dx, cy) || cellBlocked(cx, cy + dy))) continue;
+      seen.add(key(x, y));
+      prev.set(key(x, y), key(cx, cy));
+      queue.push([x, y]);
+    }
+  }
+  if (!seen.has(key(tx, ty))) return [{ x: Math.round(b.x), y: Math.round(b.y) }];
+  const cells: [number, number][] = [[tx, ty]];
+  for (let k = key(tx, ty); k !== key(sx, sy); k = prev.get(k)!) cells.push([k % nx, Math.floor(k / nx)]);
+  cells.reverse();
+  // Drop waypoints on a straight, clear stretch, ending at (or beside) the goal.
+  const pts = cells.map(([ix, iy]) => ({ x: ix * cell + cell / 2, y: iy * cell + cell / 2 }));
+  const out: Pt[] = [];
+  let anchor = { x: a.x, y: a.y };
+  for (let i = 1; i <= pts.length; i++) {
+    const end = i < pts.length ? pts[i] : goal;
+    if (!seesClear(anchor, end) || i === pts.length) {
+      const p = pts[i - 1];
+      out.push({ x: Math.round(p.x), y: Math.round(p.y) });
+      anchor = p;
+    }
+  }
+  out.push({ x: Math.round(goal.x), y: Math.round(goal.y) });
+  return out;
+}
+
+// ── A desk, opened: the project's board or its notes ──────────────────
+
+export type DeskTab = "board" | "notes";
+
+export interface Sticky extends Rect {
+  card: OfficeCard;
+}
+
+export interface BoardColumnBox extends Rect {
+  name: string;
+  count: number;
+  done: boolean;
+  stickies: Sticky[];
+  /** Cards that didn't fit, shown as "+N". */
+  more: number;
+}
+
+export interface NoteRow extends Rect {
+  ref: Ref;
+  title: string;
+  pinned: boolean;
+}
+
+export interface DeskView {
+  area: Rect;
+  columns: BoardColumnBox[];
+  /** Columns past the right edge (narrow screens). */
+  hiddenColumns: number;
+  notes: NoteRow[];
+  notesPage: number;
+  notesPages: number;
+}
+
+export const STICKY_H = 12;
+export const COL_HEAD = 13;
+const COL_GAP = 5;
+export const NOTE_ROW_H = 11;
+const NOTE_COL_W = 128;
+
+export function layoutDesk(p: OfficeProject, area: Rect, notesPage: number): DeskView {
+  // Board: one column per board column (done columns show the week's count, not cards).
+  const cols = p.columns.length ? p.columns : [{ id: "", name: "OPEN", zone: "backlog" as const }];
+  const minW = 44;
+  const fits = Math.max(1, Math.min(cols.length, Math.floor((area.w + COL_GAP) / (minW + COL_GAP))));
+  const cw = Math.floor((area.w - COL_GAP * (fits - 1)) / fits);
+  const columns: BoardColumnBox[] = cols.slice(0, fits).map((c, i) => {
+    const x = area.x + i * (cw + COL_GAP);
+    const done = c.zone === "done";
+    const cards = done ? [] : p.cards.filter((k) => !c.id || k.columnId === c.id);
+    const room = Math.max(0, Math.floor((area.h - COL_HEAD - 6) / (STICKY_H + 2)));
+    const shown = cards.length > room ? Math.max(0, room - 1) : cards.length;
+    return {
+      x,
+      y: area.y,
+      w: cw,
+      h: area.h,
+      name: c.name,
+      count: done ? p.doneThisWeek : cards.length,
+      done,
+      stickies: cards.slice(0, shown).map((card, k) => ({ card, x: x + 3, y: area.y + COL_HEAD + 3 + k * (STICKY_H + 2), w: cw - 6, h: STICKY_H })),
+      more: cards.length - shown,
+    };
+  });
+  // Notes: rows in as many columns as fit, paged.
+  const ncols = Math.max(1, Math.floor((area.w + 8) / (NOTE_COL_W + 8)));
+  const nrows = Math.max(1, Math.floor((area.h - 16) / NOTE_ROW_H));
+  const per = ncols * nrows;
+  const notesPages = Math.max(1, Math.ceil(p.notes.length / per));
+  const np = Math.min(Math.max(0, notesPage), notesPages - 1);
+  const colW = Math.floor((area.w - 8 * (ncols - 1)) / ncols);
+  const notes: NoteRow[] = p.notes.slice(np * per, (np + 1) * per).map((n, i) => ({
+    x: area.x + Math.floor(i / nrows) * (colW + 8),
+    y: area.y + 4 + (i % nrows) * NOTE_ROW_H,
+    w: colW,
+    h: NOTE_ROW_H - 1,
+    ref: { type: "note", id: n.id },
+    title: n.title,
+    pinned: n.pinned,
+  }));
+  return { area, columns, hiddenColumns: cols.length - fits, notes, notesPage: np, notesPages };
+}
+
+// ── The week wall (calendar mode) ────────────────────────────────────
+
+export interface WeekPin extends Rect {
+  ref: Ref;
+  title: string;
+  accent: string;
+  priority: "low" | "medium" | "high" | "urgent";
+}
+
+export interface WeekCol {
+  key: string;
+  label: string;
+  isToday: boolean;
+  isWeekend: boolean;
+  rect: Rect;
+  head: Rect;
+  pins: WeekPin[];
+  more: number;
+}
+
+export interface WeekTray {
+  rect: Rect;
+  pins: WeekPin[];
+  more: number;
+}
+
+export interface WeekView {
+  area: Rect;
+  cols: WeekCol[];
+  tray: WeekTray;
+}
+
+export const WEEK_PIN_H = 10;
+
+/** Seven day cork boards across the top two thirds, the red overdue tray along the bottom. */
+export function layoutWeek(
+  days: { key: string; label: string; isToday: boolean; isWeekend: boolean; cards: { ref: Ref; title: string; accent: string; priority: WeekPin["priority"] }[] }[],
+  overdue: { ref: Ref; title: string; accent: string; priority: WeekPin["priority"] }[],
+  area: Rect,
+): WeekView {
+  const gap = 4;
+  const trayH = Math.max(30, Math.round(area.h * 0.24));
+  const topH = area.h - trayH - gap;
+  const cw = Math.floor((area.w - gap * 6) / 7);
+  const cols: WeekCol[] = days.map((d, i) => {
+    const x = area.x + i * (cw + gap);
+    const rect = { x, y: area.y, w: cw, h: topH };
+    const head = { x, y: area.y, w: cw, h: 11 };
+    const room = Math.max(0, Math.floor((topH - 11 - 4) / (WEEK_PIN_H + 2)));
+    const shown = d.cards.slice(0, Math.max(0, room - (d.cards.length > room ? 1 : 0)));
+    return {
+      ...d,
+      rect,
+      head,
+      pins: shown.map((c, k) => ({ ...c, x: x + 2, y: area.y + 11 + 2 + k * (WEEK_PIN_H + 2), w: cw - 4, h: WEEK_PIN_H })),
+      more: d.cards.length - shown.length,
+    };
+  });
+  const tray = { x: area.x, y: area.y + topH + gap, w: area.w, h: trayH };
+  const perRow = Math.max(1, Math.floor((tray.w - 8) / 76));
+  const rows = Math.max(1, Math.floor((tray.h - 14) / (WEEK_PIN_H + 2)));
+  const cap = Math.max(0, perRow * rows - (overdue.length > perRow * rows ? 1 : 0));
+  const shown = overdue.slice(0, cap);
+  return {
+    area,
+    cols,
+    tray: {
+      rect: tray,
+      pins: shown.map((c, k) => {
+        const r = Math.floor(k / perRow), q = k % perRow;
+        return { ...c, x: tray.x + 4 + q * 76, y: tray.y + 12 + r * (WEEK_PIN_H + 2), w: 72, h: WEEK_PIN_H };
+      }),
+      more: overdue.length - shown.length,
+    },
+  };
+}

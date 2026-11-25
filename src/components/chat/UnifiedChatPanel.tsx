@@ -26,6 +26,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     activeContextPanel,
     chatPanelResizing,
     setChatPanelResizing,
+    officeOpen,
   } = useCairnStore(useShallow((s) => ({
     activeView: s.activeView,
     sessionPresentation: s.sessionPresentation,
@@ -36,6 +37,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     activeContextPanel: s.activeContextPanel,
     chatPanelResizing: s.chatPanelResizing,
     setChatPanelResizing: s.setChatPanelResizing,
+    officeOpen: s.officeOpen,
   })));
 
   const panelRef = useRef<HTMLElement>(null);
@@ -164,6 +166,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
   return (
     <aside
       ref={panelRef}
+      data-pixel={officeOpen ? "office" : undefined}
       className={cn(
         "fixed bottom-0 z-30 flex overflow-hidden",
         // Drawer open/close always slides+fades; left/width join the transition
