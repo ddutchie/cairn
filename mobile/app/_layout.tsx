@@ -34,7 +34,7 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 SplashScreen.setOptions({ duration: 300, fade: true });
 
 /** Routes of the hidden pixel games (EmptyState's secret menu). */
-const PIXEL_GAME_ROUTES = ["arcade", "task-force", "wayfinder", "inbox-zero", "stacker", "breakout"] as const;
+const PIXEL_GAME_ROUTES = ["arcade", "task-force", "wayfinder", "inbox-zero", "stacker", "breakout", "basecamp", "tideglass", "powder-run"] as const;
 const PIXEL_GAME_OPTIONS = {
   title: "",
   // Over full screen, not fullScreenModal: a full-screen modal takes the tabs

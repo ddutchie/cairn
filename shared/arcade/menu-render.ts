@@ -3,6 +3,9 @@
  * via PixelPainter. Shared across Canvas2D and Skia.
  */
 
+import { HEARTH_MODEL, WARDEN_LIT_MODEL } from "./basecamp/models";
+import { BOARDER_MODEL } from "./powder-run/models";
+import { LIGHTHOUSE_MODEL, SHARD_MODEL } from "./tideglass/models";
 import { BRICKS, PADDLE } from "./breakout/models";
 import { CARD_MODELS, TOWER_MODELS } from "./inbox-zero/models";
 import type { ArcadeMenu, Cartridge } from "./menu";
@@ -22,6 +25,11 @@ export class ArcadeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
   private readonly brickProject: AtlasHandle<Img>;
   private readonly brickNote: AtlasHandle<Img>;
   private readonly brickCard: AtlasHandle<Img>;
+  private readonly hearth: AtlasHandle<Img>;
+  private readonly warden: AtlasHandle<Img>;
+  private readonly light: AtlasHandle<Img>;
+  private readonly shard: AtlasHandle<Img>;
+  private readonly boarder: AtlasHandle<Img>;
   private readonly stone: Img;
   private readonly terrain: Terrain;
 
@@ -36,6 +44,11 @@ export class ArcadeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     this.brickProject = this.makeAtlas(BRICKS.project);
     this.brickNote = this.makeAtlas(BRICKS.note);
     this.brickCard = this.makeAtlas(BRICKS.card);
+    this.hearth = this.makeAtlas(HEARTH_MODEL);
+    this.warden = this.makeAtlas(WARDEN_LIT_MODEL);
+    this.light = this.makeAtlas(LIGHTHOUSE_MODEL);
+    this.shard = this.makeAtlas(SHARD_MODEL);
+    this.boarder = this.makeAtlas(BOARDER_MODEL);
     const sp = buildStonePixels(34, "project", "WORK", 3);
     this.stone = this.makeImage(sp.w, sp.h, sp.pixels);
     this.terrain = new Terrain(menu.W, "tropic", 19);
@@ -101,6 +114,31 @@ export class ArcadeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
           this.px(cx + Math.sin(t * 0.11) * 9, cy + 2 + Math.cos(t * 0.13) * 4, "#fff2a0", 2);
           break;
         }
+        case "basecamp": {
+          this.rect(rx, ry, rw, rh, "#1b3326");
+          this.circle(cx - 5, cy + 2, 12, "#ffb347", 0.22);
+          this.stack(this.hearth, cx - 5, cy + 4, 0, { k: 0.85 });
+          this.stack(this.warden, cx + 10, cy + 4, -0.4 + Math.sin(t * 0.05) * 0.18, { k: 0.72 });
+          this.px(rx + 8, ry + 7 + Math.sin(t * 0.12) * 3, "#fff2a0", 2, 0.85);
+          this.px(rx + rw - 7, ry + 9 + Math.cos(t * 0.1) * 3, "#a8f4e8", 2, 0.8);
+          break;
+        }
+        case "tideglass": {
+          this.rect(rx, ry, rw, rh, "#1d2b4d");
+          this.circle(cx - 4, cy + 3, 11, "#ffe9a8", 0.2 + 0.08 * Math.sin(t * 0.1));
+          this.stack(this.light, cx - 4, cy + 5, 0, { k: 0.62 });
+          this.stack(this.shard, cx + 11, cy + 3 + Math.sin(t * 0.12) * 2, 0, { k: 0.8 });
+          this.px(rx + 7, ry + 6 + Math.sin(t * 0.14) * 2, "#8fb8ff", 2, 0.9);
+          break;
+        }
+        case "powder-run": {
+          this.rect(rx, ry, rw, rh, "#2e6fb8");
+          this.rect(rx, cy, rw, rh / 2 + 2, "#dce8f8");
+          this.rect(rx + 4, cy + 2, rw - 8, rh / 2, "#b8d0ec");
+          this.stack(this.boarder, cx + Math.sin(t * 0.08) * 7, cy + 3, Math.sin(t * 0.08) * 0.4, { k: 0.9 });
+          this.px(rx + 8, ry + 6, "#fff2a0", 2);
+          break;
+        }
       }
     });
     this.strokeRect(rx, ry, rw, rh, "#2c3658");
@@ -137,6 +175,18 @@ export class ArcadeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
         this.text(`BEST ${c.best}`, tx, c.y + Math.min(c.h - 10, 29), "#fff2a0", 1, null);
       }
     });
+
+    if (m.pageCount > 1) {
+      const pr = m.prevRect();
+      const nr = m.nextRect();
+      this.rect(pr.x, pr.y, pr.w, pr.h, "#12182b", 0.9);
+      this.strokeRect(pr.x, pr.y, pr.w, pr.h, "#5b8dd6");
+      this.textC("<", pr.x + pr.w / 2, pr.y + 4, "#fff2a0");
+      this.rect(nr.x, nr.y, nr.w, nr.h, "#12182b", 0.9);
+      this.strokeRect(nr.x, nr.y, nr.w, nr.h, "#5b8dd6");
+      this.textC(">", nr.x + nr.w / 2, nr.y + 4, "#fff2a0");
+      this.textC(`PAGE ${m.page + 1}/${m.pageCount}`, cx, m.pageY + 4, "#c7e4ff");
+    }
 
     const footerY = m.H - Math.max(10, m.hud.bottom + 6);
     const hint = m.inputMode === "pointer" ? "ARROWS + ENTER   OR CLICK A GAME" : "TAP A CARTRIDGE TO PLAY";

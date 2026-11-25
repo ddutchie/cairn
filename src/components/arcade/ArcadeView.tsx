@@ -9,6 +9,12 @@ import { useMemo, useState } from "react";
 import { ArrowLeft, EyeOff } from "lucide-react";
 import { ArcadeMenu, CARTRIDGES } from "@cairn/shared/arcade/menu";
 import { ArcadeRenderer } from "@cairn/shared/arcade/menu-render";
+import { BasecampRenderer } from "@cairn/shared/arcade/basecamp/render";
+import { BasecampSim } from "@cairn/shared/arcade/basecamp/sim";
+import { TideglassRenderer } from "@cairn/shared/arcade/tideglass/render";
+import { TideglassSim } from "@cairn/shared/arcade/tideglass/sim";
+import { PowderRunRenderer } from "@cairn/shared/arcade/powder-run/render";
+import { PowderRunSim } from "@cairn/shared/arcade/powder-run/sim";
 import { BreakoutRenderer } from "@cairn/shared/arcade/breakout/render";
 import { BreakoutSim } from "@cairn/shared/arcade/breakout/sim";
 import { InboxZeroRenderer } from "@cairn/shared/arcade/inbox-zero/render";
@@ -131,12 +137,66 @@ const createBreakout: GameFactory = ({ canvas, width, height, data, best }) => {
   };
 };
 
+const createBasecamp: GameFactory = ({ canvas, width, height, data, best }) => {
+  const sim = new BasecampSim({ width, height, hud: NO_HUD, inputMode: "pointer", best, projects: data.projects });
+  const renderer = new BasecampRenderer(createCanvasBackend(canvas), sim);
+  return {
+    update: () => sim.step(),
+    render: () => renderer.draw(),
+    down: (x, y) => sim.down(x, y),
+    move: (x, y) => sim.move(x, y),
+    up: () => sim.up(),
+    key: (code, down) => sim.setKey(code, down),
+    resize: (w, h) => renderer.resize(w, h),
+    get best() {
+      return sim.best;
+    },
+  };
+};
+
+const createTideglass: GameFactory = ({ canvas, width, height, data, best }) => {
+  const sim = new TideglassSim({ width, height, hud: NO_HUD, inputMode: "pointer", best, projects: data.projects });
+  const renderer = new TideglassRenderer(createCanvasBackend(canvas), sim);
+  return {
+    update: () => sim.step(),
+    render: () => renderer.draw(),
+    down: (x, y) => sim.down(x, y),
+    move: (x, y) => sim.move(x, y),
+    up: () => sim.up(),
+    key: (code, down) => sim.setKey(code, down),
+    resize: (w, h) => renderer.resize(w, h),
+    get best() {
+      return sim.best;
+    },
+  };
+};
+
+const createPowderRun: GameFactory = ({ canvas, width, height, data, best }) => {
+  const sim = new PowderRunSim({ width, height, hud: NO_HUD, inputMode: "pointer", best, projects: data.projects });
+  const renderer = new PowderRunRenderer(createCanvasBackend(canvas), sim);
+  return {
+    update: () => sim.step(),
+    render: () => renderer.draw(),
+    down: (x, y) => sim.down(x, y),
+    move: (x, y) => sim.move(x, y),
+    up: () => sim.up(),
+    key: (code, down) => sim.setKey(code, down),
+    resize: (w, h) => renderer.resize(w, h),
+    get best() {
+      return sim.best;
+    },
+  };
+};
+
 const GAMES: Record<ArcadeGameId, GameFactory> = {
   "task-force": createTaskForce,
   stacker: createStacker,
   breakout: createBreakout,
   wayfinder: createWayfinder,
   "inbox-zero": createInboxZero,
+  basecamp: createBasecamp,
+  tideglass: createTideglass,
+  "powder-run": createPowderRun,
 };
 
 function makeMenuFactory(onPick: (id: ArcadeGameId) => void, onSelect: (id: ArcadeGameId) => void): GameFactory {
@@ -156,12 +216,20 @@ function makeMenuFactory(onPick: (id: ArcadeGameId) => void, onSelect: (id: Arca
       up: () => {},
       key: (code, down) => {
         if (!down) return false;
-        if (code === "ArrowUp" || code === "ArrowLeft" || code === "KeyW" || code === "KeyA") {
+        if (code === "ArrowUp" || code === "KeyW") {
           menu.selectDelta(-1);
           return true;
         }
-        if (code === "ArrowDown" || code === "ArrowRight" || code === "KeyS" || code === "KeyD") {
+        if (code === "ArrowDown" || code === "KeyS") {
           menu.selectDelta(1);
+          return true;
+        }
+        if (code === "ArrowLeft" || code === "KeyA") {
+          menu.setPage(menu.page - 1);
+          return true;
+        }
+        if (code === "ArrowRight" || code === "KeyD") {
+          menu.setPage(menu.page + 1);
           return true;
         }
         if (code === "Enter" || code === "Space") {
