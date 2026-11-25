@@ -486,6 +486,10 @@ export class BasecampSim {
     this.H = height;
     if (hud) this.hud = hud;
     this.centerCamera();
+    // A drag in progress was measured in the old screen: drop it (not a tap), and the next touch starts fresh.
+    this.dragOrigin = null;
+    this.dragCurrent = null;
+    this.dragMoved = false;
   }
 
   private centerCamera(): void {

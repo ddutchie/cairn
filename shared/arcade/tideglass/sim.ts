@@ -636,6 +636,11 @@ export class TideglassSim {
     this.H = height;
     if (hud) this.hud = hud;
     this.centerCamera();
+    // Same as Basecamp: a drag measured in the old screen is dropped, not turned into a tap.
+    this.pressWorld = null;
+    this.dragOrigin = null;
+    this.dragCurrent = null;
+    this.dragMoved = false;
   }
 
   private centerCamera(): void {

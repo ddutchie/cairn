@@ -67,10 +67,14 @@ export interface BreakoutSpec {
  * reflow the surviving bricks cleanly inside the playfield so every brick
  * remains visible and hittable.
  */
-export function fitBricksToWidth(bricks: Brick[], dx: number, span: number, left = 0, by0 = 44, padY = 296): void {
+export function fitBricksToWidth(bricks: Brick[], dx: number, span: number, left = 0, by0 = 44, padY = 296, dy = 0): void {
   const minX = left + BW / 2 + 2;
   const maxX = left + span - BW / 2 - 2;
-  for (const b of bricks) b.x += dx;
+  // `dy` follows the ceiling when the HUD moves it, even when the columns still fit.
+  for (const b of bricks) {
+    b.x += dx;
+    b.y += dy;
+  }
   if (!bricks.some((b) => b.x < minX || b.x > maxX)) return;
   const cols = clamp(Math.floor((span - 8) / GAP_X), 1, MAX_COLS);
   const bx0 = left + (span - (cols - 1) * GAP_X) / 2;
@@ -146,11 +150,12 @@ export class BreakoutSim {
     if (hud) this.hud = hud;
     const oldCx = (this.left + this.right) / 2;
     const oldPadY = this.padY;
+    const oldCeiling = this.ceiling;
     this.W = width;
     this.H = height;
     this.computeMetrics();
     const dx = (this.left + this.right) / 2 - oldCx;
-    fitBricksToWidth(this.bricks, dx, this.right - this.left, this.left, this.ceiling + 26, this.padY);
+    fitBricksToWidth(this.bricks, dx, this.right - this.left, this.left, this.ceiling + 26, this.padY, this.ceiling - oldCeiling);
     this.pad.x = clamp(this.pad.x + dx, this.left + PAD_W / 2 + 2, this.right - PAD_W / 2 - 2);
     this.pad.tx = clamp(this.pad.tx + dx, this.left + PAD_W / 2 + 2, this.right - PAD_W / 2 - 2);
     if (this.ball.stuck) {

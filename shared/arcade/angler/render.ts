@@ -563,7 +563,11 @@ export class AnglerRenderer<Img = unknown, Frame = unknown> extends PixelPainter
         this.rect(f.content.lx, hy - 2, f.content.rx - f.content.lx, 9, INK, 0.45);
         this.textC(hint, f.content.cx, hy, "#ffffff", 1, null);
       }
-      if (s.spotPool.length === 0 && s.state !== "fight") this.textC("FISHED OUT HERE. TRY ANOTHER SPOT", f.content.cx, l.cy, "#fff2a0");
+      if (s.state !== "fight" && !s.spotHasFish) {
+        // Another pond with fish: go there. None anywhere: the only way to get fish back is to let one go.
+        const text = s.pool.length ? "FISHED OUT HERE. TRY ANOTHER SPOT" : s.tank.length ? "ALL FISHED OUT. LET ONE GO IN THE TANK" : "ALL FISHED OUT";
+        this.textC(text, f.content.cx, l.cy, "#fff2a0");
+      }
     }
     if (s.msg) {
       const al = clamp((90 - s.msg.t) / 20, 0, 1);

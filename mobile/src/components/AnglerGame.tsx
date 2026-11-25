@@ -18,11 +18,13 @@ function loadTank(): AnglerSave | null {
   }
 }
 
-function saveTank(save: AnglerSave): void {
+function saveTank(save: AnglerSave): boolean {
   try {
     setMeta(TANK_KEY, JSON.stringify(save));
+    return true;
   } catch {
-    // Not saved; the tank still holds for this visit.
+    // Not saved: the sim keeps the change and tries again shortly.
+    return false;
   }
 }
 
@@ -43,10 +45,7 @@ function createAngler({ width, height, hud, best }: PixelGameSpec): PixelGame<An
     },
     step: () => {
       sim.step();
-      if (sim.tankDirty) {
-        sim.tankDirty = false;
-        saveTank(sim.snapshot());
-      }
+      sim.persist(saveTank);
     },
     draw: () => renderer.draw(),
     resize: (w, h, hud) => renderer.resize(w, h, hud),

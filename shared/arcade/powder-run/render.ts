@@ -379,7 +379,7 @@ export class PowderRunRenderer<Img = unknown, Frame = unknown> extends PixelPain
       const ok = s.trickT > 0.85;
       this.rect(x0, y0, Math.round(w * s.trickT), 3, ok ? "#8dff9a" : "#ff9e7a");
       this.textC(def.name, f.content.cx, y0 + 6, ok ? "#8dff9a" : "#ffffff");
-    } else if (s.rider.air && !s.held.length) {
+    } else if (s.rider.air && !s.held.length && !s.heldGems) {
       const hint = s.inputMode === "pointer" ? "ARROWS: SPIN / FLIP / GRAB" : "SWIPE: SPIN / FLIP / GRAB";
       this.textC(hint, f.content.cx, by, "#c7e4ff");
     }

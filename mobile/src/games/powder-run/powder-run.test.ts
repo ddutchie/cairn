@@ -53,6 +53,28 @@ describe("PowderRunSim", () => {
     expect(sim.hearts).toBe(3);
   });
 
+  it("counts air gems toward the grade only once a clean landing banks them", () => {
+    const sim = new PowderRunSim({ width: 220, height: 320, hud: NO_HUD, inputMode: "pointer", projects: DEMO_ARCADE_PROJECTS });
+    sim.down(110, 160);
+    for (let i = 0; i < 90; i++) sim.step();
+    sim.items = [];
+    const before = sim.collected;
+    // Bailed: the held gem is lost, from the score and the grade.
+    sim.triggerAirTrick();
+    sim.triggerAirTrick("flip");
+    sim.heldGems = 100;
+    sim.heldCount = 1;
+    for (let i = 0; i < 60 && sim.rider.air; i++) sim.step();
+    expect(sim.collected).toBe(before);
+    // Landed clean: it counts.
+    sim.rider.inv = 0;
+    sim.triggerAirTrick();
+    sim.heldGems = 100;
+    sim.heldCount = 1;
+    for (let i = 0; i < 60 && sim.rider.air; i++) sim.step();
+    expect(sim.collected).toBe(before + 1);
+  });
+
   it("grades a run from collection, time and bails", () => {
     expect(gradeRun(10, 10, 0)).toBe("S");
     expect(gradeRun(8, 10, 1)).toBe("A");

@@ -21,6 +21,18 @@ describe("breakout", () => {
     }
   });
 
+  it("moves the live bricks down when the HUD lowers the ceiling", () => {
+    const sim = started(180);
+    sim.bricks.splice(0, 3);
+    const ys = sim.bricks.map((b) => b.y);
+    sim.resize(180, 320, { ...NO_HUD, top: 40 });
+    expect(sim.bricks).toHaveLength(ys.length);
+    sim.bricks.forEach((b, i) => expect(b.y).toBe(ys[i] + 40));
+    // Same HUD again: nothing moves.
+    sim.resize(180, 320, { ...NO_HUD, top: 40 });
+    sim.bricks.forEach((b, i) => expect(b.y).toBe(ys[i] + 40));
+  });
+
   it("keeps the ball out of the side rail", () => {
     const sim = new BreakoutSim({ width: 240, height: 320, hud: { ...NO_HUD, right: 30 }, rand: mulberry32(2) });
     expect(sim.right).toBe(210);

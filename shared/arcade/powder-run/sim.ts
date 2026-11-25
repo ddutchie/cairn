@@ -170,6 +170,8 @@ export class PowderRunSim {
   heldPts = 0;
   /** Gems taken in the air: held with the tricks, banked on a clean landing. */
   heldGems = 0;
+  /** Gems picked up in the air this jump: they count toward the grade only once a clean landing banks them. */
+  heldCount = 0;
   /** Clean landings in a row; multiplies what each landing banks. */
   chain = 0;
   bestChain = 0;
@@ -225,6 +227,7 @@ export class PowderRunSim {
     this.held = [];
     this.heldPts = 0;
     this.heldGems = 0;
+    this.heldCount = 0;
     this.chain = 0;
     this.bestChain = 0;
     this.collected = 0;
@@ -562,6 +565,7 @@ export class PowderRunSim {
       this.chain++;
       this.bestChain = Math.max(this.bestChain, this.chain);
       const pts = (this.heldPts + this.heldGems) * Math.min(MAX_CHAIN, this.chain);
+      this.collected += this.heldCount;
       this.addScore(pts);
       r.vy = clamp(r.vy + 0.3 * this.held.length, MIN_SPEED, MAX_SPEED);
       this.events.push("land");
@@ -573,6 +577,7 @@ export class PowderRunSim {
     this.held = [];
     this.heldPts = 0;
     this.heldGems = 0;
+    this.heldCount = 0;
     r.yaw = 0;
     r.pitch = 0;
   }
@@ -584,6 +589,7 @@ export class PowderRunSim {
     this.held = [];
     this.heldPts = 0;
     this.heldGems = 0;
+    this.heldCount = 0;
     this.trick = null;
     r.vy = Math.max(MIN_SPEED, r.vy * 0.5);
     r.vx *= 0.3;
@@ -621,18 +627,20 @@ export class PowderRunSim {
       }
       // Notes float high: only a jump reaches them.
       const note = it.kind === "note";
-      if (note && !r.air) continue;
+      // Notes and the high (and urgent) tasks sit up the wall: only a jump reaches them.
+      if ((note || it.pr === "high" || it.pr === "urgent") && !r.air) continue;
       const lift = note ? NOTE_LIFT : TASK_LIFT[it.pr];
       if (Math.abs(r.z - (iz + lift)) > 14) continue;
       it.taken = true;
-      this.collected++;
       const pts = note ? NOTE_PTS : TASK_PTS[it.pr];
       this.events.push(note ? "note" : "collect");
       if (r.air) {
         // Carried until you land it: a bail drops them.
         this.heldGems += pts;
+        this.heldCount++;
         this.pop(`${note ? "NOTE" : it.title.slice(0, 12)} +${pts}?`, "#fff2a0", it.x, it.y, iz + 16);
       } else {
+        this.collected++;
         const got = pts * Math.max(1, Math.min(MAX_CHAIN, this.chain));
         this.addScore(got);
         this.pop(`${it.title.slice(0, 12)} +${got}`, "#a8f4e8", it.x, it.y, iz + 14);

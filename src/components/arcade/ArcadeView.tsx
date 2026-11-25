@@ -201,10 +201,7 @@ const createAngler: GameFactory = ({ canvas, width, height, data, best }) => {
   return {
     update: () => {
       sim.step();
-      if (sim.tankDirty) {
-        sim.tankDirty = false;
-        storage.set(ANGLER_TANK_KEY, sim.snapshot());
-      }
+      sim.persist((save) => storage.set(ANGLER_TANK_KEY, save));
     },
     render: () => renderer.draw(),
     down: (x, y) => sim.down(x, y),

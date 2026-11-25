@@ -83,6 +83,26 @@ export interface FishSpec {
   seed: number;
 }
 
+const MAX_FISH_SIZE = Math.ceil(Math.max(...Object.values(SPECIES).map((s) => s.len)) * 1.2) + 1;
+
+/** A saved fish the sim and renderer can draw: an own species, a whole-pixel size in range, real numbers. */
+function validFish(f: unknown): f is FishSpec {
+  if (!f || typeof f !== "object") return false;
+  const x = f as Partial<FishSpec>;
+  const num = (v: unknown) => typeof v === "number" && Number.isFinite(v);
+  return (
+    typeof x.id === "string" &&
+    (x.kind === "task" || x.kind === "note") &&
+    typeof x.title === "string" &&
+    typeof x.project === "string" &&
+    typeof x.accent === "string" && /^#[0-9a-f]{6}$/i.test(x.accent) &&
+    typeof x.species === "string" && Object.prototype.hasOwnProperty.call(SPECIES, x.species) &&
+    Number.isInteger(x.size) && (x.size as number) >= 4 && (x.size as number) <= MAX_FISH_SIZE &&
+    num(x.kg) && num(x.pts) && num(x.seed) &&
+    typeof x.overdue === "boolean"
+  );
+}
+
 /** What the host stores between visits: the fish in the tank. Where they swim is not kept. */
 export interface AnglerSave {
   v: 1;
@@ -329,6 +349,12 @@ export class AnglerSim {
   /** A strike pressed just before the plunge, still waiting to count. */
   strikeBuf = 0;
   hooked: Hooked | null = null;
+  /** Today's fish for this workspace, by id: what a let-go fish goes back to the pond as. */
+  private liveById = new Map<string, FishSpec>();
+  /** The biter has already turned wary once; more early strikes don't hold it off again. */
+  private wary = false;
+  /** A crank movement arrived since the last fight step. */
+  private cranked = false;
   /** Where the rod points, radians (0 = right, up is negative). */
   rodAng = -Math.PI / 2;
   /** Where the player is pointing it; the rod swings toward this. */
@@ -381,14 +407,18 @@ export class AnglerSim {
     const live = fishFromProjects(this.projects);
     const byId = new Map(live.map((f) => [f.id, f]));
     const save = spec.save && spec.save.v === 1 && Array.isArray(spec.save.fish) ? spec.save : null;
-    const saved = (save?.fish ?? []).filter((f) => f && typeof f.id === "string" && f.species in SPECIES);
+    // Bad entries are skipped one by one; the good catches around them stay.
+    const saved = (save?.fish ?? []).filter(validFish);
+    this.liveById = byId;
+    const here = new Set(this.projects.map((p) => p.id));
     this.tank = [];
     const gone: FishSpec[] = [];
     for (const f of saved.slice(0, TANK_MAX)) {
       const now = byId.get(f.id);
-      // A fish whose task is done (or whose note is gone) swims off. The demo keeps what it has.
+      // A fish whose task is done (or whose note is gone) swims off. The demo keeps what it has, and so
+      // does a fish from a project that isn't open here (another workspace): this one can't tell if it's done.
       if (now) this.tank.push({ ...f, title: now.title, project: now.project, projectId: now.projectId, accent: now.accent });
-      else if (this.demo) this.tank.push(f);
+      else if (this.demo || !f.projectId || !here.has(f.projectId)) this.tank.push(f);
       else gone.push(f);
     }
     const kept = new Set(this.tank.map((f) => f.id));
@@ -411,6 +441,22 @@ export class AnglerSim {
     }
   }
 
+  private saveRetry = 0;
+
+  /**
+   * Call every frame with the host's writer: saves the tank when it changed. A failed write keeps the
+   * change pending and tries again about every two seconds, rather than every frame or never.
+   */
+  persist(write: (save: AnglerSave) => boolean): void {
+    if (!this.tankDirty) return;
+    if (this.saveRetry > 0) {
+      this.saveRetry--;
+      return;
+    }
+    if (write(this.snapshot())) this.tankDirty = false;
+    else this.saveRetry = 120;
+  }
+
   /** The tank, for the host to store. */
   snapshot(): AnglerSave {
     return { v: 1, fish: this.tank.map((f) => ({ ...f })) };
@@ -427,6 +473,12 @@ export class AnglerSim {
 
   get biome(): BiomeName {
     return this.spotProject.biome;
+  }
+
+  /** Whether anything is left to bite at this spot (no list built). */
+  get spotHasFish(): boolean {
+    const id = this.spotProject.id;
+    return this.pool.some((f) => (f.projectId ?? id) === id);
   }
 
   /** What can bite at this spot. */
@@ -550,7 +602,6 @@ export class AnglerSim {
     this.t++;
     this.stateT++;
     if (this.shake > 0) this.shake--;
-    if (this.strikeBuf > 0) this.strikeBuf--;
     if (this.msg && ++this.msg.t > 90) this.msg = null;
     if (this.banner && ++this.banner.t > 260) this.banner = null;
     this.stepParts();
@@ -572,6 +623,8 @@ export class AnglerSim {
       default:
         break;
     }
+    // Spent after the bobber has had its look, so a strike exactly STRIKE_BUFFER frames early still lands.
+    if (this.strikeBuf > 0) this.strikeBuf--;
   }
 
   private stepParts(): void {
@@ -657,7 +710,9 @@ export class AnglerSim {
     const pool = this.spotPool;
     const want = Math.min(4, pool.length);
     while (this.shadows.length < want) {
+      // The hooked fish stays in the pool (it comes back after a snap) but isn't in the water twice.
       const taken = new Set(this.shadows.map((s) => s.spec.id));
+      if (this.hooked) taken.add(this.hooked.spec.id);
       const free = pool.filter((f) => !taken.has(f.id));
       if (!free.length) break;
       const spec = free[Math.floor(this.rand() * free.length)];
@@ -733,6 +788,7 @@ export class AnglerSim {
       this.biter = live[0];
       this.nibbles = 1 + Math.floor(this.rand() * 3);
       this.nibbleT = 0;
+      this.wary = false;
       this.biteWindow = 0;
       return;
     }
@@ -800,7 +856,11 @@ export class AnglerSim {
       // Pressed a beat before the plunge: no harm done, the buffer catches it.
       const plungeSoon = this.nibbles === 0 && 26 - (this.nibbleT % 26) <= STRIKE_BUFFER;
       if (this.nibbleT > 0 && !plungeSoon) {
-        this.nibbles++;
+        // Wary once per fish: one more nibble, never an endless wait however often you press.
+        if (!this.wary) {
+          this.wary = true;
+          this.nibbles++;
+        }
         this.msg = { text: "NOT YET... WAIT FOR THE PLUNGE", t: 0 };
         this.events.push("early");
       }
@@ -849,7 +909,9 @@ export class AnglerSim {
     const tip = this.rodTip();
 
     this.reeling = this.reelPtr !== null || this.reelKey;
-    if (this.reelPtr === null) this.crank *= 0.8;
+    // Cranking keeps the rate up; stop turning (held or not) and it eases back to a plain hold.
+    if (!this.cranked) this.crank *= this.reelPtr === null ? 0.8 : 0.9;
+    this.cranked = false;
 
     if (--h.turnT <= 0) {
       const side = this.rand() < 0.5 ? -1 : 1;
@@ -941,7 +1003,8 @@ export class AnglerSim {
       this.reelPtr = null;
       this.reeling = false;
       this.drag = null;
-      this.catchChoice = 0;
+      // A full tank can't take it: start on LET GO.
+      this.catchChoice = this.tankFull ? 1 : 0;
       this.splash(tip.x, tip.y + 4, 18);
       this.ripple(tip.x, tip.y + 4, 40);
       this.events.push("catch");
@@ -988,7 +1051,11 @@ export class AnglerSim {
     s.leaving = 1;
     s.why = "BYE!";
     this.tank = this.tank.filter((f) => f.id !== s.spec.id);
-    this.pool.push(s.spec);
+    // Back to the pond as the task is now (its priority may have changed since the catch);
+    // a fish from another workspace just swims off.
+    const now = this.liveById.get(s.spec.id);
+    if (now && !this.pool.some((f) => f.id === now.id)) this.pool.push(now);
+    else if (!now && this.demo) this.pool.push(s.spec);
     this.tankDirty = true;
     this.selected = null;
     this.events.push("release");
@@ -1105,6 +1172,7 @@ export class AnglerSim {
       this.reelPtr = a;
       this.reelAng += d;
       this.crank = Math.max(this.crank * 0.7, Math.min(1, Math.abs(d) / 0.35));
+      if (Math.abs(d) > 0.01) this.cranked = true;
       return;
     }
     // Swipe the way the fish swims: the rod follows the drag.
@@ -1140,6 +1208,15 @@ export class AnglerSim {
     const downK = code === "ArrowDown" || code === "KeyS";
     const act = code === "Space" || code === "Enter";
     const arrow = left || right || upK || downK;
+    // Releases always let go, whatever screen the press started on (a reel key held into the catch card).
+    if (!isDown) {
+      if (left) this.keys.l = false;
+      if (right) this.keys.r = false;
+      if (upK) this.keys.u = false;
+      if (downK) this.keys.d = false;
+      if (act || code === "KeyR") this.reelKey = false;
+      return act || arrow || code === "KeyR";
+    }
     if (arrow && this.state !== "tank" && this.state !== "catch") {
       if (left) this.keys.l = isDown;
       if (right) this.keys.r = isDown;
@@ -1206,8 +1283,10 @@ export class AnglerSim {
         if (code === "KeyK") this.keep();
         else if (code === "KeyR") this.release();
         else if (act) {
-          if (this.catchChoice === 0 && !this.tankFull) this.keep();
-          else this.release();
+          // KEEP reads TANK FULL then: pressing it does nothing, as clicking it does.
+          if (this.catchChoice === 0) {
+            if (!this.tankFull) this.keep();
+          } else this.release();
         } else return false;
         return true;
       default:

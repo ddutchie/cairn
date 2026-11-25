@@ -176,6 +176,84 @@ describe("angler", () => {
     expect(s.pool.some((f) => f.id === sw.spec.id)).toBe(true);
   });
 
+  it("keeps fish from projects that aren't open here (another workspace)", () => {
+    const fish = fishFromProjects(projects).slice(0, 2);
+    const elsewhere = fish.map((f) => ({ ...f, id: `other-${f.id}`, projectId: "another-workspace-project" }));
+    const s = make({ save: { v: 1, fish: elsewhere } });
+    expect(s.tank.map((f) => f.id)).toEqual(elsewhere.map((f) => f.id));
+    expect(s.banner).toBeNull();
+    expect(s.tankDirty).toBe(false);
+  });
+
+  it("skips bad saved fish one by one and keeps the good ones", () => {
+    const [good] = fishFromProjects(projects);
+    const fish = [{ ...good, size: 8.5 }, { ...good, species: "constructor" }, { ...good, size: 999 }, good];
+    const s = make({ save: { v: 1, fish } as never });
+    expect(s.tank).toHaveLength(1);
+    expect(s.tank[0].size).toBe(good.size);
+  });
+
+  it("lets a fish go back to the pond as its task is now", () => {
+    const fish = fishFromProjects(projects);
+    const low = fish.find((f) => f.kind === "task" && f.priority === "low")!;
+    // The task was raised to urgent since the catch.
+    const raised = projects.map((p) => ({ ...p, tasks: p.tasks.map((t) => (t.id === low.id ? { ...t, priority: "urgent" as const } : t)) }));
+    const s = make({ projects: raised, save: { v: 1, fish: [low] } });
+    expect(s.tank[0].species).toBe("minnow");
+    tap(s, s.swimmers[0].x, s.swimmers[0].y);
+    tap(s, s.letGoBtn.x + 4, s.letGoBtn.y + 4);
+    expect(s.pool.find((f) => f.id === low.id)?.species).toBe("pike");
+  });
+
+  it("holds a strike exactly STRIKE_BUFFER frames before the plunge, and endless early presses can't hold off the bite", () => {
+    const s = make();
+    tap(s, s.goBtn.x + 4, s.goBtn.y + 4);
+    cast(s);
+    for (let i = 0; i < 3000 && !s.events.includes("nibble"); i++) s.step();
+    expect(s.biter).not.toBeNull();
+    // Press on every dip: one extra nibble at most, then the bite comes anyway.
+    let bit = false;
+    for (let i = 0; i < 600 && !bit; i++) {
+      if (s.nibbleT % 26 === 0 && s.nibbles > 0) tap(s, 5, 150);
+      s.step();
+      bit = s.biteWindow > 0 || s.state === "fight";
+    }
+    expect(bit).toBe(true);
+
+    // Exactly ten frames early, with the last nibble gone.
+    const t = make();
+    tap(t, t.goBtn.x + 4, t.goBtn.y + 4);
+    cast(t);
+    for (let i = 0; i < 4000 && (t.state === "wait" || t.state === "cast"); i++) {
+      if (t.biter && t.nibbles === 0 && t.nibbleT % 26 === 16 && t.biteWindow === 0) {
+        tap(t, 5, 150);
+        break;
+      }
+      t.step();
+    }
+    for (let i = 0; i < 12 && t.state !== "fight"; i++) t.step();
+    expect(t.state).toBe("fight");
+  });
+
+  it("lets go of a held reel key on the catch card, and won't release from a full tank's KEEP", () => {
+    const s = make();
+    expect(land(s)).toBe(true);
+    // Space was held to reel; it's released on the card.
+    s.setKey("Space", true);
+    s.setKey("Space", false);
+    expect((s as unknown as { reelKey: boolean }).reelKey).toBe(false);
+    for (let i = 0; i < 60; i++) s.step();
+
+    const fish = fishFromProjects(projects);
+    const full = make({ save: { v: 1, fish: fish.slice(0, TANK_MAX) } });
+    expect(land(full)).toBe(true);
+    expect(full.catchChoice).toBe(1);
+    for (let i = 0; i < 60; i++) full.step();
+    full.catchChoice = 0;
+    full.setKey("Space", true);
+    expect(full.state).toBe("catch");
+  });
+
   it("ignores a corrupt save", () => {
     const s = make({ save: { v: 1, fish: [null, { id: 3 }, { id: "x", species: "shark" }] } as never });
     expect(s.tank).toHaveLength(0);

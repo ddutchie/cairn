@@ -76,7 +76,13 @@ export function wrap(s: string, n: number): string[] {
     if (next.length <= n) cur = next;
     else {
       if (cur) out.push(cur);
-      cur = word.length > n ? word.slice(0, n) : word;
+      // A word longer than a line carries on over the next ones instead of being cut off.
+      let w = word;
+      while (w.length > n) {
+        out.push(w.slice(0, n));
+        w = w.slice(n);
+      }
+      cur = w;
     }
   }
   if (cur) out.push(cur);
