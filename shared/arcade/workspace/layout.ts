@@ -97,9 +97,22 @@ export interface FloorLayout {
   cooler: Pt;
   /** The paper bin: tossed balls score in it, misses land on the floor for the robot. */
   bin: Pt;
+  /** The printer, right of the done board: new notes print here. */
+  printer: Pt;
+  /** The light switch on the back wall, left of the first window. */
+  lightSwitch: Rect;
   plants: Pt[];
   /** Errand spots, each with the walkway that reaches it. */
-  spots: { at: Pt; aisleY: number; laneX: number }[];
+  spots: Spot[];
+}
+
+export type SpotKind = "coffee" | "cooler" | "printer";
+
+export interface Spot {
+  kind: SpotKind;
+  at: Pt;
+  aisleY: number;
+  laneX: number;
 }
 
 /** Voxel layers for `n` items: one per item up to 4, then one per two, capped. */
@@ -207,22 +220,25 @@ export function layoutFloor(projects: readonly OfficeProject[], w: number, h: nu
   }
   const firstAisle = desks.length ? desks[0].aisleY - stepY : floorTop + 6;
   const top = { aisleY: Math.max(floorTop + 6, firstAisle), laneX: left };
-  const spots = [
-    { at: { x: coffee.x - 10, y: coffee.y + 10 }, ...top },
-    { at: { x: cooler.x + 10, y: cooler.y + 10 }, ...top },
-  ];
   // Windows along the back wall, either side of the done board.
   // The done board carries DONE this week and the OVERDUE count, so it is wider than it was.
   const doneBoard = { x: Math.floor(w / 2) - 31, y: 4, w: 62, h: 28 };
-  // The paper bin stands against the wall, left of the done board.
+  // The paper bin stands against the wall, left of the done board; the printer right of it.
   const bin = { x: doneBoard.x - 12, y: floorTop + 2 };
+  const printer = { x: doneBoard.x + doneBoard.w + 12, y: floorTop + 2 };
   const clock = { x: bin.x, y: 15 };
+  const spots: Spot[] = [
+    { kind: "coffee", at: { x: coffee.x - 10, y: coffee.y + 10 }, ...top },
+    { kind: "cooler", at: { x: cooler.x + 10, y: cooler.y + 10 }, ...top },
+    { kind: "printer", at: { x: printer.x, y: printer.y + 6 }, ...top },
+  ];
   const windows: Rect[] = [];
   for (let x = 12; x + 30 < w - 12; x += 46) {
     const r = { x, y: 6, w: 30, h: 20 };
     if (r.x + r.w < clock.x - 12 || r.x > doneBoard.x + doneBoard.w + 6) windows.push(r);
   }
-  return { w, h, zoom: g.z, desks, page: pg, pageCount, perPage, wall: { x: 0, y: 0, w, h: WALL_H }, doneBoard, clock, windows, coffee, cooler, bin, plants, spots };
+  const lightSwitch = { x: 3, y: 12, w: 5, h: 8 };
+  return { w, h, zoom: g.z, desks, page: pg, pageCount, perPage, wall: { x: 0, y: 0, w, h: WALL_H }, doneBoard, clock, windows, coffee, cooler, bin, printer, lightSwitch, plants, spots };
 }
 
 /**

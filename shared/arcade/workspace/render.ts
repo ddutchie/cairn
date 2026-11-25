@@ -13,8 +13,8 @@ import type { Model } from "../pixel/models";
 import { rgb } from "../pixel/terrain";
 import { CONTRACTOR, type OfficeCard } from "./data";
 import { COL_HEAD, type Desk, type Rect } from "./layout";
-import { buildDesk, buildPerson, BIN, CHAIR, COFFEE, COOLER, deskKey, PLANTER_BUSH, PLANTER_TALL, ROBOT } from "./models";
-import { lookFor, type OfficeSim, type Robot, type Worker } from "./sim";
+import { buildDesk, buildPerson, BIN, CAT, CAT_ASLEEP, CHAIR, COFFEE, COOLER, deskKey, PLANTER_BUSH, PLANTER_TALL, PRINTER, ROBOT } from "./models";
+import { cleanerLook, lookFor, PARTY_FRAMES, PRINT_FRAMES, type Janitor, type OfficeSim, type Robot, type Worker } from "./sim";
 
 const BG = "#10131c";
 const WALL = "#3a4258";
@@ -85,7 +85,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     const W = sim.area.w;
     const H = Math.max(1, sim.area.h - F.wall.h);
     const level = Math.round(day * 20) / 20;
-    const key = `${W}x${H}|${level}|${F.windows.map((w) => `${w.x},${w.w}`).join(";")}`;
+    const key = `${W}x${H}|${level}|${F.windows.map((w, i) => `${w.x},${w.w},${sim.blinds.has(i) ? 1 : 0}`).join(";")}`;
     if (this.floorImg?.key === key) return this.floorImg.img;
     const px = new Uint8Array(W * H * 4);
     const fill = (x: number, y: number, w: number, h: number, color: string, alpha = 1) => {
@@ -109,7 +109,8 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     }
     // Sunlight from each window, falling forward and to the right.
     if (level > 0) {
-      for (const w of F.windows) {
+      for (const [wi, w] of F.windows.entries()) {
+        if (sim.blinds.has(wi)) continue;
         for (let i = 0; i < 26; i++) fill(w.x + 2 + i, i * 3, w.w - 4, 3, SUN, 0.16 * level * (1 - i / 26));
       }
     }
@@ -129,16 +130,22 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     const z = sim.floor.zoom / 2;
     const lights = sim.floor.desks.filter((d) => d.holder).map((d) => ({ x: d.cx, y: d.cy - 6 * z }));
     const level = Math.round(dark * 20) / 20;
-    const key = `${a.w}x${a.h}|${z}|${level}|${lights.map((l) => `${l.x},${l.y}`).join(";")}`;
+    // Daylight through the open windows cuts through the gloom too (lights off by day, dusk).
+    const sun = Math.round(sim.daylight * 20) / 20;
+    const wins = sun > 0 ? sim.floor.windows.filter((_, i) => !sim.blinds.has(i)) : [];
+    const key = `${a.w}x${a.h}|${z}|${level}|${sun}|${lights.map((l) => `${l.x},${l.y}`).join(";")}|${wins.map((w) => w.x).join(",")}`;
     if (this.night?.key === key) return this.night.img;
     const W = a.w;
     const H = a.h;
     const px = new Uint8Array(W * H * 4);
     const night = [10, 15, 42];
     const glow = [30, 125, 255];
+    const warm = rgb(SUN);
     const R = 46 * z;
     const BANDS = 5;
     const bayer = [0, 2, 3, 1];
+    const wallH = sim.floor.wall.h;
+    const BEAM = 78;
     for (let cy = 0; cy < H; cy += 2) {
       for (let cx = 0; cx < W; cx += 2) {
         let lit = 0;
@@ -148,15 +155,31 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
           const d = Math.hypot(dx, dy) / R;
           if (d < 1) lit = Math.max(lit, 1 - d);
         }
+        // The window itself, and its beam falling forward and to the right (as on the floor).
+        let sunLit = 0;
+        for (const w of wins) {
+          if (cy >= w.y - 2 && cy < w.y + w.h + 2 && cx >= w.x - 2 && cx < w.x + w.w + 2) sunLit = Math.max(sunLit, sun);
+          const dy = cy - wallH;
+          if (dy < 0 || dy >= BEAM) continue;
+          const shift = dy / 3;
+          if (cx >= w.x + 2 + shift && cx < w.x + w.w - 2 + shift) sunLit = Math.max(sunLit, sun * 0.85 * (1 - dy / BEAM));
+        }
         // Quantize into bands, dithering the edge between two bands for a pixel-art falloff.
-        const f = lit * BANDS;
-        let band = Math.floor(f);
-        if (f - band > (bayer[((cy >> 1) & 1) * 2 + ((cx >> 1) & 1)] + 0.5) / 4) band++;
-        const light = Math.min(1, band / BANDS);
-        const alpha = dark * (0.62 * (1 - light) + 0.3 * light);
-        const r = night[0] + (glow[0] - night[0]) * light;
-        const g = night[1] + (glow[1] - night[1]) * light;
-        const b = night[2] + (glow[2] - night[2]) * light;
+        const band = (v: number) => {
+          const f = v * BANDS;
+          let b = Math.floor(f);
+          if (f - b > (bayer[((cy >> 1) & 1) * 2 + ((cx >> 1) & 1)] + 0.5) / 4) b++;
+          return Math.min(1, b / BANDS);
+        };
+        const glowL = band(lit);
+        const sunL = band(sunLit);
+        const light = Math.max(glowL, sunL);
+        // Sunlight clears the dark more than a monitor does, and tints it warm, not blue.
+        const tint = sunL > glowL ? warm : glow;
+        const alpha = dark * (0.62 * (1 - light) + (sunL > glowL ? 0.08 : 0.3) * light);
+        const r = night[0] + (tint[0] - night[0]) * light;
+        const g = night[1] + (tint[1] - night[1]) * light;
+        const b = night[2] + (tint[2] - night[2]) * light;
         for (let yy = cy; yy < Math.min(H, cy + 2); yy++) {
           for (let xx = cx; xx < Math.min(W, cx + 2); xx++) {
             const i = (yy * W + xx) * 4;
@@ -180,6 +203,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     else if (sim.focus === null) this.drawFloor();
     else this.drawOpenDesk();
     this.drawBubble();
+    this.drawBoardPanel();
     this.drawHeader();
     this.drawFooter();
     if (sim.clockOpen) this.drawClockOverlay();
@@ -284,18 +308,25 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       this.rect(ox, oy + F.wall.h - 6, a.w, 6, WAINSCOT);
       this.rect(ox, oy + F.wall.h - 1, a.w, 1, WALL_D);
       this.rect(ox, oy + F.wall.h, a.w, 3, INK, 0.25);
-      for (const w of F.windows) this.drawWindow(ox + w.x, oy + w.y, w.w, w.h, day);
+      F.windows.forEach((w, i) => this.drawWindow(ox + w.x, oy + w.y, w.w, w.h, day, sim.blinds.has(i)));
       this.drawDoneBoard(ox + F.doneBoard.x, oy + F.doneBoard.y, F.doneBoard.w, F.doneBoard.h);
       this.drawClock(ox + F.clock.x, oy + F.clock.y);
+      this.drawLightSwitch(ox + F.lightSwitch.x, oy + F.lightSwitch.y, F.lightSwitch.w, F.lightSwitch.h);
 
       // Everything that stands on the floor, back to front.
       const items: Drawable[] = [];
       for (const d of F.desks) this.queueDesk(items, d, ox, oy);
-      if (!sim.night) {
-        for (const w of sim.workers.values()) {
-          if (!sim.deskFor(w)) continue;
-          items.push({ y: w.y + (w.mode === "sit" ? 0 : 0.5), draw: () => this.drawWorker(w, ox, oy) });
-        }
+      // After dark only whoever is working late is still here.
+      for (const w of sim.workers.values()) {
+        if (!sim.deskFor(w)) continue;
+        items.push({ y: w.y + (w.mode === "sit" ? 0 : 0.5), draw: () => this.drawWorker(w, ox, oy) });
+      }
+      const j = sim.janitor;
+      if (j) items.push({ y: j.y + 0.5, draw: () => this.drawJanitor(j, ox, oy) });
+      if (sim.cat) {
+        const c = sim.catAt();
+        // On a desk it draws after the desk; on the floor it sorts like anyone else.
+        items.push({ y: c.lift ? c.y + 3.5 * F.zoom + 0.1 : c.y + 0.4, draw: () => this.drawCat(ox, oy) });
       }
       if (sim.robot) items.push({ y: sim.robot.y + 0.5, draw: () => this.drawRobot(sim.robot, ox, oy) });
       const prop = (m: AtlasHandle<Img>, x: number, y: number) =>
@@ -309,8 +340,13 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       prop(this.atlas("coffee", () => COFFEE), F.coffee.x, F.coffee.y);
       prop(this.atlas("cooler", () => COOLER), F.cooler.x, F.cooler.y);
       prop(this.atlas("bin", () => BIN), F.bin.x, F.bin.y);
-      // Planters alternate tall snake-plants and bushy pothos down the row.
-      F.plants.forEach((p, i) => prop(this.atlas(i % 2 ? "planter-bush" : "planter-tall", () => (i % 2 ? PLANTER_BUSH : PLANTER_TALL)), p.x, p.y));
+      prop(this.atlas("printer", () => PRINTER), F.printer.x, F.printer.y);
+      // Planters alternate tall snake-plants and bushy pothos down the row; a touch makes one sway.
+      F.plants.forEach((p, i) => {
+        const age = sim.t - (sim.plantTouched.get(i) ?? -999);
+        const sway = age < 40 ? Math.round(Math.sin(age / 2.5) * 2 * (1 - age / 40)) : 0;
+        prop(this.atlas(i % 2 ? "planter-bush" : "planter-tall", () => (i % 2 ? PLANTER_BUSH : PLANTER_TALL)), p.x + sway, p.y);
+      });
       // The robot's charging pad, bottom-left: lit while it is docked.
       if (sim.robot) {
         const r = sim.robot;
@@ -345,11 +381,14 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       }
       items.sort((p, q) => p.y - q.y);
       for (const it of items) it.draw();
+      this.drawPropFx(ox, oy);
 
 
       // After dark the room dims, and each lit monitor is a light: a pool of screen-blue light on its
       // desk, its piles and whoever sits there, the rest of the room left dark.
-      const dark = 1 - day;
+      const dark = sim.gloom;
+      // The lights on after dark: a warm wash instead of the night.
+      if (sim.lights === "on" && day < 1) this.rect(a.x, a.y, a.w, a.h, "#ffe9b0", 0.05 * (1 - day));
       if (dark > 0.02) {
         this.image(this.nightMap(dark), a.x, a.y);
         for (const d of F.desks) {
@@ -362,6 +401,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       // Name tags float above the scene (and the dark) so people never hide them.
       for (const d of F.desks) this.drawNameTag(d, ox, oy);
       this.drawFloorFx(ox, oy);
+      this.drawSays(ox, oy);
       // A soft vignette for depth.
       for (let i = 0; i < 6; i++) {
         this.rect(a.x, a.y + a.h - 1 - i, a.w, 1, INK, 0.05 * (6 - i));
@@ -371,7 +411,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     });
   }
 
-  private drawWindow(x: number, y: number, w: number, h: number, day: number): void {
+  private drawWindow(x: number, y: number, w: number, h: number, day: number, closed = false): void {
     const sky = lerpHex("#141a3a", "#8fd0ff", day);
     const low = lerpHex("#1d2450", "#c8ecff", day);
     this.rect(x - 1, y - 1, w + 2, h + 2, "#20273a");
@@ -384,9 +424,44 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       this.rect(x + 4, y + 4, 8, 2, "#ffffff", 0.5 * day);
       this.rect(x + 7, y + 3, 5, 1, "#ffffff", 0.4 * day);
     }
+    this.drawWeather(x, y, w, h);
     this.rect(x + Math.floor(w / 2), y, 1, h, "#20273a");
     this.rect(x, y + Math.floor(h / 2), w, 1, "#20273a");
+    if (closed) {
+      // Blinds down: slats, with a cord.
+      for (let yy = 0; yy < h; yy += 3) {
+        this.rect(x, y + yy, w, 2, lerpHex("#6e6450", "#d8c9a4", Math.max(0.35, day)));
+        this.rect(x, y + yy + 2, w, 1, INK, 0.25);
+      }
+      this.rect(x + w - 3, y + 2, 1, h - 2, "#8a7a5a");
+    }
     this.rect(x - 2, y + h + 1, w + 4, 2, "#5a6079");
+    // A little snow settles on the sill in winter.
+    if (this.sim.season === "snow") this.rect(x - 2, y + h, w + 4, 1, "#f4f6fa");
+  }
+
+  /** What's outside: snowflakes drifting down, or leaves blowing past. */
+  private drawWeather(x: number, y: number, w: number, h: number): void {
+    const season = this.sim.season;
+    if (!season) return;
+    const t = this.sim.t;
+    const n = season === "snow" ? 7 : 3;
+    for (let i = 0; i < n; i++) {
+      const speed = season === "snow" ? 0.18 + (i % 3) * 0.07 : 0.35 + (i % 2) * 0.15;
+      const fy = Math.floor((i * 37 + x + t * speed) % h);
+      const drift = season === "snow" ? Math.round(Math.sin((t + i * 40) / 30) * 2) : Math.floor((t * speed * 0.8 + i * 23) % w);
+      const fx = season === "snow" ? (i * 11 + x * 3) % (w - 2) + drift : drift;
+      const px = x + Math.max(0, Math.min(w - 2, fx));
+      if (season === "snow") this.rect(px, y + fy, 1, 1, "#ffffff", 0.9);
+      else this.rect(px, y + fy, 2, 1, i % 2 ? "#e07a2f" : "#c2452a");
+    }
+  }
+
+  private drawLightSwitch(x: number, y: number, w: number, h: number): void {
+    const on = this.sim.lightsOn;
+    this.rect(x, y, w, h, "#d8dce6");
+    this.rect(x, y + h - 1, w, 1, "#8a93a8");
+    this.rect(x + 1, y + (on ? 1 : h - 4), w - 2, 3, "#5a6079");
   }
 
   private drawDoneBoard(x: number, y: number, w: number, h: number): void {
@@ -446,15 +521,157 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
   private drawWorker(w: Worker, ox: number, oy: number): void {
     const sitting = w.mode === "sit";
     const m = this.atlas(`p:${w.holder}:${sitting ? 1 : 0}`, () => buildPerson(lookFor(w.holder), sitting));
+    const sim = this.sim;
     const walking = w.mode === "walk";
-    const bob = walking ? (Math.floor(this.sim.t / 7) % 2) : 0;
+    const bob = walking ? (Math.floor(sim.t / 7) % 2) : 0;
+    // A celebration: a few hops.
+    const hopAge = sim.t - w.hop;
+    const hop = !sim.calm && hopAge >= 0 && hopAge < PARTY_FRAMES ? Math.round(Math.abs(Math.sin(hopAge / 5)) * 3) : 0;
     const ang = walking ? Math.atan2(w.dx, -w.dy) : w.mode === "stay" ? Math.PI : 0;
     const x = ox + w.x;
-    const y = oy + w.y - bob;
-    const z = this.sim.floor.zoom;
+    const y = oy + w.y - bob - hop;
+    const z = sim.floor.zoom;
     this.shadow(m, x, oy + w.y, ang, z, z, 0.35, z);
     this.stack(m, x, sitting ? y - Math.round(1.5 * z) : y, ang, { k: z });
     if (w.holder === CONTRACTOR && !sitting) this.rect(x - 2, y - 13 * z, 4, 2, "#f2d43a");
+    // What they carry: a watering can, a printout, or a coffee on the way back.
+    const e = w.errand;
+    if (e && !sitting) {
+      const hx = Math.round(x + 3 * z), hy = Math.round(y - 6 * z);
+      if (e.k === "water") {
+        this.rect(hx, hy, 4, 3, "#5fb86a");
+        this.rect(hx + 4, hy, 2, 1, "#5fb86a");
+        this.rect(hx + 1, hy - 1, 2, 1, "#3f8a4a");
+      } else if (e.k === "deliver") {
+        this.rect(hx - 1, hy - 2, 4, 5, "#f3eedf");
+        this.rect(hx - 1, hy - 2, 4, 1, "#c9c2b2");
+      } else if (e.k === "coffee" && w.homeward) {
+        this.rect(hx, hy, 2, 3, "#f2f2f2");
+        if ((sim.t >> 3) % 2) this.rect(hx + 1, hy - 2, 1, 1, "#e8ecf4", 0.6);
+      }
+    }
+    // Working late: a mug steaming beside the keyboard.
+    if (w.late && sitting) {
+      const d = sim.deskFor(w);
+      if (d) {
+        const mx = Math.round(ox + d.cx + 3.5 * z), my = Math.round(oy + d.cy - 5.5 * z);
+        for (let i = 0; i < 2; i++) this.rect(mx + ((sim.t >> 4) + i) % 2, my - 2 - ((sim.t / 6 + i * 4) % 6), 1, 1, "#e8ecf4", 0.6);
+      }
+    }
+  }
+
+  private drawJanitor(j: Janitor, ox: number, oy: number): void {
+    const sim = this.sim;
+    const m = this.atlas("cleaner", () => buildPerson(cleanerLook(), false));
+    const walking = j.mode !== "sweep";
+    const bob = walking ? Math.floor(sim.t / 7) % 2 : 0;
+    const ang = walking ? Math.atan2(j.dx, -j.dy) : Math.PI;
+    const z = sim.floor.zoom;
+    const x = ox + j.x;
+    const y = oy + j.y - bob;
+    this.shadow(m, x, oy + j.y, ang, z, z, 0.35, z);
+    this.stack(m, x, y, ang, { k: z });
+    // A broom: the handle in hand, bristles swishing on the floor while sweeping.
+    const sweep = j.mode === "sweep" && !sim.calm ? Math.round(Math.sin(sim.t / 6) * z) : 0;
+    this.line(Math.round(x + 3 * z), Math.round(y - 7 * z), Math.round(x + 5 * z + sweep), oy + j.y, "#a87a4c");
+    this.rect(Math.round(x + 4 * z + sweep) - 1, oy + j.y - 1, 5, 2, "#e3c04a");
+  }
+
+  private drawCat(ox: number, oy: number): void {
+    const sim = this.sim;
+    const c = sim.cat;
+    const at = sim.catAt();
+    const asleep = c.mode === "sleep";
+    const m = this.atlas(asleep ? "cat-asleep" : "cat", () => (asleep ? CAT_ASLEEP : CAT));
+    const walking = c.mode === "walk";
+    const ang = walking ? Math.atan2(c.dx, -c.dy) : asleep ? 0 : Math.PI;
+    const z = sim.floor.zoom;
+    const x = ox + at.x;
+    const ground = oy + at.y - at.lift;
+    const bob = walking ? Math.floor(sim.t / 6) % 2 : 0;
+    this.shadow(m, x, ground, ang, z * 0.7, z * 0.6, 0.3, z);
+    this.stack(m, x, ground - bob, ang, { k: z });
+    if (asleep && !sim.calm) {
+      const age = sim.t % 60;
+      this.text("Z", Math.round(x + 3 * z), Math.round(ground - 5 * z - age / 6), "#e8ecf4", 1, null);
+    }
+    // Petted: hearts float up.
+    const pet = sim.t - c.petAt;
+    if (pet >= 0 && pet < 60) {
+      for (let i = 0; i < 2; i++) {
+        const hx = Math.round(x - 3 + i * 6), hy = Math.round(ground - 8 * z - pet / 4 - i * 4);
+        this.rect(hx, hy, 1, 1, "#ff6b8a");
+        this.rect(hx + 2, hy, 1, 1, "#ff6b8a");
+        this.rect(hx, hy + 1, 3, 1, "#ff6b8a");
+        this.rect(hx + 1, hy + 2, 1, 1, "#ff6b8a");
+      }
+    }
+  }
+
+  /** The props at work: coffee steam, cooler bubbles, a printout coming out, water on a planter, confetti. */
+  private drawPropFx(ox: number, oy: number): void {
+    const sim = this.sim;
+    const F = sim.floor;
+    const t = sim.t;
+    const steam = t - sim.steamAt;
+    if (steam >= 0 && steam < 90) {
+      for (let i = 0; i < 3; i++) {
+        const rise = (steam + i * 12) % 30;
+        this.circle(Math.round(ox + F.coffee.x - 2 + i * 2 + Math.sin((t + i * 9) / 6)), Math.round(oy + F.coffee.y - 25 - rise * 0.6), 1.5, "#e8ecf4", 0.5 * (1 - steam / 90));
+      }
+    }
+    const gulp = t - sim.coolerAt;
+    if (gulp >= 0 && gulp < 40) {
+      for (let i = 0; i < 3; i++) this.rect(Math.round(ox + F.cooler.x - 1 + i), Math.round(oy + F.cooler.y - 14 - ((gulp * 0.6 + i * 5) % 14)), 1, 1, "#ffffff", 0.8);
+    }
+    if (sim.printing) {
+      const p = Math.min(1, (t - sim.printing.t0) / PRINT_FRAMES);
+      const out = Math.round(p * 5);
+      this.rect(ox + F.printer.x - 3, oy + F.printer.y - 13 - out, 6, out + 1, "#f3eedf");
+      for (let k = 0; k < out - 1; k += 2) this.rect(ox + F.printer.x - 2, oy + F.printer.y - 12 - out + k, 4, 1, "#9aa3b8");
+      if ((t >> 3) % 2) this.rect(ox + F.printer.x + 5, oy + F.printer.y - 9, 1, 1, "#7cc46a");
+    }
+    F.plants.forEach((pl, i) => {
+      const age = t - (sim.plantWatered.get(i) ?? -999);
+      if (age < 0 || age >= 50) return;
+      for (let k = 0; k < 3; k++) this.rect(Math.round(ox + pl.x - 3 + k * 3), Math.round(oy + pl.y - 22 + ((age + k * 7) % 14)), 1, 2, "#8fd0ff", 0.85);
+    });
+    const party = sim.party;
+    const d = party && F.desks.find((x) => x.project.id === party.project);
+    if (party && d) {
+      const age = t - party.t0;
+      const s = F.zoom / 2;
+      const colors = ["#ffe066", "#d9483b", "#5b8dd6", "#7cc46a", "#c45aa8"];
+      for (let i = 0; i < 18; i++) {
+        const fx = ((i * 37) % 60 - 30) * s + Math.sin((age + i * 11) / 7) * 2;
+        const fy = -50 * s + ((age * 1.2 + i * 13) % (60 * s));
+        this.rect(Math.round(ox + d.cx + fx), Math.round(oy + d.cy + fy), 2, 1 + (i % 2), colors[i % colors.length], Math.min(1, (PARTY_FRAMES - age) / 20));
+      }
+    }
+  }
+
+  /** Speech bubbles over whoever is talking (workers at the cooler, the cleaner), nudged apart. */
+  private drawSays(ox: number, oy: number): void {
+    const sim = this.sim;
+    const z = sim.floor.zoom;
+    const talk: { text: string; x: number; y: number }[] = [];
+    for (const w of sim.workers.values()) if (w.say && sim.deskFor(w)) talk.push({ text: w.say.text, x: w.x, y: w.y - (w.mode === "sit" ? 11 : 13) * z });
+    const j = sim.janitor;
+    if (j?.say) talk.push({ text: j.say.text, x: j.x, y: j.y - 13 * z });
+    const placed: Rect[] = [];
+    for (const s of talk) {
+      const text = clip(s.text, 24);
+      const w = textWidth(text) + 6;
+      const r = { x: Math.round(ox + s.x - w / 2), y: Math.round(oy + s.y - 12), w, h: 9 };
+      r.x = Math.max(sim.area.x + 1, Math.min(sim.area.x + sim.area.w - w - 1, r.x));
+      while (placed.some((p) => r.x < p.x + p.w && r.x + r.w > p.x && r.y < p.y + p.h + 1 && r.y + r.h + 1 > p.y)) r.y -= 10;
+      placed.push(r);
+      this.rect(r.x + 1, r.y + 1, r.w, r.h, INK, 0.4);
+      this.rect(r.x, r.y, r.w, r.h, "#f4f1e8");
+      this.strokeRect(r.x, r.y, r.w, r.h, INK);
+      this.rect(Math.round(ox + s.x) - 1, r.y + r.h, 2, 2, "#f4f1e8");
+      this.text(text, r.x + 3, r.y + 2, INK, 1, null);
+    }
   }
 
   private drawRobot(r: Robot, ox: number, oy: number): void {
@@ -510,7 +727,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     this.rect(a.x, a.y, 3, a.h, p.accent);
     if (sim.tab === "board") this.drawBoard();
     else this.drawNotes();
-    if (sim.daylight < 1) this.rect(a.x, a.y, a.w, a.h, NIGHT, 0.25 * (1 - sim.daylight));
+    if (sim.gloom > 0) this.rect(a.x, a.y, a.w, a.h, NIGHT, 0.25 * sim.gloom);
     // What just changed here floats up the right edge.
     let row = 0;
     for (const f of sim.fx) {
@@ -705,6 +922,27 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     }
     const tap = this.sim.inputMode === "pointer" ? "CLICK" : "TAP";
     this.text(b.lines.length ? `${tap} ONE TO OPEN` : "NOTHING IN PROGRESS", r.x + 4, r.y + r.h - 7, "#7a7a86", 1, null);
+  }
+
+  /** The done board's list: each project's done count this week, tap a row for its desk. */
+  private drawBoardPanel(): void {
+    const sim = this.sim;
+    const b = sim.boardPanel;
+    if (!b) return;
+    const r = b.rect;
+    this.rect(r.x + 2, r.y + 2, r.w, r.h, INK, 0.45);
+    this.rect(r.x, r.y, r.w, r.h, "#f4f6fa");
+    this.strokeRect(r.x, r.y, r.w, r.h, "#7d8496");
+    this.text(b.title, r.x + 4, r.y + 3, "#3f7a36", 1, null);
+    if (!b.rows.length) this.text("NOTHING YET", r.x + 4, r.y + 13, TEXT_DIM, 1, null);
+    for (const row of b.rows) {
+      const hovered = sim.hover?.rect === row.rect;
+      if (hovered) this.rect(row.rect.x, row.rect.y, row.rect.w, row.rect.h, HOVER, 0.45);
+      this.rect(row.rect.x + 2, row.rect.y + 2, 4, 4, row.accent);
+      this.text(row.name, row.rect.x + 8, row.rect.y + 2, INK, 1, null);
+      const n = `${row.n}`;
+      this.text(n, row.rect.x + row.rect.w - textWidth(n) - 2, row.rect.y + 2, "#3f7a36", 1, null);
+    }
   }
 
   private button(r: Rect, label: string, on = false): void {

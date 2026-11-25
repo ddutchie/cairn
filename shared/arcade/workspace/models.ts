@@ -151,6 +151,41 @@ export const ROBOT = makeModel(9, 5, 13, (x, y, z) => {
   return null;
 });
 
+/** An office printer: a grey box with a dark slot on top and a paper tray at the front. */
+export const PRINTER = makeModel(9, 7, 7, (x, y, z) => {
+  if (x < 1 || x > 7 || y < 1 || y > 5) return null;
+  if (z < 5) {
+    if (y === 5 && z === 2 && x >= 2 && x <= 6) return PAPER;
+    if (y === 5 && z === 4 && x === 6) return "#7cc46a";
+    return z === 0 ? "#565d75" : (x + z) % 4 === 0 ? "#b8bfcc" : "#cfd4dc";
+  }
+  if (z === 5) return y === 3 && x >= 2 && x <= 6 ? DARK : "#9aa3b8";
+  return y <= 2 && x >= 2 && x <= 6 ? PAPER_D : null;
+});
+
+/** The office cat, a ginger tabby facing away from the viewer (+y is its tail). */
+export const CAT = makeModel(5, 5, 4, (x, y, z) => {
+  const fur = "#e08a3c", stripe = "#b0612a";
+  // Kept shallow: a stack turns depth into screen height, and a deep cat reads as a post.
+  if (z === 0) return (x === 1 || x === 3) && (y === 2 || y === 4) ? stripe : null;
+  if (y === 4 && x === 2 && z >= 1) return z === 3 ? stripe : fur;
+  if (y >= 2 && y <= 3 && x >= 1 && x <= 3 && z <= 1) return (x + z) % 2 ? fur : stripe;
+  if (y <= 1 && x >= 1 && x <= 3 && z >= 1 && z <= 2) {
+    if (y === 0 && z === 2 && (x === 1 || x === 3)) return "#2b2118";
+    return fur;
+  }
+  if (z === 3 && y === 1 && (x === 1 || x === 3)) return fur;
+  return null;
+});
+
+/** The cat asleep: a small curled ginger loaf. */
+export const CAT_ASLEEP = makeModel(5, 4, 2, (x, y, z) => {
+  const r = Math.hypot((x - 2) / 2.4, (y - 1.5) / 1.9);
+  if (r > 1) return null;
+  if (z === 1) return r < 0.75 ? ((x + y) % 2 ? "#e08a3c" : "#b0612a") : null;
+  return (x + y) % 3 === 0 ? "#b0612a" : "#e08a3c";
+});
+
 /** A ceramic planter trough with soil and tall snake-plant blades. */
 export const PLANTER_TALL = makeModel(9, 9, 15, (x, y, z) => {
   // Trough: light ceramic walls with a pale rim.

@@ -6,9 +6,9 @@ import { NO_HUD } from "@cairn/shared/arcade/pixel/hud";
 import type { PixelBackend, PixelSurface } from "@cairn/shared/arcade/pixel/painter";
 import { buildOffice } from "@cairn/shared/arcade/workspace/build";
 import { CONTRACTOR, DEMO_OFFICE, zoneForColumn, type OfficeCard, type OfficeData, type OfficeProject } from "@cairn/shared/arcade/workspace/data";
-import { BACK_GAP, DESK_DOWN, DESK_UP, FRONT_STRIP, layoutDesk, layoutFloor, pileHeight, TAG_H, WALL_H, route, routeFree, staff } from "@cairn/shared/arcade/workspace/layout";
+import { BACK_GAP, DESK_DOWN, DESK_UP, FRONT_STRIP, inRect, layoutDesk, layoutFloor, pileHeight, TAG_H, WALL_H, route, routeFree, staff } from "@cairn/shared/arcade/workspace/layout";
 import { OfficeRenderer } from "@cairn/shared/arcade/workspace/render";
-import { daylightAt, OfficeSim } from "@cairn/shared/arcade/workspace/sim";
+import { daylightAt, OfficeSim, PARTY_FRAMES, seasonAt } from "@cairn/shared/arcade/workspace/sim";
 import { burstLabel, diffOffice, FLURRY, groupChanges } from "@cairn/shared/arcade/workspace/events";
 import { bucketWeek, dayShort, toDateKey, weekDates, withDemoDates } from "@cairn/shared/arcade/workspace/week";
 import { PLANTER_BUSH, PLANTER_TALL } from "@cairn/shared/arcade/workspace/models";
@@ -952,5 +952,186 @@ describe("review fixes", () => {
     s.setFocus(last);
     s.setFocus(null);
     expect(s.floor.desks.map((d) => d.index)).toContain(last);
+  });
+});
+
+describe("office life", () => {
+  const noon = () => new Date(2026, 10, 25, 11, 30);
+  const night = () => new Date(2026, 10, 25, 3, 0);
+  const crew = () => office([project("a", [card("1", "doing", "SAM"), card("2", "doing", "KIM")]), project("b", [card("3", "doing", "ADA")])]);
+  const sim = (data: OfficeData = crew(), clock = noon) => new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: data, clock, seed: 3 });
+  const tap = (s: OfficeSim, x: number, y: number) => s.down(s.area.x + x, s.area.y + y);
+  const run = (s: OfficeSim, n: number, until?: () => boolean) => {
+    for (let i = 0; i < n && !until?.(); i++) s.step();
+  };
+
+  it("sends someone for coffee and counts today's cups", () => {
+    const s = sim();
+    const F = s.floor;
+    expect(s.hit(s.area.x + F.coffee.x, s.area.y + F.coffee.y - 4)).toMatchObject({ k: "coffee" });
+    tap(s, F.coffee.x, F.coffee.y - 4);
+    const w = [...s.workers.values()].find((x) => x.errand?.k === "coffee");
+    expect(w).toBeDefined();
+    run(s, 3000, () => s.cupsToday > 0);
+    expect(s.cupsToday).toBe(1);
+    // With nobody free (calm), the machine just brews.
+    s.calm = true;
+    tap(s, F.coffee.x, F.coffee.y - 4);
+    expect(s.cupsToday).toBe(2);
+  });
+
+  it("gathers two people at the cooler to talk about the latest change", () => {
+    const s = sim();
+    s.setData(office([project("a", [card("1", "doing", "SAM"), card("2", "doing", "KIM"), card("9", "backlog")]), project("b", [card("3", "doing", "ADA")])]));
+    expect(s.news.at(-1)).toBe("A: + TASK");
+    const F = s.floor;
+    tap(s, F.cooler.x, F.cooler.y - 4);
+    const talkers = [...s.workers.values()].filter((w) => w.errand?.k === "chat");
+    expect(talkers).toHaveLength(2);
+    // They arrive from different desks, so each speaks when they get there.
+    const said = new Set<string>();
+    run(s, 4000, () => {
+      for (const w of talkers) if (w.say) said.add(w.holder);
+      return said.size === 2;
+    });
+    expect(said.size).toBe(2);
+    expect(s.gossip()).toMatch(/\S/);
+  });
+
+  it("waters a planter when it's tapped, and names whose milestone it is", () => {
+    const ps = crew().projects;
+    ps[1].doneTotal = 12;
+    const s = sim(office(ps));
+    expect(s.floor.plants).toHaveLength(2);
+    expect(s.plantLabel(0)).toBe("OFFICE PLANT");
+    expect(s.plantLabel(1)).toBe("B · 12 DONE");
+    const p = s.floor.plants[1];
+    expect(s.hit(s.area.x + p.x, s.area.y + p.y - 6)).toMatchObject({ k: "plant", i: 1 });
+    tap(s, p.x, p.y - 6);
+    expect(s.plantTouched.get(1)).toBe(s.t);
+    run(s, 4000, () => s.plantWatered.has(1));
+    expect(s.plantWatered.has(1)).toBe(true);
+  });
+
+  it("lists this week's done count per project, and a row opens its desk", () => {
+    const ps = crew().projects;
+    ps[0].doneThisWeek = 2;
+    ps[1].doneThisWeek = 5;
+    const s = sim(office(ps));
+    const F = s.floor;
+    tap(s, F.doneBoard.x + 4, F.doneBoard.y + 4);
+    const b = s.boardPanel!;
+    expect(b.rows.map((r) => [r.name, r.n])).toEqual([["B", 5], ["A", 2]]);
+    s.down(b.rows[0].rect.x + 2, b.rows[0].rect.y + 2);
+    expect(s.focus).toBe(1);
+    expect(s.boardPanel).toBeNull();
+  });
+
+  it("prints a new note and carries it to its desk", () => {
+    const s = sim();
+    const next = crew();
+    next.projects[1].notes = [{ id: "n1", title: "NEW", pinned: false }];
+    s.setData(next);
+    s.step();
+    expect(s.printing?.project).toBe("b");
+    run(s, 60);
+    expect([...s.workers.values()].some((w) => w.errand?.k === "print")).toBe(true);
+    run(s, 4000, () => [...s.workers.values()].some((w) => w.errand?.k === "deliver"));
+    expect([...s.workers.values()].some((w) => w.errand?.k === "deliver")).toBe(true);
+  });
+
+  it("celebrates a cleared column with hops and confetti", () => {
+    const before = office([project("a", [card("1", "review", "SAM"), card("2", "doing", "SAM")])]);
+    const s = sim(before);
+    const after = office([project("a", [card("2", "doing", "SAM")])]);
+    after.projects[0].doneThisWeek = 1;
+    s.setData(after);
+    expect(s.party?.project).toBe("a");
+    expect(s.fx.some((f) => f.text === "HIGH FIVE!")).toBe(true);
+    run(s, PARTY_FRAMES + 2);
+    expect(s.party).toBeNull();
+  });
+
+  it("keeps whoever has overdue work at their desk after dark", () => {
+    const data = office([project("a", [card("1", "doing", "SAM", { overdue: true })]), project("b", [card("2", "doing", "ADA")])]);
+    const s = sim(data, night);
+    expect([...s.workers.keys()]).toEqual(["SAM"]);
+    const sam = s.workers.get("SAM")!;
+    expect(sam.late).toBe(true);
+    run(s, 3000);
+    expect(sam.mode).toBe("sit");
+    expect(s.hit(s.sx(sam.x), s.sy(sam.y) - 4)).toMatchObject({ k: "worker" });
+  });
+
+  it("sends the night cleaner in to sweep up missed paper, and out at dawn", () => {
+    let now = night();
+    const s = sim(crew(), () => now);
+    s.step();
+    expect(s.janitor).not.toBeNull();
+    s.papers.push({ x: 200, y: s.floor.h - 30, sx: 200, sy: 0, tx: 200, ty: 0, t: 0, dur: 1, arcH: 18, state: "floor", scores: false });
+    run(s, 8000, () => s.papers.length === 0);
+    expect(s.papers).toHaveLength(0);
+    expect(s.swept).toBe(1);
+    now = noon();
+    run(s, 8000, () => s.janitor === null);
+    expect(s.janitor).toBeNull();
+  });
+
+  it("lets you pet the cat, which sleeps on a lit monitor at night", () => {
+    const s = sim(crew(), night);
+    const c = s.catAt();
+    expect(s.hit(s.sx(c.x), s.sy(c.y) - 3)).toMatchObject({ k: "cat" });
+    s.down(s.sx(c.x), s.sy(c.y) - 3);
+    expect(s.cat.petAt).toBe(s.t);
+    // Monitors stay on over the desks people work at, so it finds one to sleep on.
+    const late = sim(office([project("a", [card("1", "doing", "SAM", { overdue: true })])]), night);
+    late.cat.timer = 1;
+    run(late, 6000, () => late.cat.perch !== null);
+    expect(late.cat.perch).toBe(0);
+    expect(late.catAt().lift).toBeGreaterThan(0);
+  });
+
+  it("switches the lights any time until the next dusk or dawn, and draws the blinds", () => {
+    let now = night();
+    const s = sim(crew(), () => now);
+    const F = s.floor;
+    expect(s.gloom).toBe(1);
+    expect(s.lightsOn).toBe(false);
+    tap(s, F.lightSwitch.x + 2, F.lightSwitch.y + 2);
+    expect(s.lightsOn).toBe(true);
+    expect(s.gloom).toBeCloseTo(0.2);
+    // Dawn hands them back to the daylight: lit, and off by hand dims the room.
+    now = noon();
+    run(s, 61);
+    expect(s.lights).toBe("auto");
+    expect(s.lightsOn).toBe(true);
+    tap(s, F.lightSwitch.x + 2, F.lightSwitch.y + 2);
+    expect(s.lightsOn).toBe(false);
+    expect(s.gloom).toBeCloseTo(0.45);
+    tap(s, F.lightSwitch.x + 2, F.lightSwitch.y + 2);
+    expect(s.gloom).toBe(0);
+    const w = F.windows[0];
+    tap(s, w.x + 4, w.y + 4);
+    expect(s.blinds.has(0)).toBe(true);
+    tap(s, w.x + 4, w.y + 4);
+    expect(s.blinds.has(0)).toBe(false);
+  });
+
+  it("shows the season through the windows", () => {
+    expect(seasonAt(new Date(2026, 11, 3))).toBe("snow");
+    expect(seasonAt(new Date(2026, 1, 3))).toBe("snow");
+    expect(seasonAt(new Date(2026, 10, 25))).toBe("leaves");
+    expect(seasonAt(new Date(2026, 5, 1))).toBeNull();
+    expect(sim().season).toBe("leaves");
+  });
+
+  it("keeps every prop on the floor and clear of the desks", () => {
+    for (const [width, height] of [[480, 320], [225, 295], [160, 150]]) {
+      const f = layoutFloor(DEMO_OFFICE.projects, width, height, 0, 6);
+      expect(f.printer.x).toBeGreaterThan(f.doneBoard.x + f.doneBoard.w);
+      expect(f.printer.x).toBeLessThan(f.w);
+      for (const w of f.windows) expect(w.x).toBeGreaterThan(f.lightSwitch.x + f.lightSwitch.w);
+      for (const d of f.desks) expect(inRect(d.hit, f.printer.x, f.printer.y)).toBe(false);
+    }
   });
 });

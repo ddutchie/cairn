@@ -15,8 +15,8 @@ import { hudFrame, NO_HUD, type InputMode, type PixelHud } from "../pixel/hud";
 import { mulberry32 } from "../pixel/terrain";
 import { CONTRACTOR, DEMO_OFFICE, type OfficeData, type OfficeProject } from "./data";
 import { burstLabel, diffOffice, FLURRY, groupChanges, type Burst, type OfficeChange } from "./events";
-import { inRect, layoutDesk, layoutFloor, layoutWeek, route, routeFree, type Desk, type DeskTab, type DeskView, type FloorLayout, type Pt, type Rect, type Ref, type WeekView } from "./layout";
-import { bucketWeek, weekDates, withDemoDates, type WeekDay } from "./week";
+import { inRect, layoutDesk, layoutFloor, layoutWeek, route, routeFree, type Desk, type DeskTab, type DeskView, type FloorLayout, type Pt, type Rect, type Ref, type Spot, type SpotKind, type WeekView } from "./layout";
+import { bucketWeek, toDateKey, weekDates, withDemoDates, type WeekDay } from "./week";
 
 export interface OfficeSpec {
   width: number;
@@ -58,6 +58,64 @@ export interface Worker {
   dx: number;
   dy: number;
   layoutKey: string;
+  /** What the current walk is for: kept until they're back at their desk. */
+  errand: Errand | null;
+  /** The walkway at the errand's far end, for the walk back. */
+  via: { aisleY: number; laneX: number } | null;
+  /** A line they're saying, and the frame they started. */
+  say: { text: string; t0: number } | null;
+  /** Staying late after dark: their desk has overdue work. */
+  late: boolean;
+  /** Frame a celebration started (a few hops). */
+  hop: number;
+}
+
+/** Why a worker left their desk. */
+export type Errand =
+  | { k: "coffee" }
+  | { k: "chat"; text: string }
+  | { k: "water"; plant: number }
+  | { k: "print"; project: string }
+  | { k: "deliver"; project: string }
+  | { k: "visit" };
+
+/** Anyone who walks the floor along a path. */
+interface Walker {
+  x: number;
+  y: number;
+  path: Pt[];
+  dx: number;
+  dy: number;
+}
+
+/** The night cleaner: comes in after dark, sweeps up missed paper, leaves at dawn. */
+export interface Janitor extends Walker {
+  mode: "walk" | "sweep" | "leave";
+  timer: number;
+  /** The floor paper it is walking to sweep up. */
+  fetch: Paper | null;
+  say: { text: string; t0: number } | null;
+  layoutKey: string;
+}
+
+/** The office cat: wanders by day, curls up on a lit monitor at night. */
+export interface Cat extends Walker {
+  mode: "walk" | "sit" | "sleep";
+  timer: number;
+  /** The desk it sleeps on (index into the projects), or null on the floor. */
+  perch: number | null;
+  /** The desk it is walking to, to sleep on. */
+  bed: number | null;
+  /** Last petted (hearts). */
+  petAt: number;
+  layoutKey: string;
+}
+
+/** The done board's list: this week's done count per project. */
+export interface BoardPanel {
+  rect: Rect;
+  title: string;
+  rows: { index: number; name: string; n: number; accent: string; rect: Rect }[];
 }
 
 /** The agent's robot: docks by the cooler, walks to whatever its tool calls touch. */
@@ -107,7 +165,16 @@ export type Hit =
   | { k: "clock" }
   | { k: "clockMode" }
   | { k: "bin" }
-  | { k: "hot"; text: string }
+  | { k: "coffee" }
+  | { k: "cooler" }
+  | { k: "printer" }
+  | { k: "plant"; i: number }
+  | { k: "board" }
+  | { k: "boardRow"; index: number | null }
+  | { k: "janitor" }
+  | { k: "cat" }
+  | { k: "lights" }
+  | { k: "window"; i: number }
   | { k: "card"; ref: Ref; rect: Rect; text: string }
   | { k: "note"; ref: Ref; rect: Rect; text: string }
   | { k: "back" | "prev" | "next" | "notesPrev" | "notesNext" }
@@ -177,6 +244,20 @@ const KIND_COLOR: Record<OfficeChange["k"], string> = {
 };
 const FOOTER = 12;
 const WALK = 0.4;
+/** How long a printout takes, a celebration lasts, and a spoken line shows. */
+export const PRINT_FRAMES = 50;
+export const PARTY_FRAMES = 90;
+export const SAY_FRAMES = 160;
+const REPLIES = ["NICE!", "NO WAY", "HA!", "SAME", "WOW", "TOLD YOU"];
+const CLEANER_LINES = ["EVENING!", "MIND THE FLOOR", "ALL CLEAN", "LATE ONE?", "NIGHT NIGHT"];
+const CLEANER: Look = { shirt: "#3b6e8f", hair: "#9aa3b8", skin: "#d9a57a" };
+export const cleanerLook = (): Look => CLEANER;
+export type Season = "snow" | "leaves" | null;
+/** Snow from December to February, falling leaves from September to November. */
+export const seasonAt = (d: Date): Season => {
+  const m = d.getMonth();
+  return m === 11 || m <= 1 ? "snow" : m >= 8 && m <= 10 ? "leaves" : null;
+};
 const SKINS = ["#f2c9a0", "#d9a57a", "#b97f56", "#8a5a3b", "#5e3d28"];
 const HAIRS = ["#2b2118", "#5a3a22", "#a8743a", "#e0c070", "#c25a3a", "#7a7a86", "#1d2b4a"];
 const SHIRTS = ["#d9483b", "#5b8dd6", "#7cc46a", "#e3a23b", "#c45aa8", "#2ec4b6", "#8f6ad6", "#e07a5f"];
@@ -272,6 +353,40 @@ export class OfficeSim {
   writing = new Set<string>();
   /** When the done board last counted up, for its pop. */
   boardPulse = -999;
+  /** The night cleaner (after dark only) and the office cat. */
+  janitor: Janitor | null = null;
+  cat!: Cat;
+  /** Papers the cleaner swept up (tests and tuning). */
+  swept = 0;
+  /** Cups of coffee made today; the counter resets with the date. */
+  cups = 0;
+  private cupsDay = "";
+  /** When the coffee machine last brewed and the cooler last gurgled (steam, bubbles). */
+  steamAt = -999;
+  coolerAt = -999;
+  /** Planters by floor index: when last touched (a sway) and watered (drops). */
+  plantTouched = new Map<number, number>();
+  plantWatered = new Map<number, number>();
+  /** The printout in progress (a new note), and the ones waiting. */
+  printing: { project: string; t0: number } | null = null;
+  private printQueue: string[] = [];
+  /** A celebration: a column emptied or a planter earned. */
+  party: { project: string; t0: number } | null = null;
+  /** Recent changes as lines of office gossip, newest last. */
+  news: string[] = [];
+  /**
+   * The light switch: "auto" follows the daylight; tapping it switches the lights on or off
+   * by hand, which holds until the next dusk or dawn.
+   */
+  lights: "auto" | "on" | "off" = "auto";
+  /** Windows (by floor index) with the blinds down. */
+  blinds = new Set<number>();
+  /** What the windows show outside: snow, leaves or nothing. */
+  season: Season = null;
+  /** The done board's per-project list, while open. */
+  boardPanel: BoardPanel | null = null;
+  /** Decor the last layout unlocked (for the milestone celebration). */
+  private unlocked: string[] = [];
   private lastFocus: number | null = null;
   private readonly rnd: () => number;
   private readonly clock: () => Date;
@@ -295,6 +410,19 @@ export class OfficeSim {
   /** After hours the office is empty: everyone went home (the robot keeps working). */
   get night(): boolean {
     return this.daylight <= 0;
+  }
+
+  /** How dark the room is: the dusk outside, mostly undone with the lights on, and dim by day with them off. */
+  get gloom(): number {
+    const dusk = 1 - this.daylight;
+    if (this.lights === "on") return dusk * 0.2;
+    if (this.lights === "off") return Math.max(dusk, 0.45);
+    return dusk;
+  }
+
+  /** Whether the room reads as lit (the switch shows it). */
+  get lightsOn(): boolean {
+    return this.gloom < 0.4;
   }
 
   /** The done board: this week's done count and how many open cards are overdue. */
@@ -373,8 +501,39 @@ export class OfficeSim {
       this.state = this.focus === null ? "floor" : "desk";
     }
     this.bubble = null;
+    this.boardPanel = null;
     this.layout();
+    // Something worth a high five: a column cleared, or a project earned its planter.
+    if (this.lastChanges.length) {
+      const earned = this.unlocked.map((id) => this.projects.find((p) => plantId(p.id) === id)).find((p) => p);
+      const cleared = this.emptiedColumn(prev);
+      if (earned) this.celebrate(earned.id, "MILESTONE!");
+      else if (cleared) this.celebrate(cleared, "HIGH FIVE!");
+    }
     if (this.pointer) this.move(this.pointer.x, this.pointer.y);
+  }
+
+  /** A project whose open column just emptied through work finished or moved on (not deletions). */
+  private emptiedColumn(prev: OfficeData): string | null {
+    const worked = new Set(this.lastChanges.filter((c) => c.k === "task.done" || c.k === "task.moved").map((c) => c.project));
+    for (const p of this.projects) {
+      if (!worked.has(p.id)) continue;
+      const was = prev.projects.find((q) => q.id === p.id);
+      if (!was) continue;
+      for (const col of p.columns) {
+        if (col.zone === "done") continue;
+        const before = was.cards.filter((c) => c.columnId === col.id).length;
+        if (before > 0 && !p.cards.some((c) => c.columnId === col.id)) return p.id;
+      }
+    }
+    return null;
+  }
+
+  /** Everyone in the room hops, confetti falls over the desk, and a label rises. */
+  private celebrate(project: string, text: string): void {
+    this.party = { project, t0: this.t };
+    for (const w of this.workers.values()) if (w.mode !== "walk") w.hop = this.t;
+    if (this.fx.length < FX_CAP) this.fx.push({ k: "label", project, text, color: "#ffe066", t0: this.t, life: PARTY_FRAMES, delay: 0 });
   }
 
   /** Start the effects for a refresh's changes: a few per project and kind, and a sample of a flurry. */
@@ -391,7 +550,13 @@ export class OfficeSim {
     for (const b of bursts) {
       for (const id of b.ids) if (b.kind !== "task.removed" && b.kind !== "note.removed" && b.kind !== "task.done") this.fresh.set(id, this.t);
       this.spawn(b, mine);
+      // The office talks about it at the water cooler.
+      const name = this.projects.find((p) => p.id === b.project)?.name;
+      if (name) this.news.push(`${name}: ${burstLabel(b)}`);
+      // A new note comes off the printer (a few at most).
+      if (b.kind === "note.added" && this.printQueue.length < 3) this.printQueue.push(b.project);
     }
+    if (this.news.length > 6) this.news.splice(0, this.news.length - 6);
     if (changes.some((c) => c.k === "task.done")) this.boardPulse = this.t + 60;
   }
 
@@ -464,6 +629,7 @@ export class OfficeSim {
     this.H = height;
     if (hud) this.hud = hud;
     this.bubble = null;
+    this.boardPanel = null;
     this.layout();
   }
 
@@ -477,6 +643,8 @@ export class OfficeSim {
     if (this.view) this.notesPage = this.view.notesPage;
     this.syncWorkers();
     this.syncRobot();
+    this.syncJanitor();
+    this.syncCat();
     this.syncWeek();
     this.layoutHeader();
   }
@@ -531,48 +699,84 @@ export class OfficeSim {
   private syncWorkers(): void {
     const key = `${this.floor.w}x${this.floor.h}p${this.page}`;
     const live = new Set<string>();
-    if (!this.night) {
-      for (const d of this.floor.desks) {
-        const places: [string | null, "seat" | "side"][] = [
-          [d.holder, "seat"],
-          [d.visitor, "side"],
-        ];
-        for (const [holder, spot] of places) {
-          if (!holder) continue;
-          live.add(holder);
-          const home = spot === "seat" ? d.seat : d.side;
-          // The room and this place in it: a desk can move without the room changing size.
-          const at = `${key}@${home.x},${home.y}`;
-          let w = this.workers.get(holder);
-          if (!w) {
-            w = { holder, look: lookFor(holder), desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", timer: this.sitTime(), tossIn: 400 + Math.floor(this.rnd() * 800), homeward: false, dx: 0, dy: -1, layoutKey: at };
-            this.workers.set(holder, w);
-          }
-          const moved = w.desk !== d.index || w.spot !== spot;
-          const newRoom = !w.layoutKey.startsWith(`${key}@`);
-          if (newRoom || (!moved && w.layoutKey !== at)) {
-            Object.assign(w, { desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", homeward: false, layoutKey: at, dx: 0, dy: -1 });
-          } else if (moved) {
-            w.layoutKey = at;
-            // Their work moved to another desk: walk over.
-            const from = this.nearestDesk(w) ?? d;
-            w.desk = d.index;
-            w.spot = spot;
-            w.path = route(w, home, from, d);
-            w.mode = "walk";
-            w.homeward = true;
-          }
+    const night = this.night;
+    for (const d of this.floor.desks) {
+      // After dark only whoever has overdue work stays on, at their own desk.
+      if (night && !d.project.cards.some((c) => c.overdue)) continue;
+      const places: [string | null, "seat" | "side"][] = night
+        ? [[d.holder, "seat"]]
+        : [
+            [d.holder, "seat"],
+            [d.visitor, "side"],
+          ];
+      for (const [holder, spot] of places) {
+        if (!holder) continue;
+        live.add(holder);
+        const home = spot === "seat" ? d.seat : d.side;
+        // The room and this place in it: a desk can move without the room changing size.
+        const at = `${key}@${home.x},${home.y}`;
+        let w = this.workers.get(holder);
+        if (!w) {
+          w = { holder, look: lookFor(holder), desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", timer: this.sitTime(), tossIn: 400 + Math.floor(this.rnd() * 800), homeward: false, dx: 0, dy: -1, layoutKey: at, errand: null, via: null, say: null, late: night, hop: -999 };
+          this.workers.set(holder, w);
+        }
+        w.late = night;
+        const moved = w.desk !== d.index || w.spot !== spot;
+        const newRoom = !w.layoutKey.startsWith(`${key}@`);
+        if (newRoom || (!moved && w.layoutKey !== at)) {
+          Object.assign(w, { desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", homeward: false, layoutKey: at, dx: 0, dy: -1, errand: null, via: null, say: null });
+        } else if (moved) {
+          w.layoutKey = at;
+          // Their work moved to another desk: walk over.
+          const from = this.nearestDesk(w) ?? d;
+          w.desk = d.index;
+          w.spot = spot;
+          w.path = route(w, home, from, d);
+          w.mode = "walk";
+          w.homeward = true;
+          w.errand = null;
         }
       }
     }
     for (const k of [...this.workers.keys()]) if (!live.has(k)) this.workers.delete(k);
   }
 
+  /** The cleaner comes in at the door (bottom left) after dark and leaves by it at dawn. */
+  private door(): Pt {
+    return { x: 4, y: this.floor.h - 34 };
+  }
+
+  private syncJanitor(): void {
+    const j = this.janitor;
+    if (!j) return;
+    const key = `${this.floor.w}x${this.floor.h}p${this.page}`;
+    if (j.layoutKey === key) return;
+    const at = this.door();
+    Object.assign(j, { x: at.x, y: at.y, path: [], mode: j.mode === "leave" ? "leave" : "sweep", timer: 60, fetch: null, layoutKey: key });
+  }
+
+  private syncCat(): void {
+    const key = `${this.floor.w}x${this.floor.h}p${this.page}`;
+    const home = { x: Math.round(this.floor.w * 0.62), y: this.floor.h - 24 };
+    if (!this.cat) {
+      this.cat = { x: home.x, y: home.y, path: [], dx: 0, dy: 1, mode: "sit", timer: 300, perch: null, bed: null, petAt: -999, layoutKey: key };
+      return;
+    }
+    const c = this.cat;
+    if (c.layoutKey === key) {
+      if (c.perch !== null && !this.floor.desks.some((d) => d.index === c.perch)) c.perch = null;
+      return;
+    }
+    Object.assign(c, { x: home.x, y: home.y, path: [], mode: c.mode === "walk" ? "sit" : c.mode, timer: 200, perch: null, bed: null, layoutKey: key });
+  }
+
   /** Mint plants for projects past the done milestone; returns the floor's extra plant count. */
   private syncDecor(): number {
+    this.unlocked = [];
     for (const p of this.projects) {
       if (p.doneTotal >= PLANT_MILESTONE && !this.decor.has(plantId(p.id))) {
         this.decor.add(plantId(p.id));
+        this.unlocked.push(plantId(p.id));
         this.decorDirty = true;
       }
     }
@@ -665,6 +869,7 @@ export class OfficeSim {
     const d = this.clock();
     this.clockText = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
     this.daylight = daylightAt(d);
+    this.season = seasonAt(d);
   }
 
   deskFor(w: Worker): Desk | undefined {
@@ -677,8 +882,11 @@ export class OfficeSim {
     const night = this.night;
     if (night !== this.wasNight) {
       this.wasNight = night;
+      // Dusk and dawn hand the lights back to the daylight.
+      this.lights = "auto";
       this.syncWorkers();
     }
+    if (this.party && this.t - this.party.t0 > PARTY_FRAMES) this.party = null;
     if (this.opened && this.t - this.opened.t > 40) this.opened = null;
     if (this.fx.length) this.fx = this.fx.filter((f) => this.t - f.t0 < f.life + f.delay);
     if (this.pops.length) this.pops = this.pops.filter((p) => this.t - p.t0 < 40);
@@ -687,6 +895,339 @@ export class OfficeSim {
     for (const w of this.workers.values()) this.stepWorker(w);
     this.stepPapers();
     this.stepRobot();
+    this.stepPrinter();
+    this.stepJanitor();
+    this.stepCat();
+  }
+
+  /** One step along a walker's path; true once it has arrived. */
+  private walkOn(e: Walker, speed = WALK): boolean {
+    const next = e.path[0];
+    if (!next) return true;
+    const dx = next.x - e.x;
+    const dy = next.y - e.y;
+    const dist = Math.hypot(dx, dy);
+    e.dx = dx / (dist || 1);
+    e.dy = dy / (dist || 1);
+    if (dist <= speed) {
+      e.x = next.x;
+      e.y = next.y;
+      e.path.shift();
+    } else {
+      e.x += e.dx * speed;
+      e.y += e.dy * speed;
+    }
+    return false;
+  }
+
+  /** A walk around the desks (cleaner and cat), like the robot's. */
+  private freePath(from: Pt, to: Pt): Pt[] {
+    if (!this.floor.desks.length) return [{ x: Math.round(to.x), y: Math.round(to.y) }];
+    return routeFree(from, to, this.floor.desks.map((d) => d.hit), this.floor.w, this.floor.h);
+  }
+
+  /** A random clear spot on the floor, away from the desks. */
+  private freeSpot(): Pt {
+    const F = this.floor;
+    for (let i = 0; i < 12; i++) {
+      const p = { x: Math.round(12 + this.rnd() * (F.w - 24)), y: Math.round(F.wall.h + 14 + this.rnd() * (F.h - F.wall.h - 26)) };
+      if (!F.desks.some((d) => inRect(d.hit, p.x, p.y, 5))) return p;
+    }
+    return { x: Math.round(F.w / 2), y: F.h - 24 };
+  }
+
+  // ── Errands and props ────────────────────────────────────────────────
+
+  private spot(kind: SpotKind): Spot | undefined {
+    return this.floor.spots.find((s) => s.kind === kind);
+  }
+
+  /** Where someone stands to water planter `i`: just left of it, on the front strip. */
+  plantSpot(i: number): Pt | null {
+    const p = this.floor.plants[i];
+    return p ? { x: Math.max(6, p.x - 12), y: p.y + 1 } : null;
+  }
+
+  /** Planter `i`'s name: the corner one is the office's, the rest are projects' milestones. */
+  plantLabel(i: number): string {
+    if (i === 0) return "OFFICE PLANT";
+    const id = [...this.decor][i - 1];
+    const p = id ? this.projects.find((q) => plantId(q.id) === id) : undefined;
+    return p ? `${p.name} · ${p.doneTotal} DONE` : "A FINISHED PROJECT";
+  }
+
+  /** The seated worker nearest `near` who is free to get up (not staying late, not already out). */
+  private idleWorker(near: Pt, except?: Worker): Worker | null {
+    let best: Worker | null = null;
+    let bd = Infinity;
+    for (const w of this.workers.values()) {
+      if (w === except || w.mode !== "sit" || w.late || w.errand || !this.deskFor(w)) continue;
+      const d = Math.abs(w.x - near.x) + Math.abs(w.y - near.y);
+      if (d < bd) {
+        bd = d;
+        best = w;
+      }
+    }
+    return best;
+  }
+
+  /** Send a worker from their desk to `to` (reached by walkway `via`) on an errand. */
+  private sendTo(w: Worker, to: Pt, via: { aisleY: number; laneX: number }, errand: Errand): void {
+    const d = this.deskFor(w);
+    if (!d) return;
+    w.path = route(w, to, d, via);
+    w.mode = "walk";
+    w.homeward = false;
+    w.errand = errand;
+    w.via = { aisleY: via.aisleY, laneX: via.laneX };
+    w.say = null;
+  }
+
+  /** The walkway along the front strip, for the planters. */
+  private plantWalk(at: Pt, d: Desk): { aisleY: number; laneX: number } {
+    return { aisleY: at.y, laneX: d.laneX };
+  }
+
+  /** A worker reached the far end of an errand. */
+  private arrive(w: Worker): void {
+    const e = w.errand;
+    if (!e) return;
+    switch (e.k) {
+      case "coffee":
+        this.brew();
+        w.timer = 150;
+        return;
+      case "chat":
+        if (e.text) w.say = { text: e.text, t0: this.t };
+        w.timer = SAY_FRAMES + 20;
+        return;
+      case "water":
+        this.plantWatered.set(e.plant, this.t);
+        this.plantTouched.set(e.plant, this.t);
+        w.timer = 110;
+        return;
+      case "print": {
+        // Collect the printout and take it to its desk.
+        const i = this.projects.findIndex((p) => p.id === e.project);
+        const desk = this.floor.desks.find((d) => d.index === i);
+        const from = this.spot("printer");
+        if (!desk || !from) {
+          w.errand = { k: "deliver", project: e.project };
+          w.timer = 60;
+          return;
+        }
+        w.errand = { k: "deliver", project: e.project };
+        w.path = route(w, { x: desk.side.x, y: desk.side.y }, from, desk);
+        w.via = { aisleY: desk.aisleY, laneX: desk.laneX };
+        w.mode = "walk";
+        return;
+      }
+      case "deliver":
+        w.timer = 60;
+        w.errand = null;
+        return;
+      case "visit":
+        return;
+    }
+  }
+
+  /** The coffee machine makes a cup: steam, and one more on today's count. */
+  private brew(): void {
+    const day = toDateKey(this.clock());
+    if (day !== this.cupsDay) {
+      this.cupsDay = day;
+      this.cups = 0;
+    }
+    this.cups++;
+    this.steamAt = this.t;
+  }
+
+  /** Today's cups (zero once the date has moved on). */
+  get cupsToday(): number {
+    return this.cupsDay === toDateKey(this.clock()) ? this.cups : 0;
+  }
+
+  /** Office gossip for the water cooler: mostly the latest changes, else how the week is going. */
+  gossip(): string {
+    if (this.news.length && this.rnd() < 0.7) return `HEARD? ${this.news[Math.floor(this.rnd() * this.news.length)]}`;
+    const { done, overdue } = this.boardStats;
+    const busiest = [...this.projects].sort((a, b) => b.cards.length - a.cards.length)[0];
+    const lines = [
+      done ? `${done} DONE THIS WEEK!` : "SLOW WEEK, HUH?",
+      overdue ? `${overdue} OVERDUE...` : "ALL ON TIME!",
+      busiest ? `${busiest.name} IS BUSY` : "QUIET TODAY",
+    ];
+    return lines[Math.floor(this.rnd() * lines.length)];
+  }
+
+  private tapCoffee(): void {
+    const s = this.spot("coffee");
+    const w = s && !this.calm ? this.idleWorker(s.at) : null;
+    // Someone gets up for it; with nobody free the machine just brews.
+    if (w && s) this.sendTo(w, s.at, s, { k: "coffee" });
+    else this.brew();
+  }
+
+  private tapCooler(): void {
+    const s = this.spot("cooler");
+    this.coolerAt = this.t;
+    if (!s || this.calm) return;
+    const a = this.idleWorker(s.at);
+    if (!a) return;
+    const b = this.idleWorker(s.at, a);
+    this.sendTo(a, s.at, s, { k: "chat", text: this.gossip() });
+    // A second person a step further along answers (they arrive a moment later).
+    if (b) this.sendTo(b, { x: s.at.x + 12, y: s.at.y }, s, { k: "chat", text: REPLIES[Math.floor(this.rnd() * REPLIES.length)] });
+  }
+
+  private tapPlant(i: number): void {
+    this.plantTouched.set(i, this.t);
+    const at = this.plantSpot(i);
+    const w = at && !this.calm ? this.idleWorker(at) : null;
+    const d = w && this.deskFor(w);
+    if (w && at && d) this.sendTo(w, at, this.plantWalk(at, d), { k: "water", plant: i });
+  }
+
+  private openBoard(): void {
+    const a = this.area;
+    const F = this.floor;
+    const rows = this.projects
+      .map((p, index) => ({ p, index }))
+      .filter((r) => r.p.doneThisWeek > 0)
+      .sort((x, y) => y.p.doneThisWeek - x.p.doneThisWeek || x.index - y.index)
+      .slice(0, 8);
+    const title = `DONE THIS WEEK · ${this.boardStats.done}`;
+    const names = rows.map((r) => clip(r.p.name, 16));
+    const width = Math.min(a.w - 8, Math.max(textWidth(title) + 8, textWidth("NOTHING YET") + 8, ...rows.map((r, i) => textWidth(names[i]) + textWidth(`${r.p.doneThisWeek}`) + 22)));
+    const height = 12 + Math.max(1, rows.length) * 9 + 3;
+    const cx = this.sx(F.doneBoard.x + F.doneBoard.w / 2);
+    const x = Math.round(Math.max(a.x + 2, Math.min(a.x + a.w - width - 2, cx - width / 2)));
+    const y = Math.round(Math.max(a.y + 2, Math.min(a.y + a.h - height - 2, this.sy(F.doneBoard.y + F.doneBoard.h + 3))));
+    this.boardPanel = {
+      rect: { x, y, w: width, h: height },
+      title,
+      rows: rows.map((r, i) => ({ index: r.index, name: names[i], n: r.p.doneThisWeek, accent: r.p.accent, rect: { x: x + 2, y: y + 12 + i * 9, w: width - 4, h: 9 } })),
+    };
+  }
+
+  /** New notes print one at a time; then someone carries each to its desk. */
+  private stepPrinter(): void {
+    if (!this.printing) {
+      const project = this.printQueue.shift();
+      if (project) this.printing = { project, t0: this.t };
+      return;
+    }
+    if (this.t - this.printing.t0 < PRINT_FRAMES) return;
+    const { project } = this.printing;
+    this.printing = null;
+    if (!project) return;
+    const s = this.spot("printer");
+    const w = s && !this.calm ? this.idleWorker(s.at) : null;
+    if (w && s) this.sendTo(w, s.at, s, { k: "print", project });
+  }
+
+  private stepJanitor(): void {
+    if (!this.janitor) {
+      if (!this.night) return;
+      const at = this.door();
+      this.janitor = { x: at.x, y: at.y, path: [], dx: 1, dy: 0, mode: "sweep", timer: 30, fetch: null, say: null, layoutKey: `${this.floor.w}x${this.floor.h}p${this.page}` };
+    }
+    const j = this.janitor;
+    if (j.say && this.t - j.say.t0 > SAY_FRAMES) j.say = null;
+    // Dawn: head for the door.
+    if (!this.night && j.mode !== "leave") {
+      j.mode = "leave";
+      j.fetch = null;
+      j.path = this.freePath(j, this.door());
+    }
+    if (j.mode === "leave") {
+      if (this.walkOn(j, WALK * 0.8)) this.janitor = null;
+      return;
+    }
+    if (j.mode === "walk") {
+      if (!this.walkOn(j, WALK * 0.8)) return;
+      const p = j.fetch;
+      j.fetch = null;
+      if (p && p.state === "floor" && this.papers.includes(p)) {
+        this.papers.splice(this.papers.indexOf(p), 1);
+        this.swept++;
+      }
+      j.mode = "sweep";
+      j.timer = 90 + Math.floor(this.rnd() * 120);
+      return;
+    }
+    if (this.calm || --j.timer > 0) return;
+    // Next: a missed paper ball if there is one, else another patch of floor.
+    let target: Pt | null = null;
+    let bd = Infinity;
+    for (const p of this.papers) {
+      if (p.state !== "floor") continue;
+      const d = Math.abs(p.x - j.x) + Math.abs(p.y - j.y);
+      if (d < bd) {
+        bd = d;
+        target = p;
+        j.fetch = p;
+      }
+    }
+    j.path = this.freePath(j, target ?? this.freeSpot());
+    j.mode = "walk";
+  }
+
+  /** Where the cat is drawn and clicked: on the floor, or curled on top of a desk's monitor. */
+  catAt(): Pt & { lift: number } {
+    const c = this.cat;
+    const d = c.perch !== null ? this.floor.desks.find((x) => x.index === c.perch) : undefined;
+    if (!d) return { x: c.x, y: c.y, lift: 0 };
+    const z = this.floor.zoom;
+    return { x: d.cx, y: d.cy - Math.round(3.5 * z), lift: 10 * z };
+  }
+
+  private stepCat(): void {
+    const c = this.cat;
+    if (!c) return;
+    if (c.mode === "walk") {
+      if (!this.walkOn(c, WALK * 0.9)) return;
+      if (c.bed !== null && this.floor.desks.some((d) => d.index === c.bed)) {
+        c.perch = c.bed;
+        c.mode = "sleep";
+        c.timer = 2400 + Math.floor(this.rnd() * 2400);
+      } else {
+        c.mode = this.rnd() < 0.35 ? "sleep" : "sit";
+        c.timer = c.mode === "sleep" ? 900 + Math.floor(this.rnd() * 1200) : 300 + Math.floor(this.rnd() * 600);
+      }
+      c.bed = null;
+      return;
+    }
+    if (this.calm || --c.timer > 0) return;
+    // Hop down off a desk before going anywhere.
+    if (c.perch !== null) {
+      const d = this.floor.desks.find((x) => x.index === c.perch);
+      if (d) {
+        c.x = d.side.x;
+        c.y = d.side.y;
+      }
+      c.perch = null;
+    }
+    // After dark it looks for a warm monitor to sleep on.
+    const lit = this.night ? this.floor.desks.filter((d) => d.holder) : [];
+    if (lit.length) {
+      const d = lit[Math.floor(this.rnd() * lit.length)];
+      c.bed = d.index;
+      c.path = this.freePath(c, { x: d.side.x, y: d.side.y });
+    } else {
+      c.path = this.freePath(c, this.freeSpot());
+    }
+    c.mode = "walk";
+  }
+
+  private petCat(): void {
+    const c = this.cat;
+    c.petAt = this.t;
+    // A pet wakes it; it sits a while, purring.
+    if (c.mode !== "walk") {
+      c.mode = "sit";
+      c.timer = 240;
+    }
   }
 
   /** Tapping the bin makes a seated worker shoot one (misses included). */
@@ -817,7 +1358,8 @@ export class OfficeSim {
       r.timer = 300;
       return;
     }
-    if (!r.active) {
+    // After dark the cleaner sweeps up; the robot stays on its pad unless the agent needs it.
+    if (!r.active && !this.night) {
       const paper = this.nearestPaper(r);
       if (paper) {
         r.fetch = paper;
@@ -884,37 +1426,30 @@ export class OfficeSim {
     const d = this.deskFor(w);
     if (!d) return;
     const home = w.spot === "seat" ? d.seat : d.side;
+    if (w.say && this.t - w.say.t0 > SAY_FRAMES) w.say = null;
     if (w.mode === "walk") {
-      const next = w.path[0];
-      if (!next) {
-        if (w.homeward) {
-          w.mode = w.spot === "seat" ? "sit" : "stay";
-          w.timer = w.spot === "seat" ? this.sitTime() : 400 + Math.floor(this.rnd() * 600);
-          w.homeward = false;
-          w.dx = 0;
-          w.dy = -1;
-        } else {
-          w.mode = "stay";
-          w.timer = 120 + Math.floor(this.rnd() * 200);
-        }
-        return;
-      }
-      const dx = next.x - w.x;
-      const dy = next.y - w.y;
-      const dist = Math.hypot(dx, dy);
-      w.dx = dx / (dist || 1);
-      w.dy = dy / (dist || 1);
-      if (dist <= WALK) {
-        w.x = next.x;
-        w.y = next.y;
-        w.path.shift();
+      if (!this.walkOn(w)) return;
+      if (w.homeward) {
+        w.mode = w.spot === "seat" ? "sit" : "stay";
+        w.timer = w.spot === "seat" ? this.sitTime() : 400 + Math.floor(this.rnd() * 600);
+        w.homeward = false;
+        w.errand = null;
+        w.via = null;
+        w.dx = 0;
+        w.dy = -1;
       } else {
-        w.x += w.dx * WALK;
-        w.y += w.dy * WALK;
+        w.mode = "stay";
+        w.timer = 120 + Math.floor(this.rnd() * 200);
+        this.arrive(w);
       }
       return;
     }
     if (this.calm) return;
+    // Working late: no errands and no paper toss, and anyone caught out walks straight back.
+    if (w.late) {
+      if (w.mode === "sit") return;
+      w.timer = Math.min(w.timer, 1);
+    }
     // A seated worker's own cadence: a crumpled sheet at the bin every so often.
     if (w.mode === "sit" && this.focus === null && !this.week &&
         Math.abs(w.x - home.x) < 0.5 && Math.abs(w.y - home.y) < 0.5) {
@@ -926,25 +1461,29 @@ export class OfficeSim {
     if (--w.timer > 0) return;
     const atHome = Math.abs(w.x - home.x) < 0.5 && Math.abs(w.y - home.y) < 0.5;
     if (!atHome) {
-      // Back from an errand.
-      const spot = this.floor.spots.find((s) => Math.abs(s.at.x - w.x) < 1 && Math.abs(s.at.y - w.y) < 1);
+      // Back from an errand, by the walkway that reached it.
       const near = this.nearestDesk(w) ?? d;
-      w.path = route(w, home, spot ?? near, d);
+      w.path = route(w, home, w.via ?? near, d);
       w.mode = "walk";
       w.homeward = true;
       return;
     }
-    // An errand: coffee, the water cooler, or a colleague's desk.
+    // An errand: coffee, the water cooler, a planter that needs water, or a colleague's desk.
+    const roll = this.rnd();
     const others = this.floor.desks.filter((x) => x.index !== d.index);
-    if (this.rnd() < 0.7 || !others.length) {
-      const s = this.floor.spots[Math.floor(this.rnd() * this.floor.spots.length)];
-      w.path = route(w, s.at, d, s);
+    const plants = this.floor.plants.length;
+    if (roll < 0.12 && plants) {
+      const i = Math.floor(this.rnd() * plants);
+      const at = this.plantSpot(i)!;
+      this.sendTo(w, at, this.plantWalk(at, d), { k: "water", plant: i });
+    } else if (roll < 0.7 || !others.length) {
+      const spots = this.floor.spots.filter((s) => s.kind !== "printer");
+      const s = spots[Math.floor(this.rnd() * spots.length)];
+      this.sendTo(w, s.at, s, s.kind === "coffee" ? { k: "coffee" } : { k: "chat", text: this.rnd() < 0.5 ? this.gossip() : "" });
     } else {
       const o = others[Math.floor(this.rnd() * others.length)];
-      w.path = route(w, { x: o.cx - Math.round(26 * (this.floor.zoom / 2)), y: o.cy + 6 }, d, o);
+      this.sendTo(w, { x: o.cx - Math.round(26 * (this.floor.zoom / 2)), y: o.cy + 6 }, o, { k: "visit" });
     }
-    w.mode = "walk";
-    w.homeward = false;
   }
 
   // ── Input ────────────────────────────────────────────────────────────
@@ -960,6 +1499,8 @@ export class OfficeSim {
       const line = b.lines.find((l) => inRect(l.rect, x, y));
       return { k: "bubble", ref: line?.ref ?? null };
     }
+    const bp = this.boardPanel;
+    if (bp && inRect(bp.rect, x, y)) return { k: "boardRow", index: bp.rows.find((r) => inRect(r.rect, x, y))?.index ?? null };
     const focused = this.focus !== null;
     if (focused && inRect(this.backBtn, x, y, 2)) return { k: "back" };
     const arrows = focused ? this.projects.length > 1 : this.week || this.floor.pageCount > 1;
@@ -978,24 +1519,38 @@ export class OfficeSim {
       const k = this.floor.zoom / 2;
       if (lx >= r.x - 6 * k && lx <= r.x + 6 * k && ly >= r.y - 22 * k && ly <= r.y + 2) return { k: "robot" };
     }
-    // Workers first (they stand in front of desks), nearest the viewer first.
-    // At night everyone went home; the robot still answers.
-    const ws = this.night
-      ? []
-      : [...this.workers.values()].filter((w) => this.deskFor(w)).sort((a, b) => b.y - a.y);
+    const k = this.floor.zoom / 2;
+    // The cat (small, and it may be curled up on a desk).
+    if (this.cat) {
+      const c = this.catAt();
+      if (Math.abs(lx - c.x) <= 6 * k && ly >= c.y - c.lift - 9 * k && ly <= c.y - c.lift + 3) return { k: "cat" };
+    }
+    // Workers (they stand in front of desks), nearest the viewer first.
+    // At night only whoever stays late is here; the robot still answers.
+    const ws = [...this.workers.values()].filter((w) => this.deskFor(w)).sort((a, b) => b.y - a.y);
     for (const w of ws) {
-      const k = this.floor.zoom / 2;
       const tall = (w.mode === "sit" ? 10 : 24) * k;
       if (lx >= w.x - 6 * k && lx <= w.x + 6 * k && ly >= w.y - tall && ly <= w.y + 2) return { k: "worker", worker: w };
     }
+    const j = this.janitor;
+    if (j && lx >= j.x - 6 * k && lx <= j.x + 6 * k && ly >= j.y - 24 * k && ly <= j.y + 2) return { k: "janitor" };
     const desk = [...this.floor.desks].reverse().find((d) => inRect(d.hit, lx, ly));
     if (desk) return { k: "desk", desk };
     const F = this.floor;
-    if (inRect(F.doneBoard, lx, ly)) return { k: "hot", text: `DONE THIS WEEK · ${this.projects.reduce((s, p) => s + p.doneThisWeek, 0)}` };
+    if (inRect(F.doneBoard, lx, ly)) return { k: "board" };
     if (Math.abs(lx - F.clock.x) <= 9 && Math.abs(ly - F.clock.y) <= 9) return { k: "clock" };
-    if (Math.abs(lx - F.coffee.x) < 8 && ly > F.coffee.y - 26 && ly < F.coffee.y + 4) return { k: "hot", text: "COFFEE" };
-    if (Math.abs(lx - F.cooler.x) < 7 && ly > F.cooler.y - 30 && ly < F.cooler.y + 4) return { k: "hot", text: "WATER COOLER" };
+    if (Math.abs(lx - F.coffee.x) < 8 && ly > F.coffee.y - 26 && ly < F.coffee.y + 4) return { k: "coffee" };
+    if (Math.abs(lx - F.cooler.x) < 7 && ly > F.cooler.y - 30 && ly < F.cooler.y + 4) return { k: "cooler" };
     if (Math.abs(lx - F.bin.x) < 7 && ly > F.bin.y - 12 && ly < F.bin.y + 4) return { k: "bin" };
+    if (Math.abs(lx - F.printer.x) < 9 && ly > F.printer.y - 16 && ly < F.printer.y + 4) return { k: "printer" };
+    for (let i = F.plants.length - 1; i >= 0; i--) {
+      const p = F.plants[i];
+      const tall = i % 2 ? 20 : 30;
+      if (Math.abs(lx - p.x) < 9 && ly > p.y - tall && ly < p.y + 5) return { k: "plant", i };
+    }
+    if (inRect(F.lightSwitch, lx, ly, 3)) return { k: "lights" };
+    const win = F.windows.findIndex((r) => inRect(r, lx, ly, 1));
+    if (win >= 0) return { k: "window", i: win };
     return null;
   }
 
@@ -1046,8 +1601,44 @@ export class OfficeSim {
     }
     const h = this.hit(x, y);
     if (h?.k !== "bubble") this.bubble = null;
+    if (h?.k !== "boardRow") this.boardPanel = null;
     if (!h) return;
     switch (h.k) {
+      case "board":
+        this.openBoard();
+        return;
+      case "boardRow":
+        if (h.index !== null) {
+          this.boardPanel = null;
+          this.setFocus(h.index);
+        }
+        return;
+      case "coffee":
+        this.tapCoffee();
+        return;
+      case "cooler":
+        this.tapCooler();
+        return;
+      case "plant":
+        this.tapPlant(h.i);
+        return;
+      case "printer":
+        // A test page: it prints, and nobody comes for it.
+        if (!this.printing) this.printing = { project: "", t0: this.t };
+        return;
+      case "janitor":
+        if (this.janitor) this.janitor.say = { text: CLEANER_LINES[Math.floor(this.rnd() * CLEANER_LINES.length)], t0: this.t };
+        return;
+      case "cat":
+        this.petCat();
+        return;
+      case "lights":
+        this.lights = this.lightsOn ? "off" : "on";
+        return;
+      case "window":
+        if (this.blinds.has(h.i)) this.blinds.delete(h.i);
+        else this.blinds.add(h.i);
+        return;
       case "clock":
         this.bubble = null;
         this.clockOpen = true;
@@ -1093,8 +1684,6 @@ export class OfficeSim {
         this.layout();
         return;
       }
-      case "hot":
-        return;
     }
   }
 
@@ -1114,8 +1703,9 @@ export class OfficeSim {
         this.clockOpen = false;
         return true;
       }
-      if (this.bubble) {
+      if (this.bubble || this.boardPanel) {
         this.bubble = null;
+        this.boardPanel = null;
         return true;
       }
       if (this.week && this.focus === null) {
@@ -1220,8 +1810,34 @@ export class OfficeSim {
       case "worker": {
         const mine = this.cardsOf(h.worker.holder);
         const who = h.worker.holder === CONTRACTOR ? "UNASSIGNED WORK" : h.worker.holder;
-        const where = this.projects[h.worker.desk]?.name ?? "";
+        const p = this.projects[h.worker.desk];
+        if (h.worker.late && p) return { text: `${who} · WORKING LATE · ${p.cards.filter((c) => c.overdue).length} OVERDUE AT ${p.name}`, rect: null };
+        const where = p?.name ?? "";
         return { text: `${who} · ${mine.length} IN PROGRESS${where ? ` · AT ${where}` : ""}`, rect: null };
+      }
+      case "board":
+        return { text: `DONE THIS WEEK · ${this.boardStats.done} · ${tap} FOR EACH PROJECT`, rect: null };
+      case "boardRow":
+        return h.index !== null ? { text: `${tap} TO OPEN ${this.projects[h.index]?.name ?? "THE DESK"}`, rect: this.boardPanel?.rows.find((r) => r.index === h.index)?.rect ?? null } : null;
+      case "coffee": {
+        const n = this.cupsToday;
+        return { text: `COFFEE · ${n} ${n === 1 ? "CUP" : "CUPS"} TODAY · ${tap} FOR ANOTHER`, rect: null };
+      }
+      case "cooler":
+        return { text: `WATER COOLER · ${tap} FOR A CHAT`, rect: null };
+      case "printer":
+        return { text: this.printing ? "PRINTER · PRINTING..." : "PRINTER · NEW NOTES PRINT HERE", rect: null };
+      case "plant":
+        return { text: `${this.plantLabel(h.i)} · ${tap} TO WATER`, rect: null };
+      case "janitor":
+        return { text: `NIGHT CLEANER · ${this.swept} SWEPT UP · ${tap} TO SAY HI`, rect: null };
+      case "cat":
+        return { text: this.cat.mode === "sleep" ? `OFFICE CAT · ASLEEP · ${tap} TO PET` : `OFFICE CAT · ${tap} TO PET`, rect: null };
+      case "lights":
+        return { text: `LIGHTS ${this.lightsOn ? "ON" : "OFF"} · ${tap} TO SWITCH`, rect: null };
+      case "window": {
+        const outside = this.blinds.has(h.i) ? "BLINDS DOWN" : this.season === "snow" ? "SNOWING" : this.season === "leaves" ? "LEAVES FALLING" : this.daylight > 0 ? "SUNNY" : "STARRY";
+        return { text: `WINDOW · ${outside} · ${tap} FOR THE BLINDS`, rect: null };
       }
       case "robot": {
         const at = this.robot?.desk !== null && this.robot?.desk !== undefined
@@ -1230,8 +1846,6 @@ export class OfficeSim {
         const what = this.robot?.active ? "WORKING" : "IDLE";
         return { text: `AGENT · ${what}${at ? ` · AT ${at}` : ""} · ${tap} TO OPEN CHAT`, rect: null };
       }
-      case "hot":
-        return { text: h.text, rect: null };
       case "clock":
         return { text: `TIME · ${tap} TO ENLARGE`, rect: null };
       case "clockMode":
