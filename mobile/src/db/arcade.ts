@@ -8,6 +8,8 @@
 import type { Priority } from "@cairn/shared/types/domain";
 import { ACCENTS, DEMO_ARCADE_PROJECTS, arcadeNoteLinks, cleanArcadeTitle, dueMinutes, type ArcadeProject } from "@cairn/shared/arcade/pixel/arcade-data";
 import { BIOME_ORDER } from "@cairn/shared/arcade/pixel/terrain";
+import { buildOffice, type OfficeSource } from "@cairn/shared/arcade/workspace/build";
+import type { OfficeData } from "@cairn/shared/arcade/workspace/data";
 import { getDb } from "./index";
 import { LIVE, NOT_CONFLICT } from "./sql";
 
@@ -121,4 +123,59 @@ export function loadArcadeProjects(now = new Date()): { projects: ArcadeProject[
     // DB unavailable or empty — play the demo workspace.
   }
   return { projects: DEMO_ARCADE_PROJECTS, demo: true };
+}
+
+/** The office, plus a cheap fingerprint (counts + newest write) so the host can poll for changes. */
+export interface OfficeLoad {
+  office: OfficeData;
+  fingerprint: string;
+}
+
+/**
+ * The idle office's mirror of the phone's workspace, via `buildOffice`.
+ * Mobile has no `completed_at` on cards, so a done-column card counts for the
+ * done board when it was touched in the last seven days (an edit also counts).
+ */
+export function loadOfficeData(now = new Date()): OfficeLoad {
+  const db = getDb();
+  const ws = db.getFirstSync<{ name: string } | null>(`SELECT name FROM workspaces ORDER BY updated_at DESC LIMIT 1`);
+  const projects = db.getAllSync<{ id: string; name: string }>(
+    `SELECT id, name FROM projects WHERE ${LIVE} ORDER BY updated_at DESC`,
+  );
+  const columns = db.getAllSync<{ id: string; project_id: string; name: string; type: string; order: number }>(
+    `SELECT id, project_id, name, type, "order" FROM board_columns WHERE deleted_at IS NULL ORDER BY "order" ASC`,
+  );
+  const cards = db.getAllSync<{
+    id: string; project_id: string; column_id: string; title: string; priority: string;
+    due_date: string | null; assignee: string | null; order: number; updated_at: string; archived_at: string | null;
+  }>(
+    `SELECT id, project_id, column_id, title, priority, due_date, assignee, "order", updated_at, archived_at
+     FROM task_cards WHERE deleted_at IS NULL`,
+  );
+  const notes = db.getAllSync<{ id: string; project_id: string; title: string; is_pinned: number; updated_at: string }>(
+    `SELECT id, project_id, title, is_pinned, updated_at FROM notes
+     WHERE project_id IS NOT NULL AND type = 'note' AND ${LIVE} AND ${NOT_CONFLICT}`,
+  );
+  const src: OfficeSource = {
+    workspaceName: ws?.name ?? "Workspace",
+    workspaceId: null,
+    projects: projects.map((p) => ({ id: p.id, workspaceId: "", name: p.name }) as never),
+    columns: columns.map((c) => ({ id: c.id, projectId: c.project_id, workspaceId: "", name: c.name, type: c.type, order: c.order }) as never),
+    cards: cards.map((c) => ({
+      id: c.id, projectId: c.project_id, columnId: c.column_id, workspaceId: "", title: c.title,
+      priority: c.priority, dueDate: c.due_date, assignee: c.assignee, order: c.order,
+      updatedAt: c.updated_at, archivedAt: c.archived_at, completedAt: c.updated_at,
+    }) as never),
+    notes: notes.map((n) => ({
+      id: n.id, projectId: n.project_id, workspaceId: "", title: n.title,
+      isPinned: n.is_pinned === 1, updatedAt: n.updated_at,
+    }) as never),
+    now,
+  };
+  const office = buildOffice(src);
+  const fp = db.getFirstSync<{ n: number; m: string | null } | null>(
+    `SELECT (SELECT COUNT(*) FROM projects) + (SELECT COUNT(*) FROM task_cards) + (SELECT COUNT(*) FROM notes) + (SELECT COUNT(*) FROM board_columns) AS n,
+            (SELECT MAX(updated_at) FROM (SELECT updated_at FROM projects UNION ALL SELECT updated_at FROM task_cards UNION ALL SELECT updated_at FROM notes UNION ALL SELECT updated_at FROM board_columns)) AS m`,
+  );
+  return { office, fingerprint: `${fp?.n ?? 0}|${fp?.m ?? ""}` };
 }
