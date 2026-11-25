@@ -8,7 +8,7 @@ import { buildOffice } from "@cairn/shared/arcade/workspace/build";
 import { CONTRACTOR, DEMO_OFFICE, zoneForColumn, type OfficeCard, type OfficeData, type OfficeProject } from "@cairn/shared/arcade/workspace/data";
 import { BACK_GAP, DESK_DOWN, DESK_UP, FRONT_STRIP, inRect, layoutDesk, layoutFloor, pileHeight, TAG_H, WALL_H, route, routeFree, staff } from "@cairn/shared/arcade/workspace/layout";
 import { OfficeRenderer } from "@cairn/shared/arcade/workspace/render";
-import { daylightAt, OfficeSim, PARTY_FRAMES, seasonAt } from "@cairn/shared/arcade/workspace/sim";
+import { castLooks, daylightAt, lookFor, OfficeSim, PARTY_FRAMES, seasonAt } from "@cairn/shared/arcade/workspace/sim";
 import { burstLabel, diffOffice, FLURRY, groupChanges } from "@cairn/shared/arcade/workspace/events";
 import { bucketWeek, dayShort, toDateKey, weekDates, withDemoDates } from "@cairn/shared/arcade/workspace/week";
 import { PLANTER_BUSH, PLANTER_TALL } from "@cairn/shared/arcade/workspace/models";
@@ -850,8 +850,8 @@ describe("paper toss", () => {
     const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: live(), clock: noon, seed: 3 });
     for (let i = 0; i < 4000; i++) s.step();
     expect(s.tossMade).toBeGreaterThan(0);
-    const floor = s.papers.filter((p) => p.state === "floor").length;
-    expect(s.tossScored + floor).toBe(s.tossMade);
+    // Every ball made is scored, lying on the floor, still in the air, or swept up by the cleaner.
+    expect(s.tossScored + s.papers.length + s.swept).toBe(s.tossMade);
   });
 
   it("scores with a swish splash", () => {
@@ -1115,6 +1115,36 @@ describe("office life", () => {
     expect(s.blinds.has(0)).toBe(true);
     tap(s, w.x + 4, w.y + 4);
     expect(s.blinds.has(0)).toBe(false);
+  });
+
+  it("dresses everyone differently, even when their names hash alike", () => {
+    const names = Array.from({ length: 30 }, (_, i) => `PERSON ${i}`);
+    const looks = castLooks(names);
+    const sig = new Set([...looks.values()].map((l) => `${l.shirt}|${l.hair}|${l.style}`));
+    expect(sig.size).toBe(30);
+    // Stable: the same people get the same looks, whatever order they come in.
+    expect(castLooks([...names].reverse()).get("PERSON 3")).toEqual(looks.get("PERSON 3"));
+    expect(new Set(names.map((n) => lookFor(n).style)).size).toBeGreaterThan(2);
+    // The office uses the cast, and so do the sticky initials.
+    const s = sim();
+    for (const w of s.workers.values()) expect(w.look).toEqual(s.lookOf(w.holder));
+  });
+
+  it("lets the cat hop up and stroll across a desk", () => {
+    const s = sim();
+    const d = s.floor.desks[0];
+    s.cat.stroll = d.index;
+    s.cat.path = [{ x: d.hit.x - 3, y: d.cy + 6 }];
+    s.cat.mode = "walk";
+    run(s, 2000, () => s.cat.mode === "prowl");
+    expect(s.cat.perch).toBe(d.index);
+    const start = s.catAt();
+    expect(start.lift).toBeGreaterThan(0);
+    run(s, 20);
+    expect(s.catAt().x).toBeGreaterThan(start.x);
+    run(s, 2000, () => s.cat.mode !== "prowl");
+    expect(s.cat.perch).toBeNull();
+    expect(s.cat.x).toBeGreaterThan(d.hit.x + d.hit.w);
   });
 
   it("shows the season through the windows", () => {

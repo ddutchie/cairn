@@ -76,9 +76,12 @@ export function buildPerson(look: Look, sitting: boolean): Model {
   const legs = sitting ? 1 : 4;
   const body = legs + 4;
   const H = body + 4;
+  const { style } = look;
   return makeModel(9, 4, H, (x, y, z) => {
     if (z < legs) return !sitting && (x === 3 || x === 5) && y >= 1 && y <= 2 ? "#2e3346" : null;
     if (z < body) {
+      // Long hair falls over the back of the shoulders.
+      if (style === "long" && y === 2 && z >= body - 2 && x >= 3 && x <= 5) return look.hair;
       // Torso, widening into shoulders at the top, with arms down the sides.
       const shoulders = z === body - 1;
       if (x >= 2 && x <= 6 && y >= 1 && y <= 2) return look.shirt;
@@ -87,13 +90,21 @@ export function buildPerson(look: Look, sitting: boolean): Model {
     }
     const hz = z - body;
     // A neck, then a head wider than it with a rounded crown.
-    if (hz === 0) return x === 4 && y >= 1 && y <= 2 ? look.skin : null;
+    if (hz === 0) return x === 4 && y >= 1 && y <= 2 ? (style === "long" && y === 2 ? look.hair : look.skin) : style === "long" && y === 2 && x >= 3 && x <= 5 ? look.hair : null;
     if (x < 2 || x > 6 || y > 2) return null;
-    if (hz === 3) return x >= 3 && x <= 5 && y === 1 ? look.hair : null;
+    // The crown: hair, bare, or a cap that covers the whole top of the head.
+    if (hz === 3) {
+      if (style === "cap") return look.cap ?? look.hair;
+      if (style === "bald") return x >= 3 && x <= 5 && y === 1 ? look.skin : null;
+      return x >= 3 && x <= 5 && y === 1 ? look.hair : null;
+    }
     // Back of the head (toward the viewer, +y) is hair with the ears showing; the face is at y=0.
     if ((x === 2 || x === 6) && y === 1 && hz === 1) return look.skin;
-    if (y >= 1) return look.hair;
-    if (hz === 3) return look.hair;
+    if (y >= 1) {
+      // Bald: a ring of hair low at the back, skin above it.
+      if (style === "bald") return hz === 1 ? look.hair : look.skin;
+      return look.hair;
+    }
     if (hz === 2 && (x === 3 || x === 5)) return "#1a1a22";
     return look.skin;
   });

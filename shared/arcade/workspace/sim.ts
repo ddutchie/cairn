@@ -38,7 +38,15 @@ export interface Look {
   shirt: string;
   hair: string;
   skin: string;
+  /** Read from behind, where seated people are seen: short, long, bald, or a cap. */
+  style: HairStyle;
+  /** The cap's colour, for style "cap". */
+  cap?: string;
 }
+
+export type HairStyle = "short" | "long" | "bald" | "cap";
+/** One string per look, for model caches and telling looks apart. */
+export const lookKey = (l: Look) => `${l.shirt}|${l.hair}|${l.skin}|${l.style}|${l.cap ?? ""}`;
 
 export interface Worker {
   holder: string;
@@ -100,12 +108,17 @@ export interface Janitor extends Walker {
 
 /** The office cat: wanders by day, curls up on a lit monitor at night. */
 export interface Cat extends Walker {
-  mode: "walk" | "sit" | "sleep";
+  /** `prowl`: walking along the front edge of a desk top, from one end to the other. */
+  mode: "walk" | "sit" | "sleep" | "prowl";
   timer: number;
   /** The desk it sleeps on (index into the projects), or null on the floor. */
   perch: number | null;
   /** The desk it is walking to, to sleep on. */
   bed: number | null;
+  /** The desk it is walking to, to hop up and stroll across. */
+  stroll: number | null;
+  /** On a prowl: how far along the desk it is, in pixels from the desk's centre. */
+  across: number;
   /** Last petted (hearts). */
   petAt: number;
   layoutKey: string;
@@ -250,7 +263,7 @@ export const PARTY_FRAMES = 90;
 export const SAY_FRAMES = 160;
 const REPLIES = ["NICE!", "NO WAY", "HA!", "SAME", "WOW", "TOLD YOU"];
 const CLEANER_LINES = ["EVENING!", "MIND THE FLOOR", "ALL CLEAN", "LATE ONE?", "NIGHT NIGHT"];
-const CLEANER: Look = { shirt: "#3b6e8f", hair: "#9aa3b8", skin: "#d9a57a" };
+const CLEANER: Look = { shirt: "#4f7a4a", hair: "#9aa3b8", skin: "#d9a57a", style: "short" };
 export const cleanerLook = (): Look => CLEANER;
 export type Season = "snow" | "leaves" | null;
 /** Snow from December to February, falling leaves from September to November. */
@@ -260,7 +273,10 @@ export const seasonAt = (d: Date): Season => {
 };
 const SKINS = ["#f2c9a0", "#d9a57a", "#b97f56", "#8a5a3b", "#5e3d28"];
 const HAIRS = ["#2b2118", "#5a3a22", "#a8743a", "#e0c070", "#c25a3a", "#7a7a86", "#1d2b4a"];
-const SHIRTS = ["#d9483b", "#5b8dd6", "#7cc46a", "#e3a23b", "#c45aa8", "#2ec4b6", "#8f6ad6", "#e07a5f"];
+const SHIRTS = ["#d9483b", "#5b8dd6", "#7cc46a", "#e3a23b", "#c45aa8", "#2ec4b6", "#8f6ad6", "#e07a5f", "#f2f2f2", "#3a4a6a", "#9ad1e8", "#6e8b3d"];
+const STYLES: HairStyle[] = ["short", "short", "long", "long", "bald", "cap"];
+// Bright, casual caps; never navy or blue, which with a blue shirt reads as a uniform.
+const CAPS = ["#d9483b", "#e3a23b", "#7cc46a", "#f2f2f2", "#c45aa8"];
 
 function strHash(s: string): number {
   let h = 2166136261;
@@ -268,11 +284,43 @@ function strHash(s: string): number {
   return h >>> 0;
 }
 
-/** A stable look per person. The contractor wears hi-vis. */
-export function lookFor(holder: string): Look {
-  const h = strHash(holder);
-  if (holder === CONTRACTOR) return { shirt: "#f2d43a", hair: "#7a7a86", skin: SKINS[h % SKINS.length] };
-  return { shirt: SHIRTS[h % SHIRTS.length], hair: HAIRS[(h >>> 4) % HAIRS.length], skin: SKINS[(h >>> 9) % SKINS.length] };
+/** A cap that isn't the shirt's colour. */
+const capFor = (h: number, shirt: string): string => {
+  const i = (h >>> 17) % CAPS.length;
+  return CAPS[i] === shirt ? CAPS[(i + 1) % CAPS.length] : CAPS[i];
+};
+
+/** A stable look per person (`salt` picks another when two would match). The contractor wears hi-vis and a hard hat. */
+export function lookFor(holder: string, salt = 0): Look {
+  const h = strHash(salt ? `${holder}#${salt}` : holder);
+  if (holder === CONTRACTOR) return { shirt: "#f2d43a", hair: "#7a7a86", skin: SKINS[h % SKINS.length], style: "cap", cap: "#f2d43a" };
+  const style = STYLES[(h >>> 13) % STYLES.length];
+  return {
+    shirt: SHIRTS[h % SHIRTS.length],
+    hair: HAIRS[(h >>> 4) % HAIRS.length],
+    skin: SKINS[(h >>> 9) % SKINS.length],
+    style,
+    ...(style === "cap" ? { cap: capFor(h, SHIRTS[h % SHIRTS.length]) } : {}),
+  };
+}
+
+/**
+ * A look for everyone in the office, no two alike: people are taken in name
+ * order and anyone who would match someone already dressed draws again. Stable
+ * while the same people are in the workspace.
+ */
+export function castLooks(holders: Iterable<string>): Map<string, Look> {
+  const out = new Map<string, Look>();
+  const seen = new Set<string>();
+  // Seen from behind, shirt, hair colour and style are what tell people apart.
+  const sig = (l: Look) => `${l.shirt}|${l.style === "cap" ? l.cap : l.hair}|${l.style}`;
+  for (const who of [...new Set(holders)].sort()) {
+    let look = lookFor(who);
+    for (let salt = 1; salt < 64 && seen.has(sig(look)); salt++) look = lookFor(who, salt);
+    seen.add(sig(look));
+    out.set(who, look);
+  }
+  return out;
 }
 
 /** 0 at night, 1 in daylight, ramping at dawn (6–8) and dusk (17–20). */
@@ -305,6 +353,9 @@ export class OfficeSim {
   floor!: FloorLayout;
   view: DeskView | null = null;
   workers = new Map<string, Worker>();
+  /** Everyone's look, no two alike (recast when the people change). */
+  looks = new Map<string, Look>();
+  private castKey = "";
   robot!: Robot;
   /** Calendar mode: the floor swaps for the week wall. */
   week = false;
@@ -696,7 +747,21 @@ export class OfficeSim {
     return this.area.y + y;
   }
 
+  /** A person's look: their place in the cast, or their own when they aren't in it. */
+  lookOf(holder: string): Look {
+    return this.looks.get(holder) ?? lookFor(holder);
+  }
+
   private syncWorkers(): void {
+    // Dress everyone with work in the office, so nobody shares a look (sticky initials match too).
+    const people = new Set<string>([CONTRACTOR]);
+    for (const p of this.projects) for (const c of p.cards) if (c.assignee) people.add(c.assignee);
+    const castKey = [...people].sort().join("\n");
+    if (castKey !== this.castKey) {
+      this.castKey = castKey;
+      this.looks = castLooks(people);
+      for (const w of this.workers.values()) w.look = this.lookOf(w.holder);
+    }
     const key = `${this.floor.w}x${this.floor.h}p${this.page}`;
     const live = new Set<string>();
     const night = this.night;
@@ -717,7 +782,7 @@ export class OfficeSim {
         const at = `${key}@${home.x},${home.y}`;
         let w = this.workers.get(holder);
         if (!w) {
-          w = { holder, look: lookFor(holder), desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", timer: this.sitTime(), tossIn: 400 + Math.floor(this.rnd() * 800), homeward: false, dx: 0, dy: -1, layoutKey: at, errand: null, via: null, say: null, late: night, hop: -999 };
+          w = { holder, look: this.lookOf(holder), desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", timer: this.sitTime(), tossIn: 400 + Math.floor(this.rnd() * 800), homeward: false, dx: 0, dy: -1, layoutKey: at, errand: null, via: null, say: null, late: night, hop: -999 };
           this.workers.set(holder, w);
         }
         w.late = night;
@@ -759,15 +824,18 @@ export class OfficeSim {
     const key = `${this.floor.w}x${this.floor.h}p${this.page}`;
     const home = { x: Math.round(this.floor.w * 0.62), y: this.floor.h - 24 };
     if (!this.cat) {
-      this.cat = { x: home.x, y: home.y, path: [], dx: 0, dy: 1, mode: "sit", timer: 300, perch: null, bed: null, petAt: -999, layoutKey: key };
+      this.cat = { x: home.x, y: home.y, path: [], dx: 0, dy: 1, mode: "sit", timer: 300, perch: null, bed: null, stroll: null, across: 0, petAt: -999, layoutKey: key };
       return;
     }
     const c = this.cat;
     if (c.layoutKey === key) {
-      if (c.perch !== null && !this.floor.desks.some((d) => d.index === c.perch)) c.perch = null;
+      if (c.perch !== null && !this.floor.desks.some((d) => d.index === c.perch)) {
+      c.perch = null;
+      if (c.mode === "prowl") c.mode = "sit";
+    }
       return;
     }
-    Object.assign(c, { x: home.x, y: home.y, path: [], mode: c.mode === "walk" ? "sit" : c.mode, timer: 200, perch: null, bed: null, layoutKey: key });
+    Object.assign(c, { x: home.x, y: home.y, path: [], mode: c.mode === "walk" || c.mode === "prowl" ? "sit" : c.mode, timer: 200, perch: null, bed: null, stroll: null, layoutKey: key });
   }
 
   /** Mint plants for projects past the done milestone; returns the floor's extra plant count. */
@@ -942,10 +1010,15 @@ export class OfficeSim {
     return this.floor.spots.find((s) => s.kind === kind);
   }
 
-  /** Where someone stands to water planter `i`: just left of it, on the front strip. */
+  /** Where someone stands to water planter `i`: just in front of it, by the back wall. */
   plantSpot(i: number): Pt | null {
     const p = this.floor.plants[i];
-    return p ? { x: Math.max(6, p.x - 12), y: p.y + 1 } : null;
+    return p ? { x: p.x, y: p.y + 10 } : null;
+  }
+
+  /** How a worker from desk `d` reaches spot `s`: the back walkway, or along the front strip from their lane. */
+  private walkway(s: Spot, d: Desk): { aisleY: number; laneX: number } {
+    return s.front ? { aisleY: s.at.y, laneX: d.laneX } : s;
   }
 
   /** Planter `i`'s name: the corner one is the office's, the rest are projects' milestones. */
@@ -983,9 +1056,9 @@ export class OfficeSim {
     w.say = null;
   }
 
-  /** The walkway along the front strip, for the planters. */
-  private plantWalk(at: Pt, d: Desk): { aisleY: number; laneX: number } {
-    return { aisleY: at.y, laneX: d.laneX };
+  /** The walkway to the planters, along the back wall. */
+  private plantWalk(): { aisleY: number; laneX: number } {
+    return this.floor.backWalk;
   }
 
   /** A worker reached the far end of an errand. */
@@ -1064,7 +1137,8 @@ export class OfficeSim {
     const s = this.spot("coffee");
     const w = s && !this.calm ? this.idleWorker(s.at) : null;
     // Someone gets up for it; with nobody free the machine just brews.
-    if (w && s) this.sendTo(w, s.at, s, { k: "coffee" });
+    const d = w && this.deskFor(w);
+    if (w && s && d) this.sendTo(w, s.at, this.walkway(s, d), { k: "coffee" });
     else this.brew();
   }
 
@@ -1075,9 +1149,12 @@ export class OfficeSim {
     const a = this.idleWorker(s.at);
     if (!a) return;
     const b = this.idleWorker(s.at, a);
-    this.sendTo(a, s.at, s, { k: "chat", text: this.gossip() });
+    const da = this.deskFor(a);
+    if (!da) return;
+    this.sendTo(a, s.at, this.walkway(s, da), { k: "chat", text: this.gossip() });
     // A second person a step further along answers (they arrive a moment later).
-    if (b) this.sendTo(b, { x: s.at.x + 12, y: s.at.y }, s, { k: "chat", text: REPLIES[Math.floor(this.rnd() * REPLIES.length)] });
+    const db = b && this.deskFor(b);
+    if (b && db) this.sendTo(b, { x: s.at.x - 12, y: s.at.y }, this.walkway(s, db), { k: "chat", text: REPLIES[Math.floor(this.rnd() * REPLIES.length)] });
   }
 
   private tapPlant(i: number): void {
@@ -1085,7 +1162,7 @@ export class OfficeSim {
     const at = this.plantSpot(i);
     const w = at && !this.calm ? this.idleWorker(at) : null;
     const d = w && this.deskFor(w);
-    if (w && at && d) this.sendTo(w, at, this.plantWalk(at, d), { k: "water", plant: i });
+    if (w && at && d) this.sendTo(w, at, this.plantWalk(), { k: "water", plant: i });
   }
 
   private openBoard(): void {
@@ -1179,14 +1256,43 @@ export class OfficeSim {
     const d = c.perch !== null ? this.floor.desks.find((x) => x.index === c.perch) : undefined;
     if (!d) return { x: c.x, y: c.y, lift: 0 };
     const z = this.floor.zoom;
+    // Strolling along the desk's front edge, in front of the monitor and keyboard.
+    if (c.mode === "prowl") return { x: Math.round(d.cx + c.across), y: d.cy + Math.round(2.5 * z), lift: 5 * z };
     return { x: d.cx, y: d.cy - Math.round(3.5 * z), lift: 10 * z };
   }
 
   private stepCat(): void {
     const c = this.cat;
     if (!c) return;
+    const k = this.floor.zoom / 2;
+    if (c.mode === "prowl") {
+      const d = this.floor.desks.find((x) => x.index === c.perch);
+      const end = 17 * k;
+      c.across += 0.3;
+      c.dx = 1;
+      c.dy = 0;
+      if (d && c.across < end) return;
+      // Off the far end, back onto the floor.
+      if (d) {
+        c.x = Math.min(this.floor.w - 4, d.hit.x + d.hit.w + 3);
+        c.y = d.cy + Math.round(6 * k);
+      }
+      c.perch = null;
+      c.mode = "sit";
+      c.timer = 200 + Math.floor(this.rnd() * 300);
+      return;
+    }
     if (c.mode === "walk") {
       if (!this.walkOn(c, WALK * 0.9)) return;
+      const strollOn = c.stroll !== null ? this.floor.desks.find((d) => d.index === c.stroll) : undefined;
+      c.stroll = null;
+      if (strollOn) {
+        // Hop up at the near end and walk across the desk.
+        c.perch = strollOn.index;
+        c.mode = "prowl";
+        c.across = -17 * k;
+        return;
+      }
       if (c.bed !== null && this.floor.desks.some((d) => d.index === c.bed)) {
         c.perch = c.bed;
         c.mode = "sleep";
@@ -1214,6 +1320,11 @@ export class OfficeSim {
       const d = lit[Math.floor(this.rnd() * lit.length)];
       c.bed = d.index;
       c.path = this.freePath(c, { x: d.side.x, y: d.side.y });
+    } else if (this.floor.desks.length && this.rnd() < 0.3) {
+      // Up onto a desk, to walk across it (left end to right end).
+      const d = this.floor.desks[Math.floor(this.rnd() * this.floor.desks.length)];
+      c.stroll = d.index;
+      c.path = this.freePath(c, { x: Math.max(4, d.hit.x - 3), y: d.cy + Math.round(6 * k) });
     } else {
       c.path = this.freePath(c, this.freeSpot());
     }
@@ -1224,7 +1335,7 @@ export class OfficeSim {
     const c = this.cat;
     c.petAt = this.t;
     // A pet wakes it; it sits a while, purring.
-    if (c.mode !== "walk") {
+    if (c.mode !== "walk" && c.mode !== "prowl") {
       c.mode = "sit";
       c.timer = 240;
     }
@@ -1404,8 +1515,8 @@ export class OfficeSim {
     const tx = F.bin.x + jx, ty = F.bin.y + jy;
     const dist = Math.hypot(tx - r.x, ty - r.y);
     const f = flightFor(dist);
+    // The same ball thrown again: it was counted when it was first made.
     this.papers.push({ x: r.x, y: r.y - 8, sx: r.x, sy: r.y - 8, tx, ty, t: 0, dur: f.dur, arcH: f.arcH, state: "fly", scores: true });
-    this.tossMade++;
   }
 
   private nearestPaper(r: Robot): Paper | null {
@@ -1475,11 +1586,11 @@ export class OfficeSim {
     if (roll < 0.12 && plants) {
       const i = Math.floor(this.rnd() * plants);
       const at = this.plantSpot(i)!;
-      this.sendTo(w, at, this.plantWalk(at, d), { k: "water", plant: i });
+      this.sendTo(w, at, this.plantWalk(), { k: "water", plant: i });
     } else if (roll < 0.7 || !others.length) {
       const spots = this.floor.spots.filter((s) => s.kind !== "printer");
       const s = spots[Math.floor(this.rnd() * spots.length)];
-      this.sendTo(w, s.at, s, s.kind === "coffee" ? { k: "coffee" } : { k: "chat", text: this.rnd() < 0.5 ? this.gossip() : "" });
+      this.sendTo(w, s.at, this.walkway(s, d), s.kind === "coffee" ? { k: "coffee" } : { k: "chat", text: this.rnd() < 0.5 ? this.gossip() : "" });
     } else {
       const o = others[Math.floor(this.rnd() * others.length)];
       this.sendTo(w, { x: o.cx - Math.round(26 * (this.floor.zoom / 2)), y: o.cy + 6 }, o, { k: "visit" });
@@ -1545,7 +1656,8 @@ export class OfficeSim {
     if (Math.abs(lx - F.printer.x) < 9 && ly > F.printer.y - 16 && ly < F.printer.y + 4) return { k: "printer" };
     for (let i = F.plants.length - 1; i >= 0; i--) {
       const p = F.plants[i];
-      const tall = i % 2 ? 20 : 30;
+      // The visible leaves only, so the window above stays clickable for its blinds.
+      const tall = i % 2 ? 16 : 22;
       if (Math.abs(lx - p.x) < 9 && ly > p.y - tall && ly < p.y + 5) return { k: "plant", i };
     }
     if (inRect(F.lightSwitch, lx, ly, 3)) return { k: "lights" };

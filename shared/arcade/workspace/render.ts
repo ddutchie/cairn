@@ -14,7 +14,7 @@ import { rgb } from "../pixel/terrain";
 import { CONTRACTOR, type OfficeCard } from "./data";
 import { COL_HEAD, type Desk, type Rect } from "./layout";
 import { buildDesk, buildPerson, BIN, CAT, CAT_ASLEEP, CHAIR, COFFEE, COOLER, deskKey, PLANTER_BUSH, PLANTER_TALL, PRINTER, ROBOT } from "./models";
-import { cleanerLook, lookFor, PARTY_FRAMES, PRINT_FRAMES, type Janitor, type OfficeSim, type Robot, type Worker } from "./sim";
+import { cleanerLook, lookKey, PARTY_FRAMES, PRINT_FRAMES, type Janitor, type OfficeSim, type Robot, type Worker } from "./sim";
 
 const BG = "#10131c";
 const WALL = "#3a4258";
@@ -85,7 +85,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     const W = sim.area.w;
     const H = Math.max(1, sim.area.h - F.wall.h);
     const level = Math.round(day * 20) / 20;
-    const key = `${W}x${H}|${level}|${F.windows.map((w, i) => `${w.x},${w.w},${sim.blinds.has(i) ? 1 : 0}`).join(";")}`;
+    const key = `${W}x${H}|${level}|${F.windows.map((w, i) => `${w.x},${w.w},${sim.blinds.has(i) ? 1 : 0}`).join(";")}|${F.plants.map((p) => p.x).join(",")}`;
     if (this.floorImg?.key === key) return this.floorImg.img;
     const px = new Uint8Array(W * H * 4);
     const fill = (x: number, y: number, w: number, h: number, color: string, alpha = 1) => {
@@ -113,6 +113,15 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
         if (sim.blinds.has(wi)) continue;
         for (let i = 0; i < 26; i++) fill(w.x + 2 + i, i * 3, w.w - 4, 3, SUN, 0.16 * level * (1 - i / 26));
       }
+      // A planter standing in a window's light throws its shadow into the beam, slanting the same way.
+      const base = F.plants.length ? F.plants[0].y - F.wall.h : 0;
+      F.plants.forEach((p, pi) => {
+        if (!F.windows.some((w, wi) => !sim.blinds.has(wi) && p.x >= w.x && p.x < w.x + w.w)) return;
+        const half = pi % 2 ? 4 : 3;
+        for (let yy = 0; yy < 36; yy += 2) {
+          fill(Math.round(p.x - half + (base + yy) / 3 - base / 3), base + yy, half * 2, 2, "#3a2a1a", 0.2 * level * (1 - yy / 36));
+        }
+      });
     }
     const img = this.makeImage(W, H, px);
     this.floorImg = { key, img };
@@ -520,7 +529,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
 
   private drawWorker(w: Worker, ox: number, oy: number): void {
     const sitting = w.mode === "sit";
-    const m = this.atlas(`p:${w.holder}:${sitting ? 1 : 0}`, () => buildPerson(lookFor(w.holder), sitting));
+    const m = this.atlas(`p:${lookKey(w.look)}:${sitting ? 1 : 0}`, () => buildPerson(w.look, sitting));
     const sim = this.sim;
     const walking = w.mode === "walk";
     const bob = walking ? (Math.floor(sim.t / 7) % 2) : 0;
@@ -583,7 +592,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     const at = sim.catAt();
     const asleep = c.mode === "sleep";
     const m = this.atlas(asleep ? "cat-asleep" : "cat", () => (asleep ? CAT_ASLEEP : CAT));
-    const walking = c.mode === "walk";
+    const walking = c.mode === "walk" || c.mode === "prowl";
     const ang = walking ? Math.atan2(c.dx, -c.dy) : asleep ? 0 : Math.PI;
     const z = sim.floor.zoom;
     const x = ox + at.x;
@@ -859,7 +868,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     this.text(clip(c.title, Math.max(1, room)), x + 4, y + 4 - lift, INK, 1, null);
     if (initials) {
       const ix = x + w - textWidth(initials) - 3;
-      this.rect(ix - 2, y + 2 - lift, textWidth(initials) + 4, 8, lookFor(c.assignee!).shirt);
+      this.rect(ix - 2, y + 2 - lift, textWidth(initials) + 4, 8, this.sim.lookOf(c.assignee!).shirt);
       this.text(initials, ix, y + 4 - lift, INK, 1, null);
     }
     const born = this.sim.fresh.get(c.id);
