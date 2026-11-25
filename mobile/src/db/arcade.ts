@@ -129,6 +129,8 @@ export function loadArcadeProjects(now = new Date()): { projects: ArcadeProject[
 export interface OfficeLoad {
   office: OfficeData;
   fingerprint: string;
+  /** First workspace row, for per-workspace decor keys. */
+  workspaceId: string | null;
 }
 
 /**
@@ -138,7 +140,7 @@ export interface OfficeLoad {
  */
 export function loadOfficeData(now = new Date()): OfficeLoad {
   const db = getDb();
-  const ws = db.getFirstSync<{ name: string } | null>(`SELECT name FROM workspaces ORDER BY updated_at DESC LIMIT 1`);
+  const ws = db.getFirstSync<{ id: string; name: string } | null>(`SELECT id, name FROM workspaces ORDER BY updated_at DESC LIMIT 1`);
   const projects = db.getAllSync<{ id: string; name: string }>(
     `SELECT id, name FROM projects WHERE ${LIVE} ORDER BY updated_at DESC`,
   );
@@ -177,5 +179,5 @@ export function loadOfficeData(now = new Date()): OfficeLoad {
     `SELECT (SELECT COUNT(*) FROM projects) + (SELECT COUNT(*) FROM task_cards) + (SELECT COUNT(*) FROM notes) + (SELECT COUNT(*) FROM board_columns) AS n,
             (SELECT MAX(updated_at) FROM (SELECT updated_at FROM projects UNION ALL SELECT updated_at FROM task_cards UNION ALL SELECT updated_at FROM notes UNION ALL SELECT updated_at FROM board_columns)) AS m`,
   );
-  return { office, fingerprint: `${fp?.n ?? 0}|${fp?.m ?? ""}` };
+  return { office, fingerprint: `${fp?.n ?? 0}|${fp?.m ?? ""}`, workspaceId: ws?.id ?? null };
 }

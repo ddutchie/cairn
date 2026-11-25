@@ -46,7 +46,8 @@ beforeEach(() => {
 
 describe("loadOfficeData", () => {
   it("mirrors open cards with zones, assignees and due state", () => {
-    const { office } = loadOfficeData(new Date(NOW));
+    const { office, workspaceId } = loadOfficeData(new Date(NOW));
+    expect(workspaceId).toBe("ws");
     expect(office.demo).toBe(false);
     const p1 = office.projects.find((p) => p.id === "p1")!;
     expect(p1.cards.map((c) => c.id).sort()).toEqual(["t1", "t2"]);

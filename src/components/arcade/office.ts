@@ -37,9 +37,29 @@ const watched = (s: StoreState) => [s.projects, s.columns, s.cards, s.notes, s.w
 /** How long a burst of changes (an agent editing ten cards) settles before the office redraws them. */
 const SETTLE_MS = 250;
 
+/** Milestone plants, per workspace (the demo office shares the workspace's set). */
+const decorKey = (wsId: string | null) => `office_decor:${wsId ?? "default"}`;
+function loadDecor(wsId: string | null): string[] {
+  try {
+    const raw = localStorage.getItem(decorKey(wsId));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function saveDecor(wsId: string | null, ids: string[]): void {
+  try {
+    localStorage.setItem(decorKey(wsId), JSON.stringify(ids));
+  } catch {
+    // Cosmetic only: the plants come back next session.
+  }
+}
+
 export function makeOfficeFactory(open: (ref: Ref) => void, onAgent: () => void = () => useCairnStore.getState().setView("agent")): GameFactory {
   return ({ canvas, width, height }) => {
-    const sim = new OfficeSim({ width, height, hud: NO_HUD, inputMode: "pointer", office: officeFromStore() });
+    let wsId = useCairnStore.getState().activeWorkspaceId;
+    const sim = new OfficeSim({ width, height, hud: NO_HUD, inputMode: "pointer", office: officeFromStore(), decor: loadDecor(wsId) });
     const renderer = new OfficeRenderer(createCanvasBackend(canvas), sim);
     let last = watched(useCairnStore.getState());
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -51,6 +71,11 @@ export function makeOfficeFactory(open: (ref: Ref) => void, onAgent: () => void 
       timer = setTimeout(() => {
         timer = null;
         sim.setData(officeFromStore());
+        const id = useCairnStore.getState().activeWorkspaceId;
+        if (id !== wsId) {
+          wsId = id;
+          sim.setDecor(loadDecor(id));
+        }
       }, SETTLE_MS);
     });
     // A note the AI is writing shows as a bubble over its desk until the write ends.
@@ -70,6 +95,10 @@ export function makeOfficeFactory(open: (ref: Ref) => void, onAgent: () => void 
     return {
       update: () => {
         sim.step();
+        if (sim.decorDirty) {
+          saveDecor(wsId, [...sim.decor]);
+          sim.decorDirty = false;
+        }
         for (const e of sim.events.splice(0)) {
           // The demo office has nothing real behind it.
           if (e.k === "open" && !sim.data.demo) open(e.ref);

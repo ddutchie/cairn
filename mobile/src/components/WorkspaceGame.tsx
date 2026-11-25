@@ -1,4 +1,5 @@
 import { useRouter, type Href } from "expo-router";
+import { getMeta, setMeta } from "@/db";
 import { haptics } from "@/haptics";
 import { PixelGameView, type PixelGame, type PixelGameSpec } from "@/components/PixelGameView";
 import { skiaBackend } from "@/games/pixel/skia-backend";
@@ -8,6 +9,18 @@ import { OfficeSim } from "@cairn/shared/arcade/workspace/sim";
 
 /** Poll the workspace this often (steps run at 60 Hz): the sim animates between polls. */
 const POLL_STEPS = 180;
+
+/** Milestone plants, per workspace (device-local, never synced). */
+const decorKey = (wsId: string | null) => `office_decor:${wsId ?? "default"}`;
+function loadDecor(wsId: string | null): string[] {
+  try {
+    const raw = getMeta(decorKey(wsId));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 /**
  * The idle office (`/office`): your workspace mirrored live. A tap opens the
@@ -22,13 +35,16 @@ export function WorkspaceGameView() {
 
   function create({ width, height, hud }: PixelGameSpec): PixelGame<string> {
     let fp = "";
-    const sim = new OfficeSim({ width, height, hud, inputMode: "touch", seed: 7 });
+    let wsId: string | null = null;
+    let sim: OfficeSim;
     try {
       const first = loadOfficeData();
       fp = first.fingerprint;
-      sim.setData(first.office);
+      wsId = first.workspaceId;
+      sim = new OfficeSim({ width, height, hud, inputMode: "touch", seed: 7, office: first.office, decor: loadDecor(wsId) });
     } catch {
       // DB not ready: the demo office stands in until the first poll lands.
+      sim = new OfficeSim({ width, height, hud, inputMode: "touch", seed: 7 });
     }
     const renderer = new OfficeRenderer(skiaBackend, sim);
     let n = 0;
@@ -56,6 +72,14 @@ export function WorkspaceGameView() {
       },
       step: () => {
         sim.step();
+        if (sim.decorDirty) {
+          try {
+            setMeta(decorKey(wsId), JSON.stringify([...sim.decor]));
+            sim.decorDirty = false;
+          } catch {
+            // Device store busy: keep the flag and retry next step.
+          }
+        }
         if (++n < POLL_STEPS) return;
         n = 0;
         try {
