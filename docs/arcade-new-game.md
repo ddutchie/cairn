@@ -54,7 +54,7 @@ For 3D models:
 - **Characters and hero props:** voxel `Model`s through `meshFromModel` (greedy-meshed, with an automatic LOD).
 - **Scenery in bulk:** `LowPoly` (`pixel/lowpoly.ts`), which builds trees, rocks and crags from a few dozen flat-shaded triangles with the same lighting as the voxel meshes. A voxel tree costs about 700 triangles; a low-poly palm about 60.
 
-Budget: keep a 3D frame near **10k triangles**. Check it in the harness with `calls()` and by counting `drawTri` calls (see `docs/arcade-play.md`), and choose each prop's detail by its size on screen.
+Budget: keep a 3D frame near **10k triangles**, and keep `npm run arcade:bench` for the game under about 16 ms (the Wayfinder island is about 15 ms at the Duo's size). Check it in the harness with `calls()` and by counting `drawTri` calls (see `docs/arcade-play.md`), and choose each prop's detail by its size on screen.
 
 Colours: arcade pixel code uses hex strings (the CSS-variable rule is for the app's UI, not the game canvas).
 
@@ -66,7 +66,7 @@ Colours: arcade pixel code uses hex strings (the CSS-variable rule is for the ap
    - `mobile/src/components/<Name>Game.tsx`: a `create<Name>` factory returning a `PixelGame`, an `onEvent` that maps events to `haptics`, and a view wrapping `PixelGameView` with a `bestKey`.
    - `mobile/app/<id>.tsx`: the route, wrapping the view in `PixelGameRoute`. The file name must be the game id: the menu opens `/<id>`.
    - Add the id to `PIXEL_GAME_ROUTES` in `mobile/app/_layout.tsx`.
-4. **Harness:** add the pair to `GAMES` in `scripts/arcade-play/play.ts`.
+4. **Harness:** add the pair to `GAMES` in `scripts/arcade-play/play.ts` and `scripts/arcade-play/bench.ts`.
 
 ## 5. Tests
 
@@ -88,6 +88,6 @@ npm run type-check:all
 ## 6. Before you ship
 
 - **Play it in the harness** at folded and unfolded Duo sizes (`w=233&h=320`, `w=320&h=320`, with `duo=1` and `touch=1`).
-- **Measure on a device.** Chrome numbers flatter both kinds of game; Skia's per-call cost and Hermes's interpreter don't show there.
+- **Measure.** Chrome numbers flatter both kinds of game; Skia's per-call cost and Hermes's interpreter don't show there. `npm run arcade:bench -- <game>` times a frame under an interpreter and counts painter calls (see `docs/arcade-play.md`); then confirm on a device.
 - **Write `DESIGN.md`:** the loop, what each piece of user data does, and the tuning notes (with the numbers a bot or a playthrough produced).
 - **Changelogs:** add a line to `changelogs/` and `mobile/changelogs/` (see AGENTS.md for which file), and a What's New entry if it's a headline feature.

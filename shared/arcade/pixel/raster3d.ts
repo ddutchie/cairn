@@ -461,30 +461,49 @@ export class Framebuffer3D {
     const zbuf = this.zbuf;
     const buf32 = this.buf32;
 
-    const dx12 = y1 - y2, dy12 = x2 - x1;
-    const dx20 = y2 - y0, dy20 = x0 - x2;
+    // Barycentric weights are linear in screen space: w0 = a0·px + c0(py),
+    // w1 = a1·px + c1(py), w2 = 1 − w0 − w1. Each row solves for the span
+    // where all three are ≥ −EPS, then steps 1/z across it, so the inner loop
+    // is one add and one depth test per pixel (it matters on Hermes, which
+    // interprets this loop).
+    const a0 = (y1 - y2) * invArea, b0 = (x2 - x1) * invArea;
+    const a1 = (y2 - y0) * invArea, b1 = (x0 - x2) * invArea;
+    const a2 = -a0 - a1;
 
     // Perspective-correct 1/z depth interpolation eliminates Z-fighting on large/steep tris.
     const iz0 = 1 / cz0, iz1 = 1 / cz1, iz2 = 1 / cz2;
+    const dz0 = iz0 - iz2, dz1 = iz1 - iz2;
+    const dizdx = a0 * dz0 + a1 * dz1;
+    const EPS = 0.001;
+    const ia0 = a0 !== 0 ? 1 / a0 : 0, ia1 = a1 !== 0 ? 1 / a1 : 0, ia2 = a2 !== 0 ? 1 / a2 : 0;
 
     for (let y = minY; y <= maxY; y++) {
       const py = y + 0.5;
+      const c0 = b0 * (py - y2) - a0 * x2;
+      const c1 = b1 * (py - y0) - a1 * x0;
+      const c2 = 1 - c0 - c1;
+      // Span of pixel centres px with a·px + c ≥ −EPS for every edge.
+      let lo = minX + 0.5, hi = maxX + 0.5;
+      if (a0 > 0) lo = Math.max(lo, (-EPS - c0) * ia0);
+      else if (a0 < 0) hi = Math.min(hi, (-EPS - c0) * ia0);
+      else if (c0 < -EPS) continue;
+      if (a1 > 0) lo = Math.max(lo, (-EPS - c1) * ia1);
+      else if (a1 < 0) hi = Math.min(hi, (-EPS - c1) * ia1);
+      else if (c1 < -EPS) continue;
+      if (a2 > 0) lo = Math.max(lo, (-EPS - c2) * ia2);
+      else if (a2 < 0) hi = Math.min(hi, (-EPS - c2) * ia2);
+      else if (c2 < -EPS) continue;
+      const xs = Math.ceil(lo - 0.5), xe = Math.floor(hi - 0.5);
+      if (xs > xe) continue;
+      const px = xs + 0.5;
+      let iz = iz2 + (a0 * px + c0) * dz0 + (a1 * px + c1) * dz1;
       const row = y * w;
-      for (let x = minX; x <= maxX; x++) {
-        const px = x + 0.5;
-        const w0 = (dx12 * (px - x2) + dy12 * (py - y2)) * invArea;
-        if (w0 < -0.001) continue;
-        const w1 = (dx20 * (px - x0) + dy20 * (py - y0)) * invArea;
-        if (w1 < -0.001) continue;
-        const w2 = 1 - w0 - w1;
-        if (w2 < -0.001) continue;
-
-        const iz = w0 * iz0 + w1 * iz1 + w2 * iz2;
-        const idx = row + x;
+      for (let idx = row + xs, end = row + xe; idx <= end; idx++) {
         if (iz > zbuf[idx]) {
           zbuf[idx] = iz;
           buf32[idx] = packed;
         }
+        iz += dizdx;
       }
     }
   }

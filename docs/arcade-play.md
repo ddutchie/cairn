@@ -34,9 +34,28 @@ Mouse and keyboard go to the sim exactly as on desktop (`down` / `move` / `up`, 
 | `paused` | `paused = true` stops stepping the sim (drawing continues), so a scene holds still |
 | `measure(n = 60)` | Average `ren.draw()` time in ms over `n` frames, advancing only `sim.t` |
 | `calls()` | Surface calls one frame makes (`drawRect`, `drawStack`, `drawImageRect`…) |
+| `landAt(i?)` | Wayfinder: park the boat beside island `i` (default: the first unexplored one) and land, to get straight to the 3D island stage |
 
-`measure()` is the CPU cost of drawing in Chrome. **`calls()` is the better predictor of mobile cost:** on the Skia backend every surface call crosses into native code, so a frame of a thousand `drawRect`s is slow on a phone even when Chrome draws it in 2 ms. The 3D games render into a `Framebuffer3D` and hand it over in one `drawImageRect`, which is why they make tens of calls per frame, not thousands. Confirm on a device before trusting either number.
+`measure()` is the CPU cost of drawing in Chrome. **`calls()` is the better predictor of mobile cost:** on the Skia backend every surface call crosses into native code, so a frame of a thousand `drawRect`s is slow on a phone even when Chrome draws it in 2 ms. The 3D games render into a `Framebuffer3D` and hand it over in one `drawImageRect`, which is why they make tens of calls per frame, not thousands. Confirm on a device before trusting either number, or start with the benchmark below.
+
+## Benchmark (`npm run arcade:bench`)
+
+```bash
+npm run arcade:bench
+```
+
+```bash
+npm run arcade:bench -- wayfinder 233 339
+```
+
+`scripts/arcade-play/bench.ts` runs a game's sim and renderer in Node against a no-op painter and prints the draw time (average, p95, max), the first frame, and painter calls per frame. It runs under `node --jitless`, which interprets the code the way Hermes does on the phone. Chrome's JIT hides most of a hot loop's cost; the interpreter doesn't, so this ranks rasterizer and terrain changes the way the phone does. Add `--jit` to compare with a JIT.
+
+- With no game it runs all of them. Arguments are `<game> <width> <height> [frames]`; the default size, 233×339, is the Duo folded.
+- For Wayfinder it lands on the first few islands and walks each trail, so it times the 3D island stage, and its first frame is the island bake.
+- The painter is a no-op, so the numbers leave out Skia. Keep painter calls per frame low as well (see `calls()` above).
+
+As a guide, a Release build on the iPhone Duo simulator draws in about half to two-thirds of the `--jitless` time (the Wayfinder island: 15.6 ms here, 8–9 ms there). To check an optimisation doesn't change the picture, render the same frames before and after and compare the `Framebuffer3D.buf32` arrays; a rasterizer change should leave them identical.
 
 ## Adding a game
 
-Import its sim and renderer in `scripts/arcade-play/play.ts` and add it to `GAMES`. A game works in the harness if its sim takes the standard `{ width, height, hud, inputMode, projects }` spec and its renderer takes `(backend, sim)` — the same contract `PixelGameView` (mobile) and `ArcadeView` (desktop) rely on. The harness feeds it `DEMO_ARCADE_PROJECTS`.
+Import its sim and renderer in `scripts/arcade-play/play.ts` and `scripts/arcade-play/bench.ts`, and add it to `GAMES` in both. A game works in the harness if its sim takes the standard `{ width, height, hud, inputMode, projects }` spec and its renderer takes `(backend, sim)` — the same contract `PixelGameView` (mobile) and `ArcadeView` (desktop) rely on. The harness feeds it `DEMO_ARCADE_PROJECTS`.

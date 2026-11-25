@@ -4,6 +4,7 @@
  */
 
 import type { Priority } from "../../types/domain";
+import { parseWikilinks } from "../../notes/wikilinks";
 import { fontSafe } from "./font";
 import type { Label } from "./kinds";
 import { BIOME_ORDER, hash2, type BiomeName } from "./terrain";
@@ -46,6 +47,45 @@ export const ACCENTS = ["#2ec4b6", "#e3a23b", "#5b8dd6", "#d9483b", "#7cc46a", "
 const MAX_TITLE = 28;
 
 export const cleanArcadeTitle = (s: string): string => fontSafe(s).slice(0, MAX_TITLE) || "UNTITLED";
+
+/** A note as the loaders read it, before it becomes an `ArcadeNote`. */
+export interface ArcadeNoteSource {
+  id: string;
+  title: string;
+  /** Markdown body, or whatever excerpt is loaded (wikilinks in it count). */
+  body: string | null | undefined;
+  /** Stored note links (`linked_note_ids`). */
+  linkedIds: readonly string[];
+}
+
+/**
+ * Each note's links among the notes in play: its stored links plus the
+ * `[[Title]]` wikilinks in its body, matched by title (case-insensitive).
+ * Notes often link only by wikilink, so without these most islands would be
+ * unlinked and every landing the same "lost island".
+ */
+export function arcadeNoteLinks(notes: readonly ArcadeNoteSource[]): Map<string, string[]> {
+  const ids = new Set(notes.map((n) => n.id));
+  const byTitle = new Map<string, string>();
+  for (const n of notes) {
+    const k = n.title.trim().toLowerCase();
+    if (k && !byTitle.has(k)) byTitle.set(k, n.id);
+  }
+  const out = new Map<string, string[]>();
+  for (const n of notes) {
+    const links = new Set(n.linkedIds.filter((id) => ids.has(id)));
+    if (n.body) {
+      for (const w of parseWikilinks(n.body)) {
+        // `[[Title|alias]]` and `[[Title#heading]]` point at Title.
+        const id = byTitle.get(w.title.split(/[|#]/)[0].trim().toLowerCase());
+        if (id) links.add(id);
+      }
+    }
+    links.delete(n.id);
+    out.set(n.id, [...links]);
+  }
+  return out;
+}
 
 /** Minutes between 09:00 on `now`'s day and the due timestamp, plus Today scope. */
 export function dueMinutes(due: string | null | undefined, now: Date, seed: number): { dueMin: number; overdue: boolean; dueScope: DueScope } {

@@ -12,6 +12,7 @@ import type { Project, Tag } from "@cairn/shared/types/workspace";
 import {
   ACCENTS,
   DEMO_DATA,
+  arcadeNoteLinks,
   cleanArcadeTitle,
   dueMinutes,
   interleave,
@@ -79,7 +80,8 @@ export function buildArcadeData(src: ArcadeSource): ArcadeData {
       .sort((a, b) => Number(b.isPinned) - Number(a.isPinned) || b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, MAX_NOTES),
   }));
-  const noteIds = new Set(selected.flatMap((x) => x.notes.map((n) => n.id)));
+  // Bodies load lazily on desktop: use what's loaded, else the excerpt (its wikilinks still count).
+  const links = arcadeNoteLinks(selected.flatMap((x) => x.notes.map((n) => ({ id: n.id, title: n.title, body: n.content ?? n.contentText, linkedIds: n.linkedNoteIds }))));
   const out: ArcadeProject[] = selected.map((x, i) => ({
     id: x.p.id,
     name: cleanArcadeTitle(x.p.name),
@@ -93,8 +95,9 @@ export function buildArcadeData(src: ArcadeSource): ArcadeData {
     notes: x.notes.map((n) => ({
       id: n.id,
       title: cleanArcadeTitle(n.title),
-      words: Math.max(80, (n.contentText?.length ?? 0) * 6),
-      links: n.linkedNoteIds.filter((id) => id !== n.id && noteIds.has(id)),
+      // A loaded body gives a real size (about five characters a word); the ≤200-char excerpt only a guess.
+      words: Math.max(80, n.content ? Math.round(n.content.trim().length / 5) : (n.contentText?.length ?? 0) * 6),
+      links: links.get(n.id) ?? [],
     })),
   }));
   const tags = src.tags.filter(inWs).map((t) => cleanArcadeTitle(t.name)).slice(0, 12);

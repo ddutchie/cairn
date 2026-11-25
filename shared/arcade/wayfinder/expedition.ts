@@ -220,7 +220,8 @@ export function dealDeck(info: IslandInfo): { deck: StepKind[]; mood: Mood; rout
     middle.unshift("fork");
     const a = info.links[Math.floor(rng() * info.links.length)];
     const others = info.links.filter((l) => l !== a);
-    const b = others.length ? others[Math.floor(rng() * others.length)] : { isle: -1, title: "THE WILD PATH" };
+    const wild = WILD_PATHS[info.biome];
+    const b = others.length ? others[Math.floor(rng() * others.length)] : { isle: -1, title: wild[Math.floor(rng() * wild.length)] };
     const ka = ROUTE_KINDS[Math.floor(rng() * ROUTE_KINDS.length)];
     let kb = ROUTE_KINDS[Math.floor(rng() * ROUTE_KINDS.length)];
     if (kb === ka) kb = ROUTE_KINDS[(ROUTE_KINDS.indexOf(ka) + 1) % ROUTE_KINDS.length];
@@ -231,6 +232,23 @@ export function dealDeck(info: IslandInfo): { deck: StepKind[]; mood: Mood; rout
   }
   return { deck: ["shore", ...middle, "shrine"], mood, routes };
 }
+
+/** The unmarked trail a fork offers when a note has only one link: named for the island, so forks differ. */
+const WILD_PATHS: Record<BiomeName, string[]> = {
+  tropic: ["THE WILD PATH", "THE VINE TUNNEL", "THE PARROT TRAIL", "THE FERN GULLY"],
+  desert: ["THE WILD PATH", "THE DRY WASH", "THE SALT TRACK", "THE CANYON RIM"],
+  tundra: ["THE WILD PATH", "THE FROST LEDGE", "THE PINE TRACK", "THE ICE STAIR"],
+  volcano: ["THE WILD PATH", "THE ASH RIDGE", "THE CINDER TRACK", "THE LAVA STEPS"],
+};
+/** A lost island's shore: no links in or out, said a few ways. */
+const LOST_SHORE: [string, string][] = [
+  ["NO TRAIL LEADS HERE", "NO NOTE LINKS IN"],
+  ["NO CHART NAMES THIS", "ISLAND - LINK A NOTE"],
+  ["FOG HIDES THIS SHORE", "FROM EVERY OTHER NOTE"],
+  ["A NOTE NOBODY LINKS", "WAITS IN THE MIST"],
+];
+/** What haunts a lost island: the same ghost under a few names. */
+const GHOST_NAMES = [GHOST_FOE.name, "FOG WRAITH", "LOST SAILOR", "PALE LANTERN"];
 
 /** Per-biome set dressing for the shore and cache cards. */
 const FLAVOUR: Record<BiomeName, { trail: [string, string]; cache: string; river: string }> = {
@@ -259,7 +277,7 @@ export const wreckRelic = (e: Expedition): Relic => (hash2(e.isleIndex, 5, 41) <
 export function foeName(e: Expedition): string {
   const kind = kindAt(e);
   if (kind === "overdue" && e.overdue) return clip(e.overdue, 16);
-  const base = e.foe < 0 ? GHOST_FOE.name : FOE_ROSTER[e.biome][e.foe % FOE_ROSTER[e.biome].length].name;
+  const base = e.foe < 0 ? GHOST_NAMES[e.isleIndex % GHOST_NAMES.length] : FOE_ROSTER[e.biome][e.foe % FOE_ROSTER[e.biome].length].name;
   return kind === "den" ? `ELDER ${base}` : base;
 }
 
@@ -272,7 +290,7 @@ export function stepCard(e: Expedition, v: Voyage): StepCard {
         kind,
         tag: MOOD_TAG[e.mood],
         title: e.title,
-        lines: e.mood === "lost" ? ["NO TRAIL LEADS HERE", "NO NOTE LINKS IN"] : fl.trail,
+        lines: e.mood === "lost" ? LOST_SHORE[e.isleIndex % LOST_SHORE.length] : fl.trail,
         a: { label: "SCOUT AHEAD", desc: "WEAKEN FOE, TRAPS" },
         b: { label: "COMB BEACH", desc: `+${goldFor(e, 8)} GOLD` },
       };

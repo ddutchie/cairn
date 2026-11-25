@@ -378,6 +378,9 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
     this.drawKrakenUnder();
     for (const p of s.parts) if (p.wake) this.px(this.sx(p.x), this.sy(p.y), p.c, 1, Math.max(0, p.life / 34));
 
+    // Surfaced life is depth-sorted against the boat by its waterline: further up the screen draws behind.
+    this.drawSeaLifeOver(false);
+    this.drawKrakenOver(false);
     const bx = this.sx(s.boat.x), by = this.sy(s.boat.y), bob = Math.sin(t * 0.08) * 0.6;
     this.shadow(this.boat, bx, by, s.boat.a, 2, 3, 0.3);
     this.stack(this.boat, bx, by + bob, s.boat.a);
@@ -386,8 +389,8 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
       this.stack(this.crates[c.pr], bx + Math.sin(s.boat.a) * (1 - i * 2), by + bob - 4 - Math.cos(s.boat.a) * (1 - i * 2), s.boat.a, { k: 0.8 });
     });
 
-    this.drawSeaLifeOver();
-    this.drawKrakenOver();
+    this.drawSeaLifeOver(true);
+    this.drawKrakenOver(true);
     for (const p of s.parts) if (!p.wake) this.px(this.sx(p.x), this.sy(p.y), p.c);
     this.drawFog();
 
@@ -448,22 +451,41 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
     }
     for (const w of s.whales) if (w.cyc >= 220) this.shadow(this.whale, this.sx(w.x), this.sy(w.y), w.a, 0, 0, 0.35);
     if (s.pod.on > 0) {
+      const a = s.boat.a, fx = Math.sin(a), fy = -Math.cos(a);
       for (let i = 0; i < 3; i++) {
-        const d = this.dolphinAt(i);
-        if (d.jump <= 0) this.shadow(this.dolphin, this.sx(d.x), this.sy(d.y), s.boat.a, 0, 0, 0.3 * s.pod.on);
-        else this.shadow(this.dolphin, this.sx(d.x), this.sy(d.y), s.boat.a, 1, 2, 0.2 * s.pod.on);
+        const d = this.dolphinAt(i), x = this.sx(d.x), y = this.sy(d.y);
+        if (d.jump > 0) {
+          this.shadow(this.dolphin, x, y, a, 1, 2, 0.2 * s.pod.on);
+          continue;
+        }
+        // Swimming just under: a dark body, the dorsal fin cutting the surface, and its wake.
+        this.shadow(this.dolphin, x, y, a, 0, 0, 0.5 * s.pod.on);
+        const finX = Math.round(x + fx), finY = Math.round(y + fy);
+        this.px(finX, finY - 1, "#3d4f73", 1, s.pod.on);
+        this.px(finX, finY, "#5a6f96", 1, s.pod.on);
+        if ((t + i * 5) % 8 < 5) {
+          this.px(Math.round(x - fx * 3 - fy), Math.round(y - fy * 3 + fx), "#e6f6ff", 1, 0.7 * s.pod.on);
+          this.px(Math.round(x - fx * 3 + fy), Math.round(y - fy * 3 - fx), "#e6f6ff", 1, 0.7 * s.pod.on);
+        }
       }
     }
   }
 
-  private drawSeaLifeOver(): void {
+  /** Is a thing at sea-map row `y` in front of the boat (nearer the bottom of the screen)? */
+  private frontOfBoat(y: number): boolean {
+    return y >= this.sim.boat.y;
+  }
+
+  /** Life at the surface: `front` draws what sits in front of the boat, otherwise what sits behind it. */
+  private drawSeaLifeOver(front: boolean): void {
     const s = this.sim, t = s.t;
     for (const tt of s.turtles) {
+      if (this.frontOfBoat(tt.y) !== front) continue;
       this.shadow(this.turtle, this.sx(tt.x), this.sy(tt.y), tt.a, 1, 2, 0.3);
       this.stack(this.turtle, this.sx(tt.x), this.sy(tt.y), tt.a + Math.sin(t * 0.15) * 0.1);
     }
     for (const w of s.whales) {
-      if (w.cyc < 220) {
+      if (w.cyc < 220 && this.frontOfBoat(w.y) === front) {
         const rise = w.cyc < 20 ? w.cyc / 20 : w.cyc > 200 ? (220 - w.cyc) / 20 : 1;
         this.shadow(this.whale, this.sx(w.x), this.sy(w.y), w.a, 2, 3, 0.25);
         this.stack(this.whale, this.sx(w.x), this.sy(w.y) + Math.round((1 - rise) * 3), w.a, { lift: 0.5 + rise * 0.5 });
@@ -478,7 +500,18 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
     if (s.pod.on > 0) {
       for (let i = 0; i < 3; i++) {
         const d = this.dolphinAt(i);
-        if (d.jump > 0) this.stack(this.dolphin, this.sx(d.x), this.sy(d.y) - Math.round(d.jump), s.boat.a);
+        if (d.jump <= 0 || this.frontOfBoat(d.y) !== front) continue;
+        const x = this.sx(d.x), y = this.sy(d.y);
+        // A splash ring where it leaves the water and where it dives back in.
+        if (d.ph < 0.4 || d.ph > Math.PI - 0.4) {
+          const r = 2 + (d.ph < 0.4 ? d.ph : Math.PI - d.ph) * 5;
+          for (let k = 0; k < 8; k++) {
+            const q = (k / 8) * 6.283;
+            this.px(x + Math.cos(q) * r, y + Math.sin(q) * r * 0.6, "#e6f6ff", 1, 0.8 * s.pod.on);
+          }
+        }
+        // Nearer the camera at the top of the leap, so a little larger.
+        this.stack(this.dolphin, x, y - Math.round(d.jump), s.boat.a, { k: 1 + d.jump / 24 });
       }
     }
   }
@@ -497,10 +530,12 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
     if (k.phase === "stir" && t % 6 === 0) this.px(cx, cy, "#9fd2ff", 1, 0.6);
   }
 
-  private drawKrakenOver(): void {
+  /** The kraken's arms, depth-sorted against the boat like the sea life. */
+  private drawKrakenOver(front: boolean): void {
     const k = this.sim.kraken, t = this.sim.t;
     if (k.phase !== "up" && k.phase !== "sink") return;
     k.arms.forEach((a, i) => {
+      if (this.frontOfBoat(k.y + Math.sin(a.a) * a.r) !== front) return;
       const ax = this.sx(k.x + Math.cos(a.a) * a.r), ay = this.sy(k.y + Math.sin(a.a) * a.r), n = Math.round(this.segs.length * 2 * a.h);
       for (let j = 0; j < 4; j++) {
         const q = (j / 4) * 6.283 + t * 0.1;

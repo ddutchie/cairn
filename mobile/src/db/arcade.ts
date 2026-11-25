@@ -6,7 +6,7 @@
  */
 
 import type { Priority } from "@cairn/shared/types/domain";
-import { ACCENTS, DEMO_ARCADE_PROJECTS, cleanArcadeTitle, dueMinutes, type ArcadeProject } from "@cairn/shared/arcade/pixel/arcade-data";
+import { ACCENTS, DEMO_ARCADE_PROJECTS, arcadeNoteLinks, cleanArcadeTitle, dueMinutes, type ArcadeProject } from "@cairn/shared/arcade/pixel/arcade-data";
 import { BIOME_ORDER } from "@cairn/shared/arcade/pixel/terrain";
 import { getDb } from "./index";
 import { LIVE, NOT_CONFLICT } from "./sql";
@@ -59,7 +59,7 @@ export function listArcadeProjects(now = new Date()): ArcadeProject[] {
     .sort((a, b) => b.tasks.length + b.notes.length - (a.tasks.length + a.notes.length))
     .slice(0, MAX_PROJECTS);
 
-  const noteIds = new Set(gathered.flatMap((x) => x.notes.map((n) => n.id)));
+  const links = arcadeNoteLinks(gathered.flatMap((x) => x.notes.map((n) => ({ id: n.id, title: n.title, body: n.content, linkedIds: parseIds(n.linked_note_ids) }))));
 
   return gathered.map((x, i) => ({
     id: x.p.id,
@@ -83,7 +83,7 @@ export function listArcadeProjects(now = new Date()): ArcadeProject[] {
       id: n.id,
       title: cleanArcadeTitle(n.title),
       words: Math.max(80, Math.round((n.content?.trim().length ?? 0) / 5)),
-      links: parseIds(n.linked_note_ids).filter((id) => id !== n.id && noteIds.has(id)),
+      links: links.get(n.id) ?? [],
     })),
   }));
 }

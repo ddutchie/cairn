@@ -49,6 +49,8 @@ const CAM_BACK = 112, CAM_UP = 27, CAM_SIDE = -12;
 const CAP_SIDE = 8;
 /** The step's encounter stands this share of a step up the trail from the captain's station. */
 const AHEAD = 0.72;
+/** How much the walking camera turns toward the encounter ahead (1) rather than down the trail (0). */
+const LOOK_AT = 0.8;
 /** Props smaller than this on screen (radius, framebuffer pixels) are skipped; under PROP_FULL_PX they use their LOD mesh. */
 const PROP_MIN_PX = 2, PROP_FULL_PX = 12;
 
@@ -112,7 +114,12 @@ interface TrailShape {
   x: number[];
   y: number[];
   z: number[];
-  buckets: Map<number, number[]>;
+  /** Segment indices per BUCKET-pixel cell, row-major over the trail's box (`bx0`, `by0`, `bw` × `bh` cells). */
+  buckets: (number[] | undefined)[];
+  bx0: number;
+  by0: number;
+  bw: number;
+  bh: number;
 }
 
 const BUCKET = 4;
@@ -193,36 +200,48 @@ export class IslandStage3D {
     return 1.5 + (e * RELIEF * 1.15 + detail * 3.4) * S;
   }
 
-  /** Nearest point of the trail to a sea-map point: distance (sea-map pixels) and the trail's height there. */
-  private nearTrail(tr: TrailShape, px: number, py: number): { d: number; z: number } {
-    const bx = Math.floor(px / BUCKET), by = Math.floor(py / BUCKET);
-    let best = Infinity, bz = 0;
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const list = tr.buckets.get((by + dy) * 4096 + bx + dx);
+  /** The trail's height at the point `nearTrail` last found. */
+  private nearZ = 0;
+
+  /**
+   * Distance (sea-map pixels) from a point to the trail, leaving the trail's
+   * height at the nearest point in `nearZ`. Only segments within a bucket of
+   * the point are searched, so anything further than BUCKET is Infinity.
+   * The bake calls this several times a ground node, so it allocates nothing.
+   */
+  private nearTrail(tr: TrailShape, px: number, py: number): number {
+    const bx = Math.floor(px / BUCKET) - tr.bx0, by = Math.floor(py / BUCKET) - tr.by0;
+    this.nearZ = 0;
+    if (bx < -1 || by < -1 || bx > tr.bw || by > tr.bh) return Infinity;
+    const xs = tr.x, ys = tr.y, zs = tr.z, last = xs.length - 1;
+    let best = Infinity;
+    for (let j = Math.max(0, by - 1); j <= Math.min(tr.bh - 1, by + 1); j++) {
+      for (let i = Math.max(0, bx - 1); i <= Math.min(tr.bw - 1, bx + 1); i++) {
+        const list = tr.buckets[j * tr.bw + i];
         if (!list) continue;
-        for (const i of list) {
-          if (i + 1 >= tr.x.length) continue;
-          // Distance to the segment i → i + 1.
-          const ax = tr.x[i], ay = tr.y[i], sx = tr.x[i + 1] - ax, sy = tr.y[i + 1] - ay, l2 = sx * sx + sy * sy || 1;
+        for (let n = 0; n < list.length; n++) {
+          const k = list[n];
+          if (k >= last) continue;
+          // Distance to the segment k → k + 1.
+          const ax = xs[k], ay = ys[k], sx = xs[k + 1] - ax, sy = ys[k + 1] - ay, l2 = sx * sx + sy * sy || 1;
           const u = Math.max(0, Math.min(1, ((px - ax) * sx + (py - ay) * sy) / l2));
           const qx = ax + sx * u - px, qy = ay + sy * u - py, d2 = qx * qx + qy * qy;
           if (d2 < best) {
             best = d2;
-            bz = tr.z[i] + (tr.z[i + 1] - tr.z[i]) * u;
+            this.nearZ = zs[k] + (zs[k + 1] - zs[k]) * u;
           }
         }
       }
     }
-    return { d: Math.sqrt(best), z: bz };
+    return Math.sqrt(best);
   }
 
   /** Ground height with the trail graded in: level across its width, banked into the slope beside it. */
   private ground(px: number, py: number, S: number, tr: TrailShape): number {
-    const n = this.natural(px, py, S), near = this.nearTrail(tr, px, py), du = near.d * S;
+    const n = this.natural(px, py, S), du = this.nearTrail(tr, px, py) * S;
     if (du >= PATH_HALF + PATH_BANK) return n;
     const w = du < PATH_HALF ? 1 : 1 - smooth((du - PATH_HALF) / PATH_BANK);
-    return n + (near.z - n) * w;
+    return n + (this.nearZ - n) * w;
   }
 
   /** Ground height under a local 3D point. */
@@ -395,16 +414,24 @@ export class IslandStage3D {
     });
     z[0] = Math.max(2.5, z[0]);
     for (let i = 1; i < n; i++) z[i] = Math.max(z[i], z[i - 1]);
-    const buckets = new Map<number, number[]>();
+    let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+    for (let i = 0; i < n; i++) {
+      bx0 = Math.min(bx0, Math.floor(xs[i] / BUCKET));
+      by0 = Math.min(by0, Math.floor(ys[i] / BUCKET));
+      bx1 = Math.max(bx1, Math.floor(xs[i] / BUCKET));
+      by1 = Math.max(by1, Math.floor(ys[i] / BUCKET));
+    }
+    const bw = bx1 - bx0 + 1, bh = by1 - by0 + 1;
+    const buckets: (number[] | undefined)[] = new Array(bw * bh);
     for (let i = 0; i < n; i++) {
       // A segment can sit in two buckets; file it under both ends.
       for (const k of [i, Math.min(n - 1, i + 1)]) {
-        const key = Math.floor(ys[k] / BUCKET) * 4096 + Math.floor(xs[k] / BUCKET), list = buckets.get(key);
-        if (!list) buckets.set(key, [i]);
+        const key = (Math.floor(ys[k] / BUCKET) - by0) * bw + Math.floor(xs[k] / BUCKET) - bx0, list = buckets[key];
+        if (!list) buckets[key] = [i];
         else if (list[list.length - 1] !== i) list.push(i);
       }
     }
-    return { x: xs, y: ys, z, buckets };
+    return { x: xs, y: ys, z, buckets, bx0, by0, bw, bh };
   }
 
   private bakeIsland(e: Expedition): IslandBake {
@@ -429,7 +456,16 @@ export class IslandStage3D {
     const stepLen = tlen[n - 1] / (N - 1 + AHEAD + 0.12);
 
     const height = (px: number, py: number) => this.ground(px, py, S, tr);
-    const dist = (px: number, py: number) => this.nearTrail(tr, px, py).d;
+    // A grid cell asks keep, mark and corridor about the same centre: answer repeats from the last lookup.
+    let lastX = NaN, lastY = NaN, lastD = 0;
+    const dist = (px: number, py: number) => {
+      if (px !== lastX || py !== lastY) {
+        lastX = px;
+        lastY = py;
+        lastD = this.nearTrail(tr, px, py);
+      }
+      return lastD;
+    };
     const isleBiome = () => is.biome;
 
     // The trail's corridor at half a sea-map pixel, with the path painted in.
@@ -552,12 +588,27 @@ export class IslandStage3D {
     const cap = { ...mid, x: mid.x + px * CAP_SIDE, y: mid.y + py * CAP_SIDE }, capZ = this.groundAt(cap.x, cap.y);
 
     // The walking camera: behind the captain's right shoulder, pitched so the horizon sits on `horizon`.
+    // It looks toward the encounter ahead (mostly) rather than straight down the trail, so a foe around
+    // a bend of the spiral stays in frame. The aim point slides with the walk, so the view turns smoothly.
+    const look = this.along((e.step - e.walk / WALK_FRAMES + AHEAD) * b.stepLen);
+    let vx = look.x - mid.x, vy = look.y - mid.y;
+    const vl = Math.hypot(vx, vy);
+    if (vl > 1) {
+      vx = (vx / vl) * LOOK_AT + mid.dx * (1 - LOOK_AT);
+      vy = (vy / vl) * LOOK_AT + mid.dy * (1 - LOOK_AT);
+      const l = Math.hypot(vx, vy) || 1;
+      vx /= l;
+      vy /= l;
+    } else {
+      vx = mid.dx;
+      vy = mid.dy;
+    }
     const focalScreen = H / 2 / Math.tan((FOV * Math.PI) / 360);
     const pitch = Math.atan((horizon - H / 2) / focalScreen);
-    const ex = mid.x - mid.dx * CAM_BACK + px * CAM_SIDE + shake.x, ey = mid.y - mid.dy * CAM_BACK + py * CAM_SIDE;
+    const ex = mid.x - vx * CAM_BACK - vy * CAM_SIDE + shake.x, ey = mid.y - vy * CAM_BACK + vx * CAM_SIDE;
     const ez = Math.max(capZ + CAM_UP, this.groundAt(ex, ey) + 14) + shake.y;
     const walkEye = { x: ex, y: ey, z: ez };
-    const walkTarget = { x: ex + cap.dx * 100, y: ey + cap.dy * 100, z: ez + Math.tan(pitch) * 100 };
+    const walkTarget = { x: ex + vx * 100, y: ey + vy * 100, z: ez + Math.tan(pitch) * 100 };
 
     // Landing: dive from straight overhead, framed like the sea view, to the shoulder.
     const land = e.step === 0 ? Math.min(1, e.t / LANDING_FRAMES) : 1;

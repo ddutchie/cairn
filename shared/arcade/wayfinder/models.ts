@@ -52,13 +52,14 @@ export const WHALE_MODEL: Model = makeModel(9, 22, 4, (x, y, z) => {
   return hash2(x, y, z) < 0.08 ? "#c7d0e6" : z === 2 ? "#3a4e6e" : "#4a6185";
 });
 
+/** A slim dolphin seen from above: beak, a three-wide body, the dorsal fin, and spread tail flukes. */
 export const DOLPHIN_MODEL: Model = makeModel(5, 11, 3, (x, y, z) => {
-  const half = y < 2 ? 0.6 : y < 7 ? 2 : y < 9 ? 1 : 0.4;
+  const half = y < 1 ? 0 : y < 2 ? 0.6 : y < 7 ? 1.2 : y < 9 ? 0.6 : 0;
   const dx = Math.abs(x - 2);
-  if (y >= 9) return z === 0 && dx <= (y - 8) * 1.4 ? "#5a6f96" : null;
+  if (y >= 9) return z === 0 && dx <= (y - 8) * 1.6 ? "#4f6a9a" : null;
   if (dx > half) return null;
-  if (z === 2) return dx === 0 && y >= 3 && y <= 5 ? "#3d4f73" : null;
-  return z === 0 ? "#c7d0e6" : y === 0 ? "#6b7fa6" : "#7f93b8";
+  if (z === 2) return dx === 0 && y >= 3 && y <= 4 ? "#2f4066" : null;
+  return z === 0 ? "#c7d0e6" : dx === 0 ? "#4f6a9a" : "#6f8ac0";
 });
 
 export const TURTLE_MODEL: Model = makeModel(7, 9, 3, (x, y, z) => {
