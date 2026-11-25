@@ -116,7 +116,12 @@ export class AnglerRenderer<Img = unknown, Frame = unknown> extends PixelPainter
 
   /** The side-on sprite for the tank; `far` is a smaller one for the back of the tank. */
   private fishSprite(f: FishSpec, far = false): Sprite<Img> {
-    const key = far ? `${f.id}|far` : f.id;
+    // Key by the visual fields, not just the id: a saved fish keeps its looks
+    // until it is let go (see the constructor), but `letGo()` returns the live
+    // fish to the pond, so after a catch-and-keep the same id can come back
+    // with a new species, size or accent. A stale id-only entry would then
+    // draw the old minnow for the new pike.
+    const key = `${f.id}|${f.species}|${f.size}|${f.accent}|${f.overdue ? 1 : 0}|${f.seed}|${far ? "far" : "near"}`;
     let s = this.sprites.get(key);
     if (!s) {
       const g = far ? { ...f, size: Math.max(6, Math.round(f.size * 0.72)) } : f;
@@ -129,10 +134,11 @@ export class AnglerRenderer<Img = unknown, Frame = unknown> extends PixelPainter
 
   /** The voxel fish for the pond and the catch card. */
   private fishAtlas(f: FishSpec): AtlasHandle<Img> {
-    let a = this.atlases.get(f.id);
+    const key = `${f.id}|${f.species}|${f.size}|${f.accent}|${f.overdue ? 1 : 0}|${f.seed}`;
+    let a = this.atlases.get(key);
     if (!a) {
       a = this.makeAtlas(fishModel(f));
-      this.atlases.set(f.id, a);
+      this.atlases.set(key, a);
       if (this.atlases.size > 40) this.atlases.delete(this.atlases.keys().next().value!);
     }
     return a;

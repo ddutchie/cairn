@@ -24,4 +24,7 @@ Slabs are labelled with the workspace's projects, notes, task cards and tags, cy
 | Slide speed | starts at 1.25 px/frame (× width / 180), +0.045 per drop, capped at 3.1 × width / 180 |
 | Camera | keeps the top of the tower at about 47% of the screen height |
 
-No playthrough timing notes yet; record them here when tuning speed or the perfect window.
+### Bot baseline (2026-11-25, `StackerSim` 233×320, NO_HUD, seed 7)
+- Policy: drop when `|mover.x - top.x| <= 1.0` px (near-perfect play).
+- 32 perfect drops in 10,800 frames (180 s), avg ~72 frames/drop; combo x32; speed 1.25 → 3.06 px/frame (cap 3.1 × 233/180 ≈ 4.01).
+- The 1 px window stalls past ~3 px/frame (the mover steps over it), so the run stops gaining after drop 32. A wider-window or predictive bot is needed to probe the speed cap; widening `PERFECT` or lowering the +0.045/drop ramp should show up here as more drops/180 s.

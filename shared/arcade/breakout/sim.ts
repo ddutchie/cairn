@@ -75,7 +75,13 @@ export function fitBricksToWidth(bricks: Brick[], dx: number, span: number, left
     b.x += dx;
     b.y += dy;
   }
-  if (!bricks.some((b) => b.x < minX || b.x > maxX)) return;
+  if (!bricks.length) return;
+  const horizBad = bricks.some((b) => b.x < minX || b.x > maxX);
+  // A taller HUD (or a shorter viewport) can push the last rows below the
+  // paddle even when every column still fits, leaving bricks off-screen and
+  // the board unwinnable. Reflow whenever either axis is out of bounds.
+  const vertBad = bricks.some((b) => b.y < by0 || b.y > padY - BH);
+  if (!horizBad && !vertBad) return;
   const cols = clamp(Math.floor((span - 8) / GAP_X), 1, MAX_COLS);
   const bx0 = left + (span - (cols - 1) * GAP_X) / 2;
   const rows = Math.ceil(bricks.length / cols);

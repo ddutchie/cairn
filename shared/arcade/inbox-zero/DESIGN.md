@@ -26,3 +26,9 @@ Projects become waves (named and coloured by the project), and each open task is
 
 ## Tuning
 Tower range, fire rate and damage live in `TAGS` and card values in `PRIO` (`models.ts`). No playthrough notes yet; record wave timings and which towers carry each wave here when rebalancing.
+
+### Bot baseline (2026-11-25, `InboxZeroSim` 233×320, NO_HUD, pointer, seed 42, demo workspace)
+- Policy: place 2× `#QUICK` at core (0,0) and (2,0), then `#FOCUS` at (3,0) once focus ≥ 25; no upgrades.
+- Wave timings (frames at 60 fps): wave 0: 415 frames, wave 1: 1,976, wave 2: 1,946, wave 3: 2,301, wave 4: 1,978.
+- Result: reaches the final wave and loses there — 26 triaged, 5 leaked, hearts 0 after 8,616 frames (143.6 s), score 1,310.
+- Takeaway: the two-quick-plus-focus opening holds the first three waves (≤2 leaks) but cannot cover the last wave's HP. Balance changes should move this baseline's leak count and the wave it dies on.

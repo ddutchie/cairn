@@ -23,4 +23,8 @@ The grid is `ROWS` (7) rows by 6–16 columns (by width), filled in order from t
 | Keyboard paddle speed | max(3.6, playfield width / 60) px/frame |
 | Brick | `BW` × `BH` = 26 × 10 px on a 28 × 12 grid |
 
-No playthrough timing notes yet; record them here when tuning ball speed or paddle size.
+### Bot baseline (2026-11-25, `BreakoutSim` 233×320, NO_HUD, touch)
+- Policy: perfect tracking (`pad.tx = ball.x` every frame), `BASE_SPEED` 2.1.
+- Board: 56 bricks (7 rows × 8 cols at this width); first break at frame 70.
+- After 10,800 frames (180 s): 12 broken, 44 left, score 12, max streak x1, still in `play` (no loss).
+- Takeaway: perfect tracking survives; progress is slow because near-vertical bounces re-hit the same columns. Ball-speed or deflection tuning should raise breaks/180 s above 12 without making the perfect-tracking run losable.
