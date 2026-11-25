@@ -10,8 +10,8 @@ import { CARTRIDGES, type ArcadeGameId } from "@cairn/shared/arcade/menu";
 
 /** Where the Workspace tab sends you, and what the pinned accessory can show. */
 type BaseToolId = "today" | "people" | "graph" | "usage" | "sync";
-/** The arcade and its games join the tools once the arcade is unlocked. */
-export type ToolId = BaseToolId | "arcade" | ArcadeGameId;
+/** The arcade and its games join the tools once the arcade is unlocked. The office is mirrored the same way. */
+export type ToolId = BaseToolId | "arcade" | ArcadeGameId | "office";
 
 export interface WorkspaceTool {
   id: ToolId;
@@ -25,7 +25,8 @@ const titleCase = (s: string) => s.toLowerCase().replace(/\b[a-z]/g, (c) => c.to
 const sentenceCase = (s: string) => (s.charAt(0) + s.slice(1).toLowerCase()).replace(/\b3d\b/g, "3D");
 
 /** The arcade picker, then every game, in menu order. */
-export const ARCADE_TOOLS: ToolId[] = ["arcade", ...CARTRIDGES.map((c) => c.id)];
+/** The arcade picker, every game, then the office mirror. */
+export const ARCADE_TOOLS: ToolId[] = ["arcade", ...CARTRIDGES.map((c) => c.id), "office"];
 type ToolSymbol = "sun.max" | "person.2" | "point.3.connected.trianglepath.dotted" | "chart.bar" | "arrow.triangle.2.circlepath" | "gamecontroller";
 
 const BEST_KEY = new Map<string, string>(CARTRIDGES.map((c) => [c.id, c.bestKey]));
@@ -34,6 +35,7 @@ export const isArcadeTool = (id: ToolId): boolean => ARCADE_TOOLS.includes(id);
 
 export const WORKSPACE_TOOLS: Record<ToolId, WorkspaceTool> = {
   arcade: { id: "arcade", title: "Arcade", href: "/arcade" as Href, blurb: "Your workspace as pixel games" },
+  office: { id: "office", title: "Office", href: "/office" as Href, blurb: "Your workspace as a pixel office" },
   ...(Object.fromEntries(
     CARTRIDGES.map((c) => [c.id, { id: c.id, title: titleCase(c.name), href: `/${c.id}` as Href, blurb: sentenceCase(c.blurb) }]),
   ) as Record<ArcadeGameId, WorkspaceTool>),
@@ -131,6 +133,7 @@ export const TOOL_SYMBOL: Record<ToolId, ToolSymbol> = {
   usage: "chart.bar",
   sync: "arrow.triangle.2.circlepath",
   arcade: "gamecontroller",
+  office: "gamecontroller",
   ...(Object.fromEntries(CARTRIDGES.map((c) => [c.id, "gamecontroller"])) as Record<ArcadeGameId, ToolSymbol>),
 };
 
