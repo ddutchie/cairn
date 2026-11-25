@@ -438,7 +438,9 @@ export class IslandStage3D {
     const sim = this.sim, is = sim.all.find((i) => i.i === e.isleIndex) ?? sim.islands[0];
     const key = `${e.isleIndex}|${this.W}|${this.H}|${sim.camX}|${sim.camY}`;
     if (this.bake?.key === key) return this.bake;
-    const ox = is.x, oy = is.y, r = is.r, N = Math.max(1, e.deck.length);
+    const ox = is.x, oy = is.y, r = is.r;
+    // A pending fork adds a station when a route is chosen: reserve it now so the trail never rebakes mid-walk.
+    const N = Math.max(1, e.deck.length + (e.routes && e.deck.indexOf("fork") >= e.step ? 1 : 0));
     const raw = this.traceTrail(ox, oy, r, is.i);
     let lenPx = 0;
     for (let i = 1; i < raw.x.length; i++) lenPx += Math.hypot(raw.x[i] - raw.x[i - 1], raw.y[i] - raw.y[i - 1]);

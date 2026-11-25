@@ -168,6 +168,8 @@ export class PowderRunSim {
   collected = 0;
   totalCollect = 0;
   runFrames = 0;
+  /** Frame the line was crossed; an airborne rider finishes only once they land. */
+  private finishAt: number | null = null;
   bails = 0;
   result: RunResult | null = null;
   items: PipeItem[] = [];
@@ -218,6 +220,7 @@ export class PowderRunSim {
     this.bestChain = 0;
     this.collected = 0;
     this.runFrames = 0;
+    this.finishAt = null;
     this.bails = 0;
     this.result = null;
     this.items = [];
@@ -492,7 +495,11 @@ export class PowderRunSim {
 
     this.stepItems();
 
-    if (r.y >= RUN_LEN && this.state === "ride") this.finishRun();
+    if (r.y >= RUN_LEN && this.state === "ride") {
+      this.finishAt ??= this.runFrames;
+      // Land the last jump first: a bail still costs its heart, and a clean one banks its points.
+      if (!r.air) this.finishRun();
+    }
   }
 
   private stepTrick(): void {
@@ -617,11 +624,12 @@ export class PowderRunSim {
   }
 
   private finishRun(): void {
-    const grade = gradeRun(this.collected, this.totalCollect, this.runFrames, this.bails);
-    const timeBonus = Math.max(0, PAR_FRAMES - this.runFrames) * 2;
+    const frames = this.finishAt ?? this.runFrames;
+    const grade = gradeRun(this.collected, this.totalCollect, frames, this.bails);
+    const timeBonus = Math.max(0, PAR_FRAMES - frames) * 2;
     const bonus = GRADE_BONUS[grade] + timeBonus;
     this.addScore(bonus);
-    this.result = { grade, collected: this.collected, total: this.totalCollect, frames: this.runFrames, bails: this.bails, bestChain: this.bestChain, bonus };
+    this.result = { grade, collected: this.collected, total: this.totalCollect, frames, bails: this.bails, bestChain: this.bestChain, bonus };
     this.state = "clear";
     this.stateT = 150;
     this.events.push("clear");

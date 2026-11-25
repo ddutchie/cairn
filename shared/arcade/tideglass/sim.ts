@@ -525,7 +525,7 @@ export class TideglassSim {
       lamp: (!this.argueFired && f < 0.5) || (this.phase === "squall" && this.lampCrank < 3) || (f > 0.45 && f < EBB_F && this.lampCrank < 3),
       mill: !this.lockedFired && (this.hasGear || f > LOCK_F - 0.08),
       radio: this.flareActive || (f > FLARE_F - 0.06 && f < FLARE_END_F && !this.intercepted),
-      hut: this.witnessedMove && !this.secrets.has("moved-crate"),
+      hut: this.moveFired && !this.secrets.has("moved-crate"),
       dock: !this.moveFired && f > MOVE_F - 0.08,
       vault: !this.vaultLit && this.shards >= 3 && this.secrets.size >= 2,
       flats: this.causewayOpen && (!this.chestOpened || this.pickups.some((p) => p.kind === "shard" && !p.taken)),
@@ -929,7 +929,7 @@ export class TideglassSim {
     });
     push(Math.hypot(wx - HUT_POS.x, wy - HUT_POS.y), 30, {
       kind: "hut", id: "hut", x: HUT_POS.x, y: HUT_POS.y,
-      prompt: this.witnessedMove && !this.secrets.has("moved-crate") ? `REPORT: ${this.culpritName()} MOVED IT` : "READ HARBOUR LEDGER",
+      prompt: this.moveFired && !this.secrets.has("moved-crate") ? (this.witnessedMove ? `REPORT: ${this.culpritName()} MOVED IT` : "CHECK THE LEDGER") : "READ HARBOUR LEDGER",
     });
     for (const n of this.npcs) {
       push(Math.hypot(wx - n.x, wy - n.y), 22, { kind: "npc", id: n.id, x: n.x, y: n.y, prompt: `TALK: ${n.name}` });
@@ -993,6 +993,10 @@ export class TideglassSim {
         return true;
       }
       case "radio": {
+        if (this.flareActive && this.freq === this.flareFreq && this.intercepted) {
+          this.pop("ALREADY CAUGHT", "#c7d0e6", RADIO_POS.x, RADIO_POS.y - 12);
+          return true;
+        }
         if (this.flareActive && this.freq === this.flareFreq) {
           this.intercepted = true;
           this.ferryGone = true;
@@ -1064,6 +1068,11 @@ export class TideglassSim {
         return true;
       }
       case "hut": {
+        // Missed the move? The harbour ledger names who signed for the crate, which counts as the report.
+        if (this.moveFired && !this.witnessedMove) {
+          this.witnessedMove = true;
+          this.log(`LEDGER: ${this.culpritName()} SIGNED FOR THE CRATE.`);
+        }
         if (this.witnessedMove && !this.secrets.has("moved-crate")) {
           this.unlock("moved-crate", 300, `CRATE TRACED: ${this.culpritName()}`, HUT_POS.x, HUT_POS.y);
           this.addScore(50);
@@ -1473,13 +1482,13 @@ export class TideglassSim {
           tx = DOCK_POS.x - 16;
           ty = DOCK_POS.y + 6;
         }
-        // The culprit visits the dock around the move beat.
-        const driftWindow = (f >= MOVE_F - 0.03 && f <= MOVE_F + 0.03) ||
-          (this.moveAt > 0 && !this.moveFired && this.cycleTick >= this.moveAt - 600);
-        if (this.npcs[this.culprit].id !== "piotr" && driftWindow) {
-          tx = DOCK_POS.x - 6;
-          ty = DOCK_POS.y - 10;
-        }
+      }
+      // Whoever the culprit is visits the dock around the move beat (covers the early, dock-triggered move too).
+      const driftWindow = (f >= MOVE_F - 0.03 && f <= MOVE_F + 0.03) ||
+        (this.moveAt > 0 && !this.moveFired && this.cycleTick >= this.moveAt - 600);
+      if (n.id === this.npcs[this.culprit].id && driftWindow) {
+        tx = DOCK_POS.x - 6;
+        ty = DOCK_POS.y - 10;
       }
       // Walk the trail: recompute the route when the stop changes or the
       // old route runs out, then follow it waypoint by waypoint.

@@ -1070,7 +1070,11 @@ export class BasecampSim {
   private blockedAt(x: number, y: number): boolean {
     if (x < 18 || x > WORLD_W - 18 || y < 22 || y > WORLD_H - 18) return true;
     // South-east pond blocks walking unless causeway stepping stones are raised
-    if (!this.causewayOpen && Math.hypot(x - POND_POS.x, y - POND_POS.y) < 34) return true;
+    // (A Warden already inside when it closes may still wade toward shore.)
+    if (!this.causewayOpen && Math.hypot(x - POND_POS.x, y - POND_POS.y) < 34) {
+      const w = this.warden;
+      if (Math.hypot(w.x - POND_POS.x, w.y - POND_POS.y) >= 34 || Math.hypot(x - POND_POS.x, y - POND_POS.y) < Math.hypot(w.x - POND_POS.x, w.y - POND_POS.y)) return true;
+    }
     // Central Hearthfire pit solid core
     if (Math.hypot(x - HEARTH_POS.x, y - HEARTH_POS.y) < 12) return true;
     return false;

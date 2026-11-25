@@ -17,7 +17,7 @@ describe("tap-walk repro", () => {
     const sim = new TideglassSim({ width: 424, height: 320, hud: NO_HUD, inputMode: "pointer", projects: DEMO_ARCADE_PROJECTS });
     sim.down(212, 160);
     expect(sim.state).toBe("play");
-    const x0 = sim.wick.x, y0 = sim.wick.y, cam0x = sim.camVX, cam0y = sim.camVY;
+    const x0 = sim.wick.x, y0 = sim.wick.y;
     tap(sim, 540, 700);
     console.log("walkPath after tap:", JSON.stringify(sim.walkPath.slice(0, 6)), "len:", sim.walkPath.length);
     for (let i = 0; i < 600; i++) {
