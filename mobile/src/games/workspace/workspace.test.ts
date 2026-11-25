@@ -11,6 +11,7 @@ import { OfficeRenderer } from "@cairn/shared/arcade/workspace/render";
 import { daylightAt, OfficeSim } from "@cairn/shared/arcade/workspace/sim";
 import { burstLabel, diffOffice, FLURRY, groupChanges } from "@cairn/shared/arcade/workspace/events";
 import { bucketWeek, dayShort, toDateKey, weekDates } from "@cairn/shared/arcade/workspace/week";
+import { PLANTER_BUSH, PLANTER_TALL } from "@cairn/shared/arcade/workspace/models";
 
 const NOW = new Date(2026, 10, 25, 11, 30);
 const clock = () => NOW;
@@ -677,6 +678,21 @@ describe("idle polish", () => {
     const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: office(ps), clock: noon, seed: 3 });
     expect(s.decor.size).toBe(10);
     expect(s.floor.plants).toHaveLength(7);
+  });
+
+  it("builds office planters: a ceramic trough with soil and leaves", () => {
+    for (const m of [PLANTER_TALL, PLANTER_BUSH]) {
+      // makeModel pads a pixel border around the 9x9 footprint.
+      expect([m.w, m.d]).toEqual([11, 11]);
+      const alpha = (layer: number, x: number, y: number) => m.layers[layer][((y + 1) * m.w + (x + 1)) * 4 + 3];
+      // Ceramic rim around the soil line.
+      expect(alpha(3, 0, 4)).not.toBe(0);
+      // Soil inside at z=4 and leaves above it.
+      expect(alpha(4, 4, 4)).toBe(255);
+      const leaves = m.layers.slice(5).some((l) => l.some((v, i) => i % 4 === 3 && v > 0));
+      expect(leaves).toBe(true);
+    }
+    expect(PLANTER_TALL.h).toBeGreaterThan(PLANTER_BUSH.h);
   });
 });
 

@@ -149,12 +149,44 @@ export const ROBOT = makeModel(7, 5, 11, (x, y, z) => {
   return null;
 });
 
-export const PLANT = makeModel(9, 9, 13, (x, y, z) => {
-  const dx = x - 4;
-  const dy = y - 4;
+/** A ceramic planter trough with soil and tall snake-plant blades. */
+export const PLANTER_TALL = makeModel(9, 9, 15, (x, y, z) => {
+  // Trough: light ceramic walls with a pale rim.
+  if (z < 4) {
+    if (x === 0 || x === 8 || y === 0 || y === 8) return z === 3 ? "#eef1f6" : (x + y) % 2 ? "#cfd4dc" : "#c2c8d2";
+    return null;
+  }
+  // Soil just under the rim.
+  if (z === 4) return x >= 1 && x <= 7 && y >= 1 && y <= 7 ? "#4a3524" : null;
+  // Snake-plant blades: columns of banded green at scattered spots, uneven heights.
+  const blade = (bx: number, by: number, h: number) => (x === bx && y === by && z >= 5 && z < 5 + h);
+  const blades: [number, number, number][] = [[2, 3, 7], [3, 5, 9], [4, 2, 6], [5, 5, 8], [6, 3, 9], [3, 6, 5], [6, 6, 6]];
+  for (const [bx, by, h] of blades) {
+    if (blade(bx, by, h)) {
+      if (z === 5 + h - 1) return "#8fd694"; // pale new tip
+      return (z + bx) % 3 === 0 ? "#5fb86a" : "#2f7a3e"; // banded leaf
+    }
+  }
+  // A low bushy filler around the blades' feet.
+  if (z === 5 && ((x === 2 && y === 5) || (x === 5 && y === 3))) return "#3f8a4a";
+  return null;
+});
+
+/** A low planter with a bushy pothos mound spilling over the rim. */
+export const PLANTER_BUSH = makeModel(9, 9, 10, (x, y, z) => {
+  if (z < 4) {
+    if (x === 0 || x === 8 || y === 0 || y === 8) return z === 3 ? "#eef1f6" : (x + y) % 2 ? "#cfd4dc" : "#c2c8d2";
+    return null;
+  }
+  if (z === 4) return x >= 1 && x <= 7 && y >= 1 && y <= 7 ? "#4a3524" : null;
+  // Mound shrinking with height, heart-leaf greens with pale new growth on top.
+  const dx = x - 4, dy = y - 4.5;
   const r = Math.hypot(dx, dy);
-  if (z < 4) return r <= 2.5 ? (z === 3 ? "#5a3a22" : "#b8673e") : null;
-  const leaf = 4 - Math.abs(z - 8) * 0.6;
-  if (r <= leaf && (x * 5 + y * 3 + z * 7) % 4 !== 0) return z > 9 ? "#7cc46a" : (x + z) % 3 ? "#3f8a4a" : "#5fb86a";
+  if (z >= 5 && r <= 4.2 - (z - 5) * 0.9) {
+    if (z >= 7 && (x * 3 + y * 5) % 3 === 0) return "#a8e05f";
+    return (x * 5 + y * 3 + z * 7) % 4 === 0 ? "#2f7a3e" : "#48a957";
+  }
+  // A vine spilling over the front rim.
+  if (x >= 3 && x <= 5 && y === 8 && (z === 4 || z === 5)) return z === 5 ? "#48a957" : "#2f7a3e";
   return null;
 });

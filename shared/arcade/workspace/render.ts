@@ -12,7 +12,7 @@ import { INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel
 import type { Model } from "../pixel/models";
 import { CONTRACTOR, type OfficeCard } from "./data";
 import { COL_HEAD, type Desk, type Rect } from "./layout";
-import { buildDesk, buildPerson, BIN, CHAIR, COFFEE, COOLER, deskKey, PLANT, ROBOT } from "./models";
+import { buildDesk, buildPerson, BIN, CHAIR, COFFEE, COOLER, deskKey, PLANTER_BUSH, PLANTER_TALL, ROBOT } from "./models";
 import { lookFor, type OfficeSim, type Robot, type Worker } from "./sim";
 
 const BG = "#10131c";
@@ -269,7 +269,8 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       prop(this.atlas("coffee", () => COFFEE), F.coffee.x, F.coffee.y);
       prop(this.atlas("cooler", () => COOLER), F.cooler.x, F.cooler.y);
       prop(this.atlas("bin", () => BIN), F.bin.x, F.bin.y);
-      for (const p of F.plants) prop(this.atlas("plant", () => PLANT), p.x, p.y);
+      // Planters alternate tall snake-plants and bushy pothos down the row.
+      F.plants.forEach((p, i) => prop(this.atlas(i % 2 ? "planter-bush" : "planter-tall", () => (i % 2 ? PLANTER_BUSH : PLANTER_TALL)), p.x, p.y));
       // The robot's charging pad, bottom-left: lit while it is docked.
       if (sim.robot) {
         const r = sim.robot;
