@@ -16,7 +16,7 @@ import { mulberry32 } from "../pixel/terrain";
 import { CONTRACTOR, DEMO_OFFICE, type OfficeData, type OfficeProject } from "./data";
 import { burstLabel, diffOffice, FLURRY, groupChanges, type Burst, type OfficeChange } from "./events";
 import { inRect, layoutDesk, layoutFloor, layoutWeek, route, routeFree, type Desk, type DeskTab, type DeskView, type FloorLayout, type Pt, type Rect, type Ref, type WeekView } from "./layout";
-import { bucketWeek, type WeekDay } from "./week";
+import { bucketWeek, weekDates, type WeekDay } from "./week";
 
 export interface OfficeSpec {
   width: number;
@@ -229,6 +229,8 @@ export class OfficeSim {
   week = false;
   weekDays: WeekDay[] = [];
   weekView: WeekView | null = null;
+  /** The week the wall shows; paging never moves today. */
+  weekAnchor!: Date;
   /** Crumpled paper balls in flight or on the floor. */
   papers: Paper[] = [];
   /** Swish splashes where balls went in (ring + label, 40 frames). */
@@ -285,6 +287,7 @@ export class OfficeSim {
     this.data = spec.office && spec.office.projects.length ? spec.office : DEMO_OFFICE;
     this.rnd = mulberry32(spec.seed ?? 7);
     this.clock = spec.clock ?? (() => new Date());
+    this.weekAnchor = this.clock();
     this.decor = new Set(spec.decor ?? []);
     this.tickClock();
     this.layout();
@@ -484,18 +487,35 @@ export class OfficeSim {
       this.weekView = null;
       return;
     }
-    const { days, overdue } = bucketWeek(this.projects, this.clock());
+    const { days, overdue } = bucketWeek(this.projects, this.clock(), this.weekAnchor);
     this.weekDays = days;
     this.weekView = layoutWeek(days, overdue, this.area);
   }
 
-  /** The week wall, or the office floor. */
+  /** The week wall, or the office floor. Opening the wall returns to this week. */
   setWeek(on: boolean): void {
     if (this.focus !== null) return;
     this.week = on;
+    if (on) this.weekAnchor = this.clock();
     this.bubble = null;
     this.hover = null;
     this.layout();
+  }
+
+  /** Step the wall a week at a time (‹ › and arrow keys while it is open). */
+  shiftWeek(d: number): void {
+    const a = this.weekAnchor;
+    this.weekAnchor = new Date(a.getFullYear(), a.getMonth(), a.getDate() + d * 7);
+    this.bubble = null;
+    this.hover = null;
+    this.layout();
+  }
+
+  /** "NOV 22-28": the week on the wall, for the header. */
+  get weekLabel(): string {
+    const [s, e] = [weekDates(this.weekAnchor)[0], weekDates(this.weekAnchor)[6]];
+    const sm = MONTHS[s.getMonth()], em = MONTHS[e.getMonth()];
+    return sm === em ? `${sm} ${s.getDate()}-${e.getDate()}` : `${sm} ${s.getDate()}-${em} ${e.getDate()}`;
   }
 
   /** Floor-local to screen. */
@@ -604,7 +624,8 @@ export class OfficeSim {
     const y = f.top.y + 2;
     this.backBtn = { x: f.top.lx + 2, y, w: textWidth("< OFFICE") + 6, h: 9 };
     this.nextBtn = { x: f.top.rx - 11, y, w: 9, h: 9 };
-    this.prevBtn = { x: this.nextBtn.x - 34, y, w: 9, h: 9 };
+    // Room between the arrows for the week range ("NOV 30-DEC 6" needs ~48px).
+    this.prevBtn = { x: this.nextBtn.x - (this.week && this.focus === null ? 66 : 34), y, w: 9, h: 9 };
     this.tabBtns = [];
     if (this.focus !== null) {
       let x = this.prevBtn.x - 6;
@@ -935,7 +956,7 @@ export class OfficeSim {
     }
     const focused = this.focus !== null;
     if (focused && inRect(this.backBtn, x, y, 2)) return { k: "back" };
-    const arrows = !this.week && (focused ? this.projects.length > 1 : this.floor.pageCount > 1);
+    const arrows = focused ? this.projects.length > 1 : this.week || this.floor.pageCount > 1;
     if (arrows && inRect(this.prevBtn, x, y, 2)) return { k: "prev" };
     if (arrows && inRect(this.nextBtn, x, y, 2)) return { k: "next" };
     for (const t of this.tabBtns) if (inRect(t.rect, x, y, 1)) return { k: "tab", tab: t.tab };
@@ -1141,6 +1162,8 @@ export class OfficeSim {
     if (this.focus !== null) {
       const n = this.projects.length;
       this.setFocus((this.focus + d + n) % n);
+    } else if (this.week) {
+      this.shiftWeek(d);
     } else if (this.floor.pageCount > 1) {
       this.page = (this.page + d + this.floor.pageCount) % this.floor.pageCount;
       this.hover = null;
@@ -1218,7 +1241,7 @@ export class OfficeSim {
         return { text: "BACK TO THE OFFICE", rect: this.backBtn };
       case "prev":
       case "next":
-        return { text: this.focus !== null ? `${h.k === "next" ? "NEXT" : "PREVIOUS"} DESK` : "MORE DESKS", rect: h.k === "prev" ? this.prevBtn : this.nextBtn };
+        return { text: this.focus !== null ? `${h.k === "next" ? "NEXT" : "PREVIOUS"} DESK` : this.week ? `${h.k === "next" ? "NEXT" : "PREVIOUS"} WEEK` : "MORE DESKS", rect: h.k === "prev" ? this.prevBtn : this.nextBtn };
       case "tab":
         return { text: h.tab === "board" ? "THE BOARD" : "THE NOTES", rect: this.tabBtns.find((t) => t.tab === h.tab)?.rect ?? null };
       case "week":

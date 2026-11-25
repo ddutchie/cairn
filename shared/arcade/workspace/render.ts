@@ -672,7 +672,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       x = sim.backBtn.x + sim.backBtn.w + 5;
       for (const t of sim.tabBtns) this.button(t.rect, sim.tabLabel(t.tab), sim.tab === t.tab);
     }
-    const arrows = focused ? sim.projects.length > 1 : sim.floor.pageCount > 1;
+    const arrows = focused ? sim.projects.length > 1 : sim.week || sim.floor.pageCount > 1;
     let right = arrows ? sim.prevBtn.x - 4 : f.top.rx - 3;
     if (focused && sim.tabBtns.length) right = sim.tabBtns[0].rect.x - 4;
     if (!focused) {
@@ -691,7 +691,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     if (arrows) {
       this.button(sim.prevBtn, "<");
       this.button(sim.nextBtn, ">");
-      const label = focused ? `${sim.focus! + 1}/${sim.projects.length}` : `${sim.page + 1}/${sim.floor.pageCount}`;
+      const label = focused ? `${sim.focus! + 1}/${sim.projects.length}` : sim.week ? sim.weekLabel : `${sim.page + 1}/${sim.floor.pageCount}`;
       const mid = (sim.prevBtn.x + sim.prevBtn.w + sim.nextBtn.x) / 2;
       this.text(label, Math.round(mid - textWidth(label) / 2), sim.prevBtn.y + 2, TEXT_DIM, 1, null);
     }

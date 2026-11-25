@@ -50,10 +50,10 @@ export function weekDates(anchor: Date): Date[] {
   return Array.from({ length: 7 }, (_, i) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
 }
 
-/** Pin this office's dated open cards onto the anchor's week. */
-export function bucketWeek(projects: readonly OfficeProject[], today: Date): { days: WeekDay[]; overdue: WeekCard[] } {
+/** Pin this office's dated open cards onto the anchor's week (`today` sets the highlight and what counts overdue). */
+export function bucketWeek(projects: readonly OfficeProject[], today: Date, anchor: Date = today): { days: WeekDay[]; overdue: WeekCard[] } {
   const todayKey = toDateKey(today);
-  const dates = weekDates(today);
+  const dates = weekDates(anchor);
   const days: WeekDay[] = dates.map((d) => ({
     key: toDateKey(d),
     label: `${DOW[d.getDay()]} ${d.getDate()}`,

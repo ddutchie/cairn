@@ -591,12 +591,35 @@ describe("calendar mode", () => {
     expect(s.events.at(-1)).toEqual({ k: "open", ref: { type: "task", id: "today" } });
   });
 
-  it("stays on the floor while the week is open (no desk, no arrows)", () => {
+  it("stays on the floor while the week is open, paging instead of paging desks", () => {
     const s = wk([dated("t1", "2026-11-25")]);
     s.setWeek(true);
-    expect(s.hit(s.prevBtn.x + 1, s.prevBtn.y + 1)).not.toMatchObject({ k: "prev" });
+    expect(s.hit(s.prevBtn.x + 1, s.prevBtn.y + 1)).toMatchObject({ k: "prev" });
+    s.down(s.prevBtn.x + 1, s.prevBtn.y + 1);
+    expect(s.weekDays[0].key).toBe("2026-11-15");
     s.setFocus(0);
     expect(s.weekView).toBeNull();
+  });
+
+  it("pages the wall week to week with the arrows and C stays put", () => {
+    const s = wk([dated("next", "2026-12-02"), dated("past", "2026-11-20")]);
+    s.setWeek(true);
+    expect(s.weekDays[0].key).toBe("2026-11-22");
+    expect(s.weekLabel).toBe("NOV 22-28");
+    expect(s.weekView!.tray.pins.map((p) => p.ref.id)).toEqual(["past"]);
+    // Next week: the December card pins, the tray still lists the overdue one.
+    s.down(s.nextBtn.x + 2, s.nextBtn.y + 2);
+    expect(s.weekDays[0].key).toBe("2026-11-29");
+    expect(s.weekLabel).toBe("NOV 29-DEC 5");
+    expect(s.weekDays.find((d) => d.key === "2026-12-02")!.cards.map((c) => c.ref.id)).toEqual(["next"]);
+    expect(s.weekView!.tray.pins.map((p) => p.ref.id)).toEqual(["past"]);
+    expect(s.setKey("ArrowLeft", true)).toBe(true);
+    expect(s.weekDays[0].key).toBe("2026-11-22");
+    // Reopening the wall returns to this week.
+    s.setWeek(false);
+    s.down(s.nextBtn.x + 2, s.nextBtn.y + 2);
+    s.setWeek(true);
+    expect(s.weekDays[0].key).toBe("2026-11-22");
   });
 
   it("draws the week wall without throwing", () => {    const backend: PixelBackend<unknown, number> = {
