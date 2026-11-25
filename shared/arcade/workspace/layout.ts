@@ -300,3 +300,80 @@ export function layoutDesk(p: OfficeProject, area: Rect, notesPage: number): Des
   }));
   return { area, columns, hiddenColumns: cols.length - fits, notes, notesPage: np, notesPages };
 }
+
+// ── The week wall (calendar mode) ────────────────────────────────────
+
+export interface WeekPin extends Rect {
+  ref: Ref;
+  title: string;
+  accent: string;
+  priority: "low" | "medium" | "high" | "urgent";
+}
+
+export interface WeekCol {
+  key: string;
+  label: string;
+  isToday: boolean;
+  isWeekend: boolean;
+  rect: Rect;
+  head: Rect;
+  pins: WeekPin[];
+  more: number;
+}
+
+export interface WeekTray {
+  rect: Rect;
+  pins: WeekPin[];
+  more: number;
+}
+
+export interface WeekView {
+  area: Rect;
+  cols: WeekCol[];
+  tray: WeekTray;
+}
+
+export const WEEK_PIN_H = 10;
+
+/** Seven day cork boards across the top two thirds, the red overdue tray along the bottom. */
+export function layoutWeek(
+  days: { key: string; label: string; isToday: boolean; isWeekend: boolean; cards: { ref: Ref; title: string; accent: string; priority: WeekPin["priority"] }[] }[],
+  overdue: { ref: Ref; title: string; accent: string; priority: WeekPin["priority"] }[],
+  area: Rect,
+): WeekView {
+  const gap = 4;
+  const trayH = Math.max(30, Math.round(area.h * 0.24));
+  const topH = area.h - trayH - gap;
+  const cw = Math.floor((area.w - gap * 6) / 7);
+  const cols: WeekCol[] = days.map((d, i) => {
+    const x = area.x + i * (cw + gap);
+    const rect = { x, y: area.y, w: cw, h: topH };
+    const head = { x, y: area.y, w: cw, h: 11 };
+    const room = Math.max(0, Math.floor((topH - 11 - 4) / (WEEK_PIN_H + 2)));
+    const shown = d.cards.slice(0, Math.max(0, room - (d.cards.length > room ? 1 : 0)));
+    return {
+      ...d,
+      rect,
+      head,
+      pins: shown.map((c, k) => ({ ...c, x: x + 2, y: area.y + 11 + 2 + k * (WEEK_PIN_H + 2), w: cw - 4, h: WEEK_PIN_H })),
+      more: d.cards.length - shown.length,
+    };
+  });
+  const tray = { x: area.x, y: area.y + topH + gap, w: area.w, h: trayH };
+  const perRow = Math.max(1, Math.floor((tray.w - 8) / 76));
+  const rows = Math.max(1, Math.floor((tray.h - 14) / (WEEK_PIN_H + 2)));
+  const cap = Math.max(0, perRow * rows - (overdue.length > perRow * rows ? 1 : 0));
+  const shown = overdue.slice(0, cap);
+  return {
+    area,
+    cols,
+    tray: {
+      rect: tray,
+      pins: shown.map((c, k) => {
+        const r = Math.floor(k / perRow), q = k % perRow;
+        return { ...c, x: tray.x + 4 + q * 76, y: tray.y + 12 + r * (WEEK_PIN_H + 2), w: 72, h: WEEK_PIN_H };
+      }),
+      more: overdue.length - shown.length,
+    },
+  };
+}

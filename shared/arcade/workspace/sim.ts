@@ -15,7 +15,8 @@ import { hudFrame, NO_HUD, type InputMode, type PixelHud } from "../pixel/hud";
 import { mulberry32 } from "../pixel/terrain";
 import { CONTRACTOR, DEMO_OFFICE, type OfficeData, type OfficeProject } from "./data";
 import { burstLabel, diffOffice, FLURRY, groupChanges, type Burst, type OfficeChange } from "./events";
-import { inRect, layoutDesk, layoutFloor, route, type Desk, type DeskTab, type DeskView, type FloorLayout, type Pt, type Rect, type Ref } from "./layout";
+import { inRect, layoutDesk, layoutFloor, layoutWeek, route, type Desk, type DeskTab, type DeskView, type FloorLayout, type Pt, type Rect, type Ref, type WeekView } from "./layout";
+import { bucketWeek, type WeekDay } from "./week";
 
 export interface OfficeSpec {
   width: number;
@@ -83,6 +84,7 @@ export type Hit =
   | { k: "note"; ref: Ref; rect: Rect; text: string }
   | { k: "back" | "prev" | "next" | "notesPrev" | "notesNext" }
   | { k: "tab"; tab: DeskTab }
+  | { k: "week" }
   | { k: "bubble"; ref: Ref | null };
 
 export interface Bubble {
@@ -182,6 +184,10 @@ export class OfficeSim {
   view: DeskView | null = null;
   workers = new Map<string, Worker>();
   robot!: Robot;
+  /** Calendar mode: the floor swaps for the week wall. */
+  week = false;
+  weekDays: WeekDay[] = [];
+  weekView: WeekView | null = null;
   /** Tool-call intents by id, with the frame they arrived (attribution window). */
   intents = new Map<string, number>();
   /** Ids whose change followed an intent: shown with the agent colour. For tests and hosts. */
@@ -196,6 +202,7 @@ export class OfficeSim {
   backBtn = ZERO;
   prevBtn = ZERO;
   nextBtn = ZERO;
+  calBtn = ZERO;
   tabBtns: { tab: DeskTab; rect: Rect }[] = [];
   notesPrevBtn = ZERO;
   notesNextBtn = ZERO;
@@ -365,7 +372,27 @@ export class OfficeSim {
     if (this.view) this.notesPage = this.view.notesPage;
     this.syncWorkers();
     this.syncRobot();
+    this.syncWeek();
     this.layoutHeader();
+  }
+
+  private syncWeek(): void {
+    if (!this.week || this.focus !== null) {
+      this.weekView = null;
+      return;
+    }
+    const { days, overdue } = bucketWeek(this.projects, this.clock());
+    this.weekDays = days;
+    this.weekView = layoutWeek(days, overdue, this.area);
+  }
+
+  /** The week wall, or the office floor. */
+  setWeek(on: boolean): void {
+    if (this.focus !== null) return;
+    this.week = on;
+    this.bubble = null;
+    this.hover = null;
+    this.layout();
   }
 
   /** Floor-local to screen. */
@@ -467,6 +494,11 @@ export class OfficeSim {
         this.tabBtns.unshift({ tab, rect: { x, y, w, h: 9 } });
         x -= 3;
       }
+    } else {
+      // The week wall toggle sits left of the page arrows.
+      const label = this.week ? "OFFICE" : "WEEK";
+      const w = textWidth(label) + 8;
+      this.calBtn = { x: this.prevBtn.x - 6 - w, y, w, h: 9 };
     }
     const d = this.deskArea;
     this.notesNextBtn = { x: d.x + d.w - 10, y: d.y + d.h - 10, w: 9, h: 9 };
@@ -629,11 +661,13 @@ export class OfficeSim {
     }
     const focused = this.focus !== null;
     if (focused && inRect(this.backBtn, x, y, 2)) return { k: "back" };
-    const arrows = focused ? this.projects.length > 1 : this.floor.pageCount > 1;
+    const arrows = !this.week && (focused ? this.projects.length > 1 : this.floor.pageCount > 1);
     if (arrows && inRect(this.prevBtn, x, y, 2)) return { k: "prev" };
     if (arrows && inRect(this.nextBtn, x, y, 2)) return { k: "next" };
     for (const t of this.tabBtns) if (inRect(t.rect, x, y, 1)) return { k: "tab", tab: t.tab };
+    if (!focused && inRect(this.calBtn, x, y, 1)) return { k: "week" };
     if (focused) return this.hitDesk(x, y);
+    if (this.week) return this.hitWeek(x, y);
 
     const lx = x - this.area.x;
     const ly = y - this.area.y;
@@ -682,6 +716,18 @@ export class OfficeSim {
     return n ? { k: "note", ref: n.ref, rect: n, text: `${n.title}${n.pinned ? " · PINNED" : ""}` } : null;
   }
 
+  private hitWeek(x: number, y: number): Hit | null {
+    const v = this.weekView;
+    if (!v) return null;
+    for (const c of v.cols) {
+      const p = c.pins.find((k) => inRect(k, x, y));
+      if (p) return { k: "card", ref: p.ref, rect: { ...p }, text: `${p.title} · ${c.label}` };
+    }
+    const t = v.tray.pins.find((k) => inRect(k, x, y));
+    if (t) return { k: "card", ref: t.ref, rect: { ...t }, text: `${t.title} · OVERDUE` };
+    return null;
+  }
+
   down(x: number, y: number): void {
     this.pointer = { x, y };
     const h = this.hit(x, y);
@@ -716,6 +762,9 @@ export class OfficeSim {
       case "tab":
         this.setTab(h.tab);
         return;
+      case "week":
+        this.setWeek(!this.week);
+        return;
       case "notesPrev":
       case "notesNext": {
         const n = this.view?.notesPages ?? 1;
@@ -744,6 +793,10 @@ export class OfficeSim {
         this.bubble = null;
         return true;
       }
+      if (this.week && this.focus === null) {
+        this.setWeek(false);
+        return true;
+      }
       if (this.focus !== null) {
         this.setFocus(null);
         return true;
@@ -756,6 +809,10 @@ export class OfficeSim {
     }
     if (this.focus !== null && (code === "KeyB" || code === "KeyN")) {
       this.setTab(code === "KeyB" ? "board" : "notes");
+      return true;
+    }
+    if (code === "KeyC" && this.focus === null) {
+      this.setWeek(!this.week);
       return true;
     }
     return false;
@@ -860,6 +917,8 @@ export class OfficeSim {
         return { text: this.focus !== null ? `${h.k === "next" ? "NEXT" : "PREVIOUS"} DESK` : "MORE DESKS", rect: h.k === "prev" ? this.prevBtn : this.nextBtn };
       case "tab":
         return { text: h.tab === "board" ? "THE BOARD" : "THE NOTES", rect: this.tabBtns.find((t) => t.tab === h.tab)?.rect ?? null };
+      case "week":
+        return { text: this.week ? "BACK TO THE OFFICE" : "THE WEEK WALL", rect: this.calBtn };
       case "notesPrev":
       case "notesNext":
         return { text: "MORE NOTES", rect: h.k === "notesPrev" ? this.notesPrevBtn : this.notesNextBtn };
@@ -872,6 +931,7 @@ export class OfficeSim {
   get hint(): string {
     if (this.data.demo && this.focus === null) return "A DEMO OFFICE · ADD TASKS AND NOTES TO FILL YOURS";
     const tap = this.inputMode === "pointer" ? "CLICK" : "TAP";
+    if (this.focus === null && this.week) return `${tap} A PIN TO OPEN ITS TASK · C: THE OFFICE`;
     if (this.focus === null) return `${tap} A DESK TO OPEN ITS PROJECT · ${tap} SOMEONE TO SEE THEIR WORK`;
     const what = this.tab === "board" ? "A CARD" : "A NOTE";
     return this.inputMode === "pointer" ? `${tap} ${what} TO OPEN IT · ESC: THE OFFICE` : `${tap} ${what} TO OPEN IT`;

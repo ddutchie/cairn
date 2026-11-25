@@ -130,12 +130,49 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
   draw(): Frame {
     const sim = this.sim;
     this.clear(BG);
-    if (sim.focus === null) this.drawFloor();
+    if (sim.focus === null && sim.week) this.drawWeek();
+    else if (sim.focus === null) this.drawFloor();
     else this.drawOpenDesk();
     this.drawBubble();
     this.drawHeader();
     this.drawFooter();
     return this.snapshot();
+  }
+
+  // ── The week wall (calendar mode) ──────────────────────────────────
+
+  private drawWeek(): void {
+    const sim = this.sim;
+    const v = sim.weekView;
+    if (!v) return;
+    // A big cork wall: pinstripe backing, then the day boards and the red tray.
+    this.rect(v.area.x, v.area.y, v.area.w, v.area.h, "#6c543a");
+    for (let y = 0; y < v.area.h; y += 4) this.rect(v.area.x, v.area.y + y, v.area.w, 1, "#5e4832", 0.5);
+    for (const c of v.cols) {
+      if (c.isWeekend) this.rect(c.rect.x, c.rect.y, c.rect.w, c.rect.h, NIGHT, 0.35);
+      this.rect(c.rect.x, c.rect.y, c.rect.w, c.rect.h, CORK, c.isWeekend ? 0.75 : 1);
+      this.rect(c.head.x, c.head.y, c.head.w, c.head.h, c.isToday ? "#ffe066" : "#8f6a40");
+      const label = clip(c.label, Math.floor(c.head.w / 4) - 1);
+      this.text(label, c.head.x + 3, c.head.y + 2, c.isToday ? "#1d2232" : TEXT, 1, null);
+      for (const p of c.pins) this.drawPin(p.x, p.y, p.w, p.title, p.accent, p.priority);
+      if (c.more > 0) this.text(`+${c.more}`, c.rect.x + 3, c.rect.y + c.rect.h - 9, TEXT_DIM, 1, null);
+    }
+    const t = v.tray;
+    this.rect(t.rect.x, t.rect.y, t.rect.w, t.rect.h, "#7a2e2e");
+    this.rect(t.rect.x, t.rect.y, t.rect.w, 11, "#d9483b");
+    const over = `OVERDUE ${t.pins.length + t.more}`;
+    this.text(clip(over, Math.floor(t.rect.w / 4) - 1), t.rect.x + 3, t.rect.y + 2, "#ffffff", 1, null);
+    for (const p of t.pins) this.drawPin(p.x, p.y, p.w, p.title, p.accent, p.priority);
+    if (t.more > 0) this.text(`+${t.more}`, t.rect.x + t.rect.w - 20, t.rect.y + t.rect.h - 9, TEXT, 1, null);
+  }
+
+  private drawPin(x: number, y: number, w: number, title: string, accent: string, priority: "low" | "medium" | "high" | "urgent"): void {
+    const pal = PRIORITY_PAL[priority];
+    this.rect(x, y, w, 10, "#efe8d6");
+    this.rect(x, y, 3, 10, pal.h);
+    this.rect(x, y, w, 1, "#ffffff", 0.5);
+    this.text(clip(title, Math.floor((w - 6) / 4)), x + 5, y + 2, INK, 1, null);
+    this.rect(x + w - 4, y + 1, 3, 3, accent);
   }
 
   // ── The office floor ──────────────────────────────────────────────────
@@ -570,6 +607,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       const mid = (sim.prevBtn.x + sim.prevBtn.w + sim.nextBtn.x) / 2;
       this.text(label, Math.round(mid - textWidth(label) / 2), sim.prevBtn.y + 2, TEXT_DIM, 1, null);
     }
+    if (!focused) this.button(sim.calBtn, sim.week ? "OFFICE" : "WEEK", sim.week);
   }
 
   private drawFooter(): void {

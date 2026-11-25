@@ -538,3 +538,74 @@ describe("the week wall", () => {
     expect(days.filter((d) => d.isWeekend).map((d) => d.key)).toEqual(["2026-11-22", "2026-11-28"]);
   });
 });
+
+describe("calendar mode", () => {
+  const wed = new Date(2026, 10, 25, 11, 30);
+  const dated = (id: string, dueKey: string | null): OfficeCard => ({ ...card(id, "backlog"), dueKey });
+  const wk = (cards: OfficeCard[]) => {
+    const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: office([project("a", cards)]), clock: () => wed, seed: 3 });
+    return s;
+  };
+
+  it("toggles the week wall with the header button and C, and Esc leaves it", () => {
+    const s = wk([dated("t1", "2026-11-25")]);
+    expect(s.week).toBe(false);
+    expect(s.weekView).toBeNull();
+    s.down(s.calBtn.x + 2, s.calBtn.y + 2);
+    expect(s.week).toBe(true);
+    expect(s.weekView?.cols).toHaveLength(7);
+    expect(s.setKey("Escape", true)).toBe(true);
+    expect(s.week).toBe(false);
+    expect(s.setKey("KeyC", true)).toBe(true);
+    expect(s.week).toBe(true);
+    expect(s.setKey("KeyC", true)).toBe(true);
+    expect(s.week).toBe(false);
+  });
+
+  it("pins dated cards on their day with an overdue tray, and opens one on click", () => {
+    const s = wk([dated("today", "2026-11-25"), dated("old", "2026-11-20")]);
+    s.setWeek(true);
+    const col = s.weekView!.cols.find((c) => c.key === "2026-11-25")!;
+    expect(col.pins.map((p) => p.ref.id)).toEqual(["today"]);
+    expect(s.weekView!.tray.pins.map((p) => p.ref.id)).toEqual(["old"]);
+    const pin = col.pins[0];
+    s.down(pin.x + 2, pin.y + 2);
+    expect(s.events.at(-1)).toEqual({ k: "open", ref: { type: "task", id: "today" } });
+  });
+
+  it("stays on the floor while the week is open (no desk, no arrows)", () => {
+    const s = wk([dated("t1", "2026-11-25")]);
+    s.setWeek(true);
+    expect(s.hit(s.prevBtn.x + 1, s.prevBtn.y + 1)).not.toMatchObject({ k: "prev" });
+    s.setFocus(0);
+    expect(s.weekView).toBeNull();
+  });
+
+  it("draws the week wall without throwing", () => {
+    const backend: PixelBackend<unknown, number> = {
+      createSurface(width, height): PixelSurface<unknown, number> {
+        let w = width, h = height;
+        return {
+          get W() { return w; },
+          get H() { return h; },
+          resize(nw, nh) { w = nw; h = nh; },
+          clear() {}, snapshot() { return 1; }, toImage() { return null; },
+          drawRect() {}, drawStrokeRect() {}, drawCircle() {}, drawLine() {}, drawImage() {}, drawImageRect() {},
+          drawTintedImage() {}, drawSprite() {}, drawStack() {}, drawShadow() {}, drawGlyphs() {},
+          clipRect(_x, _y, _w, _h, fn) { fn(); },
+        };
+      },
+      makeImage: () => ({}),
+      makeAtlas: (model) => ({ model, image: {}, shadow: {} }),
+    };
+    const s = wk([dated("today", "2026-11-25"), dated("old", "2026-11-20")]);
+    const r = new OfficeRenderer(backend, s);
+    s.setWeek(true);
+    for (let i = 0; i < 10; i++) {
+      s.step();
+      r.draw();
+    }
+    s.move(s.calBtn.x + 1, s.calBtn.y + 1);
+    expect(s.hover?.text).toMatch(/OFFICE/);
+  });
+});
