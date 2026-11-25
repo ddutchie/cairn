@@ -47,6 +47,10 @@ A change for an id the agent just touched (a `tool/call` with a `cairnRef` in th
 
 The WEEK tab (C) swaps the floor for the week wall: seven day cork boards from the shared `week.ts` bucketing, with dated open cards pinned on their day (priority stripe, project accent chip) and a red OVERDUE tray along the bottom for everything past due. Today is gold, weekends dim. The ‹ › arrows and arrow keys page the wall week to week (the header names the range); reopening returns to this week. Clicking a pin opens that task in the side panel, exactly like a desk card; Esc or OFFICE goes back. Meeting-room events and workers walking to meetings are not built yet.
 
+## Pixel chat
+
+While the office is on screen the desktop chat panel dresses to match: a pixel face (Pixelify Sans) for messages and the composer, square two-pixel borders with a hard shadow, and the office robot as the agent's avatar. It is a theme layer only: `ArcadeView` sets `officeOpen`, `UnifiedChatPanel` puts `data-pixel="office"` on its root, and CSS in `globals.css` does the rest, so there is one chat component. The user's chat theme keeps its colours, sizes follow the type scale and font-size setting, and code stays monospace. Leaving the office (including by clicking the robot, which opens the agent view) drops the theme.
+
 ## Tuning notes
 
 - Sprite stacks turn a model's depth into screen height, so keep heads shallow and chair backs low or a seated person reads as a post. A front face only a voxel or two big gets lost: the waiting robot turns to the room and its eyes are drawn flat on its head.
