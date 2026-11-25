@@ -88,6 +88,7 @@ export function buildArcadeData(src: ArcadeSource): ArcadeData {
     accent: ACCENTS[i % ACCENTS.length],
     biome: BIOME_ORDER[i % BIOME_ORDER.length],
     tasks: x.tasks.map((c, k) => ({
+      id: c.id,
       title: cleanArcadeTitle(c.title),
       priority: c.priority,
       ...dueMinutes(c.dueDate, now, i * 31 + k),

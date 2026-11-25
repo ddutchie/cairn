@@ -14,7 +14,8 @@ export type ArcadeGameId =
   | "breakout"
   | "basecamp"
   | "tideglass"
-  | "powder-run";
+  | "powder-run"
+  | "angler";
 export type ArcadeEvent = "select" | "page" | `open:${ArcadeGameId}`;
 
 export interface Cartridge {
@@ -45,6 +46,7 @@ export const CARTRIDGES: Omit<Cartridge, "best" | "x" | "y" | "w" | "h">[] = [
   { id: "basecamp", name: "BASECAMP", title: "BASECAMP", blurb: "CLOCKWORK CAMP & MYSTERY", accent: "#ff9e44", bestKey: "basecamp_best" },
   { id: "tideglass", name: "TIDEGLASS", title: "TIDEGLASS", blurb: "3D MOUNTAIN DESCENT", accent: "#a8f4e8", bestKey: "tideglass_best" },
   { id: "powder-run", name: "POWDER RUN", title: "POWDER RUN", blurb: "3D HALFPIPE & AIR TRICKS", accent: "#ff7242", bestKey: "powderrun_best" },
+  { id: "angler", name: "ANGLER", title: "ANGLER", blurb: "FISH YOUR TASKS, STOCK A TANK", accent: "#3fb8d8", bestKey: "angler_best" },
 ];
 
 export interface MenuSpec {

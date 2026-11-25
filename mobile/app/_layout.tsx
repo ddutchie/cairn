@@ -30,11 +30,11 @@ export { RouteErrorBoundary as ErrorBoundary };
 
 // Keep the native splash up until the DB is ready, so there's no flash between
 // the splash and the first screen. Fade it out for a smooth handoff.
-SplashScreen.preventAutoHideAsync().catch(() => {});
+SplashScreen.preventAutoHideAsync().catch(() => { });
 SplashScreen.setOptions({ duration: 300, fade: true });
 
 /** Routes of the hidden pixel games (EmptyState's secret menu). */
-const PIXEL_GAME_ROUTES = ["arcade", "task-force", "wayfinder", "inbox-zero", "stacker", "breakout", "basecamp", "tideglass", "powder-run"] as const;
+const PIXEL_GAME_ROUTES = ["arcade", "task-force", "wayfinder", "inbox-zero", "stacker", "breakout", "basecamp", "tideglass", "powder-run", "angler"] as const;
 const PIXEL_GAME_OPTIONS = {
   title: "",
   // Over full screen, not fullScreenModal: a full-screen modal takes the tabs
@@ -132,7 +132,7 @@ export default function RootLayout() {
   // Hide the native splash once we've either loaded or hit an error, so the
   // splash never lingers past the point the UI is ready to show.
   useEffect(() => {
-    if (ready || error) SplashScreen.hideAsync().catch(() => {});
+    if (ready || error) SplashScreen.hideAsync().catch(() => { });
   }, [ready, error]);
 
   // Escape hatch for a local DB that won't open: drop this phone's copy of the

@@ -5,6 +5,8 @@
 
 import { HEARTH_MODEL, WARDEN_LIT_MODEL } from "./basecamp/models";
 import { BOARDER_MODEL } from "./powder-run/models";
+import { fishPixels } from "./angler/sprites";
+import type { FishSpec } from "./angler/sim";
 import { LIGHTHOUSE_MODEL, SHARD_MODEL } from "./tideglass/models";
 import { BRICKS, PADDLE } from "./breakout/models";
 import { CARD_MODELS, TOWER_MODELS } from "./inbox-zero/models";
@@ -31,6 +33,8 @@ export class ArcadeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
   private readonly shard: AtlasHandle<Img>;
   private readonly boarder: AtlasHandle<Img>;
   private readonly stone: Img;
+  private readonly fish: [Img, Img];
+  private readonly fishW: number;
   private readonly terrain: Terrain;
 
   constructor(backend: PixelBackend<Img, Frame>, menu: ArcadeMenu) {
@@ -51,6 +55,10 @@ export class ArcadeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     this.boarder = this.makeAtlas(BOARDER_MODEL);
     const sp = buildStonePixels(34, "project", "WORK", 3);
     this.stone = this.makeImage(sp.w, sp.h, sp.pixels);
+    const koi: FishSpec = { id: "menu", kind: "note", title: "", project: "", accent: "#3fb8d8", species: "koi", overdue: false, kg: 1, size: 14, pts: 0, seed: 7 };
+    const fr = fishPixels(koi), fl = fishPixels(koi, true);
+    this.fish = [this.makeImage(fr.w, fr.h, fr.pixels), this.makeImage(fl.w, fl.h, fl.pixels)];
+    this.fishW = fr.w;
     this.terrain = new Terrain(menu.W, "tropic", 19);
   }
 
@@ -137,6 +145,15 @@ export class ArcadeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
           this.rect(rx + 4, cy + 2, rw - 8, rh / 2, "#b8d0ec");
           this.stack(this.boarder, cx + Math.sin(t * 0.08) * 7, cy + 3, Math.sin(t * 0.08) * 0.4, { k: 0.9 });
           this.px(rx + 8, ry + 6, "#fff2a0", 2);
+          break;
+        }
+        case "angler": {
+          this.rect(rx, ry, rw, rh, "#2479a8");
+          this.rect(rx, ry + rh - 5, rw, 5, "#d8c08a");
+          for (let i = 0; i < 5; i++) this.rect(rx + 6 + Math.round(Math.sin(t * 0.04 + i * 0.5) * i * 0.4), ry + rh - 6 - i * 3, 2, 3, "#3f9a4a");
+          const sw = Math.sin(t * 0.03);
+          this.image(this.fish[Math.cos(t * 0.03) > 0 ? 0 : 1], Math.round(cx + sw * 8 - this.fishW / 2), Math.round(cy - 4), 1);
+          this.circle(rx + rw - 8, ry + rh - 10 - ((t * 0.4) % (rh - 10)), 1, "#d8f4ff", 0.8, true);
           break;
         }
       }

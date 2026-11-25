@@ -1,19 +1,18 @@
 import { useCallback, useMemo, useState } from "react";
 import { ActionSheetIOS, Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack, useFocusEffect, useRouter, type Href } from "expo-router";
-import { BarChart3, FolderOpen, Network, Pin, RefreshCw, Settings, Sun, Users } from "lucide-react-native";
+import { FolderOpen, Pin, Settings, Users } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
-import { PINNABLE, WORKSPACE_TOOLS, liveLine, usePinnedTool, type ToolId } from "@/lib/workspace-tools";
+import { ARCADE_TOOLS, PINNABLE, WORKSPACE_TOOLS, liveLine, useArcadeUnlocked, usePinnedTool, type ToolId } from "@/lib/workspace-tools";
+import { toolIcon } from "@/components/tool-icons";
 import { showPinMenu } from "@/lib/pin-menu";
 import { getActiveSource } from "@/db";
 import { switchSource } from "@/sync/controller";
 import { useSyncSources } from "@/sync/useSyncSources";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
-
-const ICONS: Record<ToolId, typeof Users> = { today: Sun, people: Users, graph: Network, usage: BarChart3, sync: RefreshCw };
 
 type Row = { key: string; title: string; line: string; href: Href; icon: typeof Users; tool?: ToolId };
 
@@ -27,6 +26,7 @@ export function WorkspaceScreen() {
   const s = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
   const pinned = usePinnedTool();
+  const arcade = useArcadeUnlocked();
   const [lines, setLines] = useState<Record<string, string>>({});
   // The workspace switcher lives here (a tab-root header can't carry it on every layout).
   const [active, setActive] = useState<string | null>(() => getActiveSource());
@@ -49,15 +49,17 @@ export function WorkspaceScreen() {
   };
 
   const load = useCallback(() => {
-    setLines(Object.fromEntries(PINNABLE.map((id) => [id, liveLine(id)])));
-  }, []);
+    setLines(Object.fromEntries([...PINNABLE, ...(arcade ? ARCADE_TOOLS : [])].map((id) => [id, liveLine(id)])));
+  }, [arcade]);
   useRefreshOnFocus(load);
 
-  const tools: Row[] = (["today", "people", "graph"] as ToolId[]).map((id) => ({
+  const toolRow = (id: ToolId): Row => ({
     key: id, title: WORKSPACE_TOOLS[id].title, line: lines[id] ?? WORKSPACE_TOOLS[id].blurb,
-    href: WORKSPACE_TOOLS[id].href, icon: ICONS[id], tool: id,
-  }));
-  const usage: Row = { key: "usage", title: "Usage", line: lines.usage ?? WORKSPACE_TOOLS.usage.blurb, href: WORKSPACE_TOOLS.usage.href, icon: ICONS.usage, tool: "usage" };
+    href: WORKSPACE_TOOLS[id].href, icon: toolIcon(id), tool: id,
+  });
+  const tools: Row[] = (["today", "people", "graph", "usage"] as ToolId[]).map(toolRow);
+  // Unlocked with five taps on the Cairn icon; each game can then be pinned like any tool.
+  const games: Row[] = arcade ? ARCADE_TOOLS.map(toolRow) : [];
   const settings: Row = { key: "settings", title: "Settings", line: "Appearance, AI, tools and sync", href: "/settings" as Href, icon: Settings };
 
   const renderRow = (r: Row): ReactNode => {
@@ -102,7 +104,8 @@ export function WorkspaceScreen() {
         </PressableScale>
         <Text style={s.section}>Tools</Text>
         {tools.map(renderRow)}
-        {renderRow(usage)}
+        {games.length ? <Text style={s.section}>Arcade</Text> : null}
+        {games.map(renderRow)}
         <Text style={s.section}>Settings</Text>
         {renderRow(settings)}
         <Text style={s.hint}>Press and hold a tool to show it above the tab bar.</Text>

@@ -39,8 +39,8 @@ export function listArcadeProjects(now = new Date()): ArcadeProject[] {
 
   const gathered = projects
     .map((p) => {
-      const tasks = db.getAllSync<{ title: string; priority: string; due_date: string | null }>(
-        `SELECT c.title, c.priority, c.due_date FROM task_cards c LEFT JOIN board_columns col ON col.id = c.column_id
+      const tasks = db.getAllSync<{ id: string; title: string; priority: string; due_date: string | null }>(
+        `SELECT c.id, c.title, c.priority, c.due_date FROM task_cards c LEFT JOIN board_columns col ON col.id = c.column_id
          WHERE c.project_id = ? AND c.deleted_at IS NULL AND c.archived_at IS NULL
            AND COALESCE(col.type, '') <> 'done'
          ORDER BY c."order" ASC, c.updated_at DESC`,
@@ -68,6 +68,7 @@ export function listArcadeProjects(now = new Date()): ArcadeProject[] {
     biome: BIOME_ORDER[i % BIOME_ORDER.length],
     tasks: x.tasks
       .map((t) => ({
+        id: t.id,
         title: cleanArcadeTitle(t.title),
         priority: (PRIORITIES as string[]).includes(t.priority) ? (t.priority as Priority) : "medium",
         due: t.due_date,
@@ -75,6 +76,7 @@ export function listArcadeProjects(now = new Date()): ArcadeProject[] {
       .sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority])
       .slice(0, MAX_TASKS)
       .map((t, k) => ({
+        id: t.id,
         title: t.title,
         priority: t.priority,
         ...dueMinutes(t.due, now, i * 31 + k),

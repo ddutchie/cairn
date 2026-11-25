@@ -4,6 +4,7 @@ import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { haptics } from "@/haptics";
 import { useCreaseClearance } from "@/lib/use-fold";
+import { unlockArcade } from "@/lib/workspace-tools";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 const APP_VERSION = Constants.expoConfig?.version ?? "";
@@ -86,6 +87,7 @@ export function EmptyState({
   const tapTimes = useRef<number[]>([]);
   const openEggMenu = () => {
     haptics.success(); // celebratory buzz as the secret reveals
+    unlockArcade(); // from now on the games are Workspace tools too
     router.push("/arcade");
   };
   const onIconTap = () => {

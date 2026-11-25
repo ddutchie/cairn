@@ -5,7 +5,7 @@ import { ArcadeMenu } from "@cairn/shared/arcade/menu";
 describe("arcade menu", () => {
   it("paginates cartridges inside the playfield, clear of the rail", () => {
     const m = new ArcadeMenu({ width: 240, height: 320, hud: { ...NO_HUD, top: 5, right: 30 }, bests: { stacker: 12 } });
-    expect(m.pageCount).toBe(2);
+    expect(m.pageCount).toBe(3);
     expect(m.cards.map((c) => c.id)).toEqual(["task-force", "wayfinder", "inbox-zero", "stacker"]);
     for (const c of m.cards) {
       expect(c.x + c.w).toBeLessThanOrEqual(240 - 30);

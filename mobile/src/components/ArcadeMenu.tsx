@@ -1,6 +1,7 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useRouter, type Href } from "expo-router";
 import { getMeta } from "@/db";
+import { unlockArcade } from "@/lib/workspace-tools";
 import { haptics } from "@/haptics";
 import { PixelGameView, type PixelGame, type PixelGameSpec } from "@/components/PixelGameView";
 import { skiaBackend } from "@/games/pixel/skia-backend";
@@ -40,6 +41,8 @@ function createArcade({ width, height, hud }: PixelGameSpec): PixelGame<ArcadeEv
 /** The pixel game picker behind the secret menu (the `/arcade` route). */
 export function ArcadeView() {
   const router = useRouter();
+  // Anyone who reaches the arcade (the easter egg, or a pin) has unlocked it.
+  useEffect(unlockArcade, []);
   const onEvent = useCallback(
     (e: ArcadeEvent) => {
       if (e === "select") return haptics.impactMedium();

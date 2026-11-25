@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEMO_ARCADE_PROJECTS } from "./arcade-data";
 import { NO_HUD, type PixelHud } from "./hud";
+import { AnglerSim } from "../angler/sim";
 import { BasecampSim } from "../basecamp/sim";
 import { BreakoutSim } from "../breakout/sim";
 import { InboxZeroSim } from "../inbox-zero/sim";
@@ -13,7 +14,7 @@ import { WayfinderSim } from "../wayfinder/sim";
 // Unfolding the Duo resizes the playfield (and its insets) under a running game; the game must carry on.
 const wide: PixelHud = { ...NO_HUD, top: 6, bottom: 4, left: 10, right: 10 };
 const sims = {
-  basecamp: BasecampSim, breakout: BreakoutSim, "inbox-zero": InboxZeroSim, "powder-run": PowderRunSim,
+  angler: AnglerSim, basecamp: BasecampSim, breakout: BreakoutSim, "inbox-zero": InboxZeroSim, "powder-run": PowderRunSim,
   stacker: StackerSim, "task-force": TaskForceSim, tideglass: TideglassSim, wayfinder: WayfinderSim,
 } as const;
 

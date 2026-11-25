@@ -15,6 +15,9 @@ import { TideglassRenderer } from "@cairn/shared/arcade/tideglass/render";
 import { TideglassSim } from "@cairn/shared/arcade/tideglass/sim";
 import { PowderRunRenderer } from "@cairn/shared/arcade/powder-run/render";
 import { PowderRunSim } from "@cairn/shared/arcade/powder-run/sim";
+import { AnglerRenderer } from "@cairn/shared/arcade/angler/render";
+import { AnglerSim, type AnglerSave } from "@cairn/shared/arcade/angler/sim";
+import { storage } from "@/lib/storage";
 import { BreakoutRenderer } from "@cairn/shared/arcade/breakout/render";
 import { BreakoutSim } from "@cairn/shared/arcade/breakout/sim";
 import { InboxZeroRenderer } from "@cairn/shared/arcade/inbox-zero/render";
@@ -188,6 +191,33 @@ const createPowderRun: GameFactory = ({ canvas, width, height, data, best }) => 
   };
 };
 
+/** The aquarium is kept on this device between visits (the fish, not where they swim). */
+const ANGLER_TANK_KEY = "arcadeAngler:tank";
+
+const createAngler: GameFactory = ({ canvas, width, height, data, best }) => {
+  const save = storage.get<AnglerSave>(ANGLER_TANK_KEY);
+  const sim = new AnglerSim({ width, height, hud: NO_HUD, inputMode: "pointer", best, projects: data.projects, demo: data.demo, save });
+  const renderer = new AnglerRenderer(createCanvasBackend(canvas), sim);
+  return {
+    update: () => {
+      sim.step();
+      if (sim.tankDirty) {
+        sim.tankDirty = false;
+        storage.set(ANGLER_TANK_KEY, sim.snapshot());
+      }
+    },
+    render: () => renderer.draw(),
+    down: (x, y) => sim.down(x, y),
+    move: (x, y) => sim.move(x, y),
+    up: () => sim.up(),
+    key: (code, down) => sim.setKey(code, down),
+    resize: (w, h) => renderer.resize(w, h),
+    get best() {
+      return sim.best;
+    },
+  };
+};
+
 const GAMES: Record<ArcadeGameId, GameFactory> = {
   "task-force": createTaskForce,
   stacker: createStacker,
@@ -197,6 +227,7 @@ const GAMES: Record<ArcadeGameId, GameFactory> = {
   basecamp: createBasecamp,
   tideglass: createTideglass,
   "powder-run": createPowderRun,
+  angler: createAngler,
 };
 
 function makeMenuFactory(onPick: (id: ArcadeGameId) => void, onSelect: (id: ArcadeGameId) => void): GameFactory {

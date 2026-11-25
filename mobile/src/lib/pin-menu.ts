@@ -1,9 +1,9 @@
 import { ActionSheetIOS, Alert, Platform } from "react-native";
-import { PINNABLE, WORKSPACE_TOOLS, setPinnedTool, type ToolId } from "@/lib/workspace-tools";
+import { PINNABLE, WORKSPACE_TOOLS, isPinnable, setPinnedTool, type ToolId } from "@/lib/workspace-tools";
 
 /** Press-and-hold menu on a Workspace row: pin it above the tab bar, or take it off. */
 export function showPinMenu(id: ToolId, pinned: boolean): void {
-  if (!PINNABLE.includes(id)) return;
+  if (!isPinnable(id)) return;
   const title = WORKSPACE_TOOLS[id].title;
   const label = pinned ? "Remove from tab bar" : "Show above tab bar";
   const run = () => setPinnedTool(pinned ? null : id);

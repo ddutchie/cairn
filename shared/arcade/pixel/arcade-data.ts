@@ -12,6 +12,8 @@ import { BIOME_ORDER, hash2, type BiomeName } from "./terrain";
 export type DueScope = "overdue" | "today" | "untimed" | "later";
 
 export interface ArcadeTask {
+  /** The task card's id, when the loader has it (Angler keeps fish by id). */
+  id?: string;
   title: string;
   priority: Priority;
   /** Minutes after 09:00 today it is due; negative = already overdue. */
@@ -147,7 +149,8 @@ export const DEMO_ARCADE_PROJECTS: ArcadeProject[] = (() => {
     name,
     accent: ACCENTS[i % ACCENTS.length],
     biome: BIOME_ORDER[i % BIOME_ORDER.length],
-    tasks: tasks.map(([title, priority, dueMin]) => ({
+    tasks: tasks.map(([title, priority, dueMin], k) => ({
+      id: `demo-${i}-t${k}`,
       title,
       priority,
       dueMin,
