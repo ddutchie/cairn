@@ -700,6 +700,8 @@ select:focus {
   font-family: var(--font-mono);
   letter-spacing: normal;
 }
+/* Inline code is set a step up from bubble text, which towers over the pixel face. */
+[data-pixel="office"] :is(.chat-bubble-user, .chat-bubble-ai) :not(pre) > code { font-size: inherit; }
 /* The agent's avatar is the office robot. Pixel art, so fixed colours. */
 [data-pixel="office"] [data-avatar="bot"] {
   border: 0;
