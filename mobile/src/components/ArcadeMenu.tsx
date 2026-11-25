@@ -43,7 +43,10 @@ export function ArcadeView() {
   const onEvent = useCallback(
     (e: ArcadeEvent) => {
       if (e === "select") return haptics.impactMedium();
-      router.replace(`/${e.slice("open:".length)}` as Href);
+      if (e === "page") return haptics.selection();
+      if (e.startsWith("open:")) {
+        router.replace(`/${e.slice("open:".length)}` as Href);
+      }
     },
     [router],
   );
