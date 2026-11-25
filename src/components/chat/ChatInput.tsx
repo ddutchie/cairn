@@ -435,6 +435,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
         )}
 
         <div
+          data-chat-composer
           className={cn(
             "relative flex items-end gap-2.5 transition-all duration-300",
             isOverview

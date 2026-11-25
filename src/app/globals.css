@@ -673,6 +673,42 @@ select:focus {
 [data-chat-shadow="strong"] .chat-bubble-user,
 [data-chat-shadow="strong"] .chat-bubble-ai { box-shadow: 0 6px 20px rgba(0,0,0,0.28); }
 
+/* ── Pixel chat: while The Workspace is open ─────────────────────────────
+   A theme layer only: UnifiedChatPanel sets data-pixel="office" and the same
+   chat components pick these up. The user's chat theme keeps its colours; the
+   font and shapes change. Must stay after the chat theme rules above (equal
+   specificity, later wins). Sizes stay on the type scale × --font-scale, and
+   code stays monospace. */
+[data-pixel="office"] {
+  --chat-font: var(--font-pixel), var(--font-mono), monospace;
+  --chat-font-weight: 400;
+  --chat-tracking: 0px;
+  --chat-line-height: 1;
+}
+[data-pixel="office"] :is(.chat-bubble-user, .chat-bubble-ai, [data-chat-composer], [data-chat-composer] textarea) {
+  font-family: var(--chat-font);
+  letter-spacing: var(--chat-tracking);
+}
+[data-pixel="office"] :is(.chat-bubble-user, .chat-bubble-ai, [data-chat-composer]) {
+  border-radius: 0;
+  border: 2px solid color-mix(in srgb, var(--text-primary) 45%, transparent);
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--text-primary) 22%, transparent);
+  backdrop-filter: none;
+}
+[data-pixel="office"] [data-chat-composer]:focus-within { border-color: var(--accent); }
+[data-pixel="office"] :is(code, pre, kbd, .font-mono) {
+  font-family: var(--font-mono);
+  letter-spacing: normal;
+}
+/* The agent's avatar is the office robot. Pixel art, so fixed colours. */
+[data-pixel="office"] [data-avatar="bot"] {
+  border: 0;
+  border-radius: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9' shape-rendering='crispEdges'%3E%3Cpath fill='%23ff5a4a' d='M4 0h1v1h-1z'/%3E%3Cpath fill='%238a93a8' d='M4 1h1v1h-1z'/%3E%3Cpath fill='%23e8eef7' d='M1 2h7v5h-7z'/%3E%3Cpath fill='%239fb2cc' d='M1 2h1v5h-1z'/%3E%3Cpath fill='%239fb2cc' d='M7 2h1v5h-1z'/%3E%3Cpath fill='%2310131c' d='M2 3h5v3h-5z'/%3E%3Cpath fill='%238fe0ff' d='M3 4h1v1h-1z'/%3E%3Cpath fill='%238fe0ff' d='M5 4h1v1h-1z'/%3E%3Cpath fill='%23dfe6f2' d='M2 7h5v2h-5z'/%3E%3Cpath fill='%2339c6ff' d='M4 7h1v1h-1z'/%3E%3C/svg%3E") center / contain no-repeat;
+  image-rendering: pixelated;
+}
+[data-pixel="office"] [data-avatar="bot"] > svg { display: none; }
+
 /* ── CodeMirror 6 search panel ───────────────────────────────────────────── */
 /* Global overrides — EditorView.theme() alone can lose to CM6's base sheet. */
 

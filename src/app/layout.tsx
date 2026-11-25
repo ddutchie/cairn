@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Pixelify_Sans } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -15,6 +15,14 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
   display: "swap",
+});
+
+/** Chat's pixel theme while The Workspace is open (`[data-pixel]` in globals.css). */
+const pixelSans = Pixelify_Sans({
+  variable: "--font-pixel",
+  subsets: ["latin", "latin-ext", "cyrillic"],
+  display: "swap",
+  preload: false,
 });
 
 export const viewport: Viewport = {
@@ -43,7 +51,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${pixelSans.variable} h-full antialiased`}
     >
       <body className="h-full flex flex-col bg-[var(--background)]">
         <Script id="theme-init" strategy="beforeInteractive">{`
