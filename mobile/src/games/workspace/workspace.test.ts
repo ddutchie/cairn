@@ -10,6 +10,7 @@ import { layoutDesk, layoutFloor, pileHeight, route, staff } from "@cairn/shared
 import { OfficeRenderer } from "@cairn/shared/arcade/workspace/render";
 import { daylightAt, OfficeSim } from "@cairn/shared/arcade/workspace/sim";
 import { burstLabel, diffOffice, FLURRY, groupChanges } from "@cairn/shared/arcade/workspace/events";
+import { bucketWeek, toDateKey, weekDates } from "@cairn/shared/arcade/workspace/week";
 
 const NOW = new Date(2026, 10, 25, 11, 30);
 const clock = () => NOW;
@@ -25,6 +26,7 @@ const card = (id: string, zone: OfficeCard["zone"], assignee: string | null = nu
   assignee,
   overdue: false,
   dueToday: false,
+  dueKey: null,
   ...extra,
 });
 
@@ -500,5 +502,39 @@ describe("the agent's robot", () => {
     for (let i = 0; i < 6000 && s.robot.mode !== "idle"; i++) s.step();
     expect(s.robot.mode).toBe("idle");
     expect(s.robot.desk).toBeNull();
+  });
+});
+
+describe("the week wall", () => {
+  // Wednesday 2026-11-25.
+  const today = () => new Date(2026, 10, 25, 11, 30);
+  const dated = (id: string, dueKey: string | null): OfficeCard => ({ ...card(id, "backlog"), dueKey });
+
+  it("pins dated cards on their day and lists the overdue twice", () => {
+    const ps = [project("a", [dated("past", "2026-11-20"), dated("today", "2026-11-25"), dated("fri", "2026-11-27"), dated("next", "2026-12-02"), dated("none", null)])];
+    const { days, overdue } = bucketWeek(ps, today());
+    expect(days).toHaveLength(7);
+    expect(days[0].label).toBe("SUN 22");
+    expect(days.find((d) => d.key === "2026-11-25")!.isToday).toBe(true);
+    expect(days.find((d) => d.key === "2026-11-25")!.cards.map((c) => c.title)).toEqual(["TODAY"]);
+    expect(days.find((d) => d.key === "2026-11-27")!.cards.map((c) => c.title)).toEqual(["FRI"]);
+    // Next week and unscheduled cards are not on this wall.
+    expect(days.flatMap((d) => d.cards.map((c) => c.title))).not.toContain("NEXT");
+    expect(days.flatMap((d) => d.cards.map((c) => c.title))).not.toContain("NONE");
+    // The past-due card is overdue but its day is off the wall, so only the tray has it.
+    expect(overdue.map((c) => c.title)).toEqual(["PAST"]);
+    // A past-due card inside the week shows in both.
+    const ps2 = [project("a", [dated("mon", "2026-11-23")])];
+    const w2 = bucketWeek(ps2, today());
+    expect(w2.days.find((d) => d.key === "2026-11-23")!.cards.map((c) => c.title)).toEqual(["MON"]);
+    expect(w2.overdue.map((c) => c.title)).toEqual(["MON"]);
+  });
+
+  it("dims the weekend and keys days in order", () => {
+    expect(weekDates(today()).map((d) => toDateKey(d))).toEqual([
+      "2026-11-22", "2026-11-23", "2026-11-24", "2026-11-25", "2026-11-26", "2026-11-27", "2026-11-28",
+    ]);
+    const { days } = bucketWeek([], today());
+    expect(days.filter((d) => d.isWeekend).map((d) => d.key)).toEqual(["2026-11-22", "2026-11-28"]);
   });
 });

@@ -69,6 +69,7 @@ export function buildOffice(src: OfficeSource): OfficeData {
         assignee: c.assignee?.trim() ? officeTitle(c.assignee) : null,
         overdue: due === "overdue",
         dueToday: due === "today",
+        dueKey: /^\d{4}-\d{2}-\d{2}$/.test(c.dueDate ?? "") ? (c.dueDate as string) : null,
       });
       order.set(c.id, c.order);
     }

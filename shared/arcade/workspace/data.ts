@@ -23,6 +23,8 @@ export interface OfficeCard {
   assignee: string | null;
   overdue: boolean;
   dueToday: boolean;
+  /** The card's due date ("yyyy-MM-dd") for the week wall; null when unscheduled. */
+  dueKey: string | null;
 }
 
 export interface OfficeNote {
@@ -96,6 +98,7 @@ const demoCard = (id: string, title: string, zone: Zone, assignee: string | null
   assignee,
   overdue,
   dueToday: false,
+  dueKey: null,
 });
 
 const demoNote = (id: string, title: string, pinned = false): OfficeNote => ({ id: `demo-${id}`, title, pinned });
