@@ -6,8 +6,9 @@
  * tricks by direction (they take time to rotate), and land them to bank the
  * points you're holding. Land mid-rotation and you bail: the points are lost
  * and so is a heart. Tasks sit higher on the walls the more they matter, so
- * the valuable line is the risky one. Each project is a run against a par
- * time that ends with a grade; three bails and the run is over.
+ * the valuable line is the risky one. Gems are the score and tricks multiply
+ * them; gems taken in the air are held until a clean landing. Each project is
+ * a run that ends with a grade; three bails and the run is over.
  */
 
 import type { Priority } from "../../types/domain";
@@ -20,7 +21,7 @@ export const PIPE_HALF_W = 86;
 export const PIPE_WALL_H = 44;
 export const RUN_LEN = 3200;
 export const MAX_HEARTS = 3;
-export const GRAVITY = 0.12;
+export const GRAVITY = 0.14;
 /** The chain keeps counting, but its multiplier stops here. */
 export const MAX_CHAIN = 5;
 
@@ -28,8 +29,6 @@ export const MAX_CHAIN = 5;
 export const CRUISE = 3.6;
 export const MIN_SPEED = 2.2;
 export const MAX_SPEED = 6.8;
-/** Frames for a run at cruise speed; beat it for the time bonus. */
-export const PAR_FRAMES = Math.round(RUN_LEN / 4.1);
 
 export type PowderState = "title" | "intro" | "ride" | "clear" | "over" | "win";
 export type PowderEvent = "start" | "collect" | "note" | "trick" | "land" | "bail" | "hurt" | "clear" | "over" | "win";
@@ -42,20 +41,28 @@ export interface TrickDef {
   pts: number;
 }
 export const TRICK_DEFS: Record<TrickKind, TrickDef> = {
-  "spin-l": { name: "360", frames: 30, pts: 120 },
-  "spin-r": { name: "360", frames: 30, pts: 120 },
-  flip: { name: "BACKFLIP", frames: 36, pts: 200 },
-  grab: { name: "METHOD", frames: 16, pts: 80 },
+  "spin-l": { name: "360", frames: 30, pts: 40 },
+  "spin-r": { name: "360", frames: 30, pts: 40 },
+  flip: { name: "BACKFLIP", frames: 36, pts: 60 },
+  grab: { name: "METHOD", frames: 16, pts: 25 },
 };
 /** Kept for the menu blurb and older callers. */
 export const TRICKS = ["360", "720", "BACKFLIP", "METHOD", "SPIN FLIP"] as const;
 
-/** Task value by priority: the urgent ones sit high on the walls. */
-export const TASK_PTS: Record<Priority, number> = { low: 60, medium: 100, high: 160, urgent: 260 };
+/** What a gem is worth: the gems are the score, tricks only multiply them. */
+export const TASK_PTS: Record<Priority, number> = { low: 100, medium: 200, high: 350, urgent: 600 };
+export const NOTE_PTS = 500;
+/**
+ * How far a gem floats above the snow. Low ones you can scoop riding; high
+ * and urgent ones are out of reach unless you jump, and anything taken in the
+ * air is only banked by a clean landing.
+ */
+export const TASK_LIFT: Record<Priority, number> = { low: 6, medium: 6, high: 15, urgent: 26 };
+export const NOTE_LIFT = 24;
 const TASK_LINE: Record<Priority, number> = { low: 0.25, medium: 0.45, high: 0.62, urgent: 0.78 };
 
 export type Grade = "S" | "A" | "B" | "C";
-export const GRADE_BONUS: Record<Grade, number> = { S: 1500, A: 800, B: 400, C: 100 };
+export const GRADE_BONUS: Record<Grade, number> = { S: 3000, A: 1500, B: 700, C: 200 };
 
 /** Time of day per run, cycling through the projects. */
 export type RunSky = "dawn" | "day" | "dusk" | "night";
@@ -110,11 +117,10 @@ export function pipeHeightAt(x: number, y: number): number {
   return Math.max(0, 380 - y * 0.11) + pipeWallZ(x);
 }
 
-/** A run's grade from how much it collected, whether it beat par, and bails. */
-export function gradeRun(collected: number, total: number, frames: number, bails: number): Grade {
+/** A run's grade: how much of the project you collected, and how cleanly. */
+export function gradeRun(collected: number, total: number, bails: number): Grade {
   const share = total > 0 ? collected / total : 1;
-  const fast = frames <= PAR_FRAMES;
-  if (share >= 0.85 && fast && bails === 0) return "S";
+  if (share >= 0.85 && bails === 0) return "S";
   if (share >= 0.7 && bails <= 1) return "A";
   if (share >= 0.45) return "B";
   return "C";
@@ -162,6 +168,8 @@ export class PowderRunSim {
   /** Tricks finished this jump, and the points they hold until landing. */
   held: string[] = [];
   heldPts = 0;
+  /** Gems taken in the air: held with the tricks, banked on a clean landing. */
+  heldGems = 0;
   /** Clean landings in a row; multiplies what each landing banks. */
   chain = 0;
   bestChain = 0;
@@ -216,6 +224,7 @@ export class PowderRunSim {
     this.trickT = 0;
     this.held = [];
     this.heldPts = 0;
+    this.heldGems = 0;
     this.chain = 0;
     this.bestChain = 0;
     this.collected = 0;
@@ -241,7 +250,7 @@ export class PowderRunSim {
       const x = side * TASK_LINE[task.priority] * PIPE_HALF_W + (this.rand() - 0.5) * 10;
       this.items.push({ id: nextId++, kind: "task", x, y, pr: task.priority, title: task.title, taken: false });
       // Overdue tasks drop a boulder across the easy line; jump it or go round.
-      if (task.overdue || i % 4 === 2) {
+      if (task.overdue || (idx >= 2 && i % 4 === 2)) {
         const bx = clamp(-x * 0.5 + (this.rand() - 0.5) * 30, -PIPE_HALF_W * 0.6, PIPE_HALF_W * 0.6);
         this.items.push({ id: nextId++, kind: "boulder", x: bx, y: y + 54, pr: "urgent", title: "", taken: false });
       }
@@ -544,22 +553,22 @@ export class PowderRunSim {
     const unfinished = this.trick && !(this.trick === "grab" || this.trickT > 0.85);
     if (unfinished) {
       this.bail("BAILED!");
-    } else if (this.held.length) {
+    } else if (this.held.length || this.heldGems) {
+      // Tricks multiply the gems you carried down; a clean landing banks both.
       this.chain++;
       this.bestChain = Math.max(this.bestChain, this.chain);
-      const pts = this.heldPts * Math.min(MAX_CHAIN, this.chain);
+      const pts = (this.heldPts + this.heldGems) * Math.min(MAX_CHAIN, this.chain);
       this.addScore(pts);
       r.vy = clamp(r.vy + 0.3 * this.held.length, MIN_SPEED, MAX_SPEED);
       this.events.push("land");
       if (!this.calm) this.shake = Math.max(this.shake, 2);
-      this.pop(`${this.held.join(" + ")} +${pts}`, "#8dff9a", r.x, r.y, r.z + 16);
-    } else if (r.airT > 20) {
-      // A plain jump keeps the chain but adds nothing.
+      this.pop(`${this.held.length ? this.held.join(" + ") : "CLEAN"} +${pts}`, "#8dff9a", r.x, r.y, r.z + 16);
     }
     this.trick = null;
     this.trickT = 0;
     this.held = [];
     this.heldPts = 0;
+    this.heldGems = 0;
     r.yaw = 0;
     r.pitch = 0;
   }
@@ -570,6 +579,7 @@ export class PowderRunSim {
     this.chain = 0;
     this.held = [];
     this.heldPts = 0;
+    this.heldGems = 0;
     this.trick = null;
     r.vy = Math.max(MIN_SPEED, r.vy * 0.5);
     r.vx *= 0.3;
@@ -606,28 +616,29 @@ export class PowderRunSim {
         continue;
       }
       // Notes float high: only a jump reaches them.
-      const lift = it.kind === "note" ? 22 : 6;
-      if (Math.abs(r.z - (iz + lift)) > (it.kind === "note" ? 14 : 22)) continue;
+      const note = it.kind === "note";
+      const lift = note ? NOTE_LIFT : TASK_LIFT[it.pr];
+      if (Math.abs(r.z - (iz + lift)) > 14) continue;
       it.taken = true;
       this.collected++;
-      if (it.kind === "note") {
-        this.addScore(220);
-        this.events.push("note");
-        this.pop(`NOTE: ${it.title.slice(0, 14)}`, "#fff2a0", it.x, it.y, iz + 16);
+      const pts = note ? NOTE_PTS : TASK_PTS[it.pr];
+      this.events.push(note ? "note" : "collect");
+      if (r.air) {
+        // Carried until you land it: a bail drops them.
+        this.heldGems += pts;
+        this.pop(`${note ? "NOTE" : it.title.slice(0, 12)} +${pts}?`, "#fff2a0", it.x, it.y, iz + 16);
       } else {
-        const pts = TASK_PTS[it.pr];
-        this.addScore(pts);
-        this.events.push("collect");
-        this.pop(`${it.title.slice(0, 14)} +${pts}`, "#a8f4e8", it.x, it.y, iz + 14);
+        const got = pts * Math.max(1, Math.min(MAX_CHAIN, this.chain));
+        this.addScore(got);
+        this.pop(`${it.title.slice(0, 12)} +${got}`, "#a8f4e8", it.x, it.y, iz + 14);
       }
     }
   }
 
   private finishRun(): void {
     const frames = this.finishAt ?? this.runFrames;
-    const grade = gradeRun(this.collected, this.totalCollect, frames, this.bails);
-    const timeBonus = Math.max(0, PAR_FRAMES - frames) * 2;
-    const bonus = GRADE_BONUS[grade] + timeBonus;
+    const grade = gradeRun(this.collected, this.totalCollect, this.bails);
+    const bonus = GRADE_BONUS[grade];
     this.addScore(bonus);
     this.result = { grade, collected: this.collected, total: this.totalCollect, frames, bails: this.bails, bestChain: this.bestChain, bonus };
     this.state = "clear";

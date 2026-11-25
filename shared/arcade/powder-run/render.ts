@@ -12,7 +12,7 @@ import { INK, PixelPainter, type PixelBackend } from "../pixel/painter";
 import { Framebuffer3D, fbSizeFor, makeCam3D, meshFromModel, type Cam3D, type Mesh3D } from "../pixel/raster3d";
 import { mulberry32, rgb } from "../pixel/terrain";
 import { BOULDER_MODEL, BOARDER_MODEL, NOTE_MODEL, PINE_MODEL, RAMP_MODEL, taskGemModel } from "./models";
-import { CRUISE, MAX_HEARTS, MAX_SPEED, PAR_FRAMES, PIPE_HALF_W, RUN_LEN, TRICK_DEFS, pipeHeightAt, type PowderRunSim, type RunSky } from "./sim";
+import { CRUISE, MAX_CHAIN, MAX_HEARTS, MAX_SPEED, NOTE_LIFT, PIPE_HALF_W, RUN_LEN, TASK_LIFT, TRICK_DEFS, pipeHeightAt, type PowderRunSim, type RunSky } from "./sim";
 
 const X_BANDS = [-86, -64, -40, -16, 16, 40, 64, 86];
 const Y_STEP = 28;
@@ -216,10 +216,10 @@ export class PowderRunRenderer<Img = unknown, Frame = unknown> extends PixelPain
     }
   }
 
-  private drawShadow(cam: Cam3D, wx: number, wy: number, r: number): void {
+  private drawShadow(cam: Cam3D, wx: number, wy: number, r: number, c: [number, number, number] = [42, 62, 96]): void {
     const z0 = pipeHeightAt(wx, wy) + 1.5;
-    this.fb.drawTri(cam, wx - r, wy - r, z0, wx + r, wy - r, z0, wx + r, wy + r, z0, 42, 62, 96, true);
-    this.fb.drawTri(cam, wx - r, wy - r, z0, wx + r, wy + r, z0, wx - r, wy + r, z0, 42, 62, 96, true);
+    this.fb.drawTri(cam, wx - r, wy - r, z0, wx + r, wy - r, z0, wx + r, wy + r, z0, c[0], c[1], c[2], true);
+    this.fb.drawTri(cam, wx - r, wy - r, z0, wx + r, wy + r, z0, wx - r, wy + r, z0, c[0], c[1], c[2], true);
   }
 
   draw(): Frame {
@@ -276,14 +276,16 @@ export class PowderRunRenderer<Img = unknown, Frame = unknown> extends PixelPain
       if (it.kind === "ramp") {
         fb.drawMesh(cam, this.ramp, it.x, it.y, iz, 0, 1);
       } else if (it.kind === "boulder") {
-        this.drawShadow(cam, it.x, it.y, 7);
-        fb.drawMesh(cam, this.boulder, it.x, it.y, iz, 0, 1);
+        // A red pad that pulses as you close in, so the hazard reads from afar.
+        const pulse = (s.t >> 3) & 1 ? 11 : 9;
+        this.drawShadow(cam, it.x, it.y, pulse, [186, 52, 74]);
+        fb.drawMesh(cam, this.boulder, it.x, it.y, iz, 0, 1.25);
       } else if (it.kind === "note") {
         this.drawShadow(cam, it.x, it.y, 5);
-        fb.drawMesh(cam, this.note, it.x, it.y, iz + 18 + Math.sin(s.t * 0.1 + it.id) * 2, s.t * 0.05, 1);
+        fb.drawMesh(cam, this.note, it.x, it.y, iz + NOTE_LIFT - 4 + Math.sin(s.t * 0.1 + it.id) * 2, s.t * 0.05, 1.2);
       } else {
         this.drawShadow(cam, it.x, it.y, 5);
-        fb.drawMesh(cam, this.gems[it.pr], it.x, it.y, iz + 5 + Math.sin(s.t * 0.1 + it.id) * 2, s.t * 0.06, it.pr === "urgent" ? 1.25 : 1);
+        fb.drawMesh(cam, this.gems[it.pr], it.x, it.y, iz + TASK_LIFT[it.pr] - 1 + Math.sin(s.t * 0.1 + it.id) * 2, s.t * 0.06, it.pr === "urgent" ? 1.4 : 1.15);
       }
     }
 
@@ -305,7 +307,8 @@ export class PowderRunRenderer<Img = unknown, Frame = unknown> extends PixelPain
     this.drawHud();
     for (let i = 0; i < s.pops.length; i++) {
       const p = s.pops[i];
-      this.textC(p.text, this.W / 2, Math.round(this.H * 0.3 - (55 - p.life) * 0.35 + i * 9), p.color);
+      // Rises from just above the rider, who sits low in the frame.
+      this.textC(p.text, this.W / 2, Math.round(this.H * 0.56 - (55 - p.life) * 0.4 - i * 9), p.color);
     }
     this.drawOverlays();
     return this.snapshot();
@@ -354,23 +357,20 @@ export class PowderRunRenderer<Img = unknown, Frame = unknown> extends PixelPain
 
     for (let i = 0; i < MAX_HEARTS; i++) this.heart(lx + i * 9, ty + 8, i < s.hearts);
     this.text(`${s.collected}/${s.totalCollect}`, lx + MAX_HEARTS * 9 + 4, ty + 9, "#c7e4ff");
-    const secs = s.runFrames / 60, par = PAR_FRAMES / 60;
-    const tm = `${secs.toFixed(1)}S PAR ${Math.round(par)}`;
-    this.text(tm, rx - textWidth(tm), ty + 9, s.runFrames <= PAR_FRAMES ? "#8dff9a" : "#ff9e7a");
+    if (s.chain > 0) {
+      const cb = `CHAIN X${Math.min(MAX_CHAIN, s.chain)}`;
+      this.text(cb, rx - textWidth(cb), ty + 9, "#8dff9a");
+    }
     const frac = clamp(s.rider.y / RUN_LEN, 0, 1);
     this.rect(lx, ty + 17, rx - lx, 2, INK);
     this.rect(lx, ty + 17, Math.round((rx - lx) * frac), 2, s.project.accent);
-    // Speed meter along the bottom of the band.
-    const spd = clamp((s.rider.vy - 2) / (MAX_SPEED - 2), 0, 1);
-    this.rect(lx, ty + 20, Math.round((rx - lx) * spd), 1, spd > 0.6 ? "#fff2a0" : "#7fa8d8");
 
     // Trick feed: what's held, what's rotating, and the chain.
     const by = f.bottom.y - 22;
-    if (s.chain > 1) {
-      const cb = `CHAIN X${s.chain}`;
-      this.text(cb, f.bottom.rx - textWidth(cb), f.bottom.y - 6, "#8dff9a");
+    if (s.held.length || s.heldGems) {
+      const tricks = s.held.length ? `${s.held.join(" + ")}  ` : "";
+      this.textC(`${tricks}${s.heldPts + s.heldGems} TO BANK`, f.content.cx, by, "#fff2a0");
     }
-    if (s.held.length) this.textC(`${s.held.join(" + ")}  ${s.heldPts}`, f.content.cx, by, "#fff2a0");
     if (s.trick) {
       const def = TRICK_DEFS[s.trick];
       const w = 48, x0 = Math.round(f.content.cx - w / 2), y0 = by + 9;
@@ -406,20 +406,18 @@ export class PowderRunRenderer<Img = unknown, Frame = unknown> extends PixelPain
       this.band(by - 8, 52, 0.65);
       this.textC(`RUN ${s.levelIdx + 1} OF ${s.projects.length} - ${SKIES[s.sky].label}`, cx, by, "#c7e4ff");
       this.textC(PixelPainter.clip(s.project.name, 20), cx, by + 12, s.project.accent, 2);
-      this.textC(`${s.totalCollect} NOTES & TASKS - PAR ${Math.round(PAR_FRAMES / 60)}S`, cx, by + 28, "#ffffff");
-      this.textC("URGENT TASKS RIDE HIGH ON THE WALLS", cx, by + 37, "#ff9e7a");
+      this.textC(`${s.totalCollect} NOTES & TASKS TO COLLECT`, cx, by + 28, "#ffffff");
+      this.textC("HIGH ONES NEED AIR - LAND TO BANK THEM", cx, by + 37, "#ff9e7a");
     } else if (s.state === "clear" && s.result) {
       const res = s.result;
       const by = Math.round(this.H * 0.3);
-      this.band(by - 8, 92, 0.72);
+      this.band(by - 8, 84, 0.72);
       this.textC("RUN COMPLETE", cx, by, "#8dff9a");
       this.textC(res.grade, cx, by + 10, GRADE_COLOR[res.grade], 4);
       this.textC(`COLLECTED ${res.collected}/${res.total}`, cx, by + 36, "#ffffff");
-      const tm = `TIME ${(res.frames / 60).toFixed(1)}S / PAR ${Math.round(PAR_FRAMES / 60)}S`;
-      this.textC(tm, cx, by + 45, res.frames <= PAR_FRAMES ? "#8dff9a" : "#ff9e7a");
-      this.textC(`BAILS ${res.bails} - BEST CHAIN X${res.bestChain}`, cx, by + 54, "#c7e4ff");
-      this.textC(`BONUS +${res.bonus}`, cx, by + 66, "#fff2a0");
-      if (s.levelIdx + 1 < s.projects.length && s.hearts < MAX_HEARTS) this.textC("+1 HEART", cx, by + 76, "#ff5e8a");
+      this.textC(`BAILS ${res.bails} - BEST CHAIN X${Math.min(MAX_CHAIN, res.bestChain)}`, cx, by + 45, "#c7e4ff");
+      this.textC(`BONUS +${res.bonus}`, cx, by + 57, "#fff2a0");
+      if (s.levelIdx + 1 < s.projects.length && s.hearts < MAX_HEARTS) this.textC("+1 HEART", cx, by + 67, "#ff5e8a");
     } else if (s.state === "over") {
       const by = Math.round(this.H * 0.38);
       this.band(by - 8, 58, 0.75);

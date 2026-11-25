@@ -3,7 +3,7 @@ import { DEMO_ARCADE_PROJECTS } from "@cairn/shared/arcade/pixel/arcade-data";
 import { NO_HUD } from "@cairn/shared/arcade/pixel/hud";
 import type { PixelBackend, PixelSurface } from "@cairn/shared/arcade/pixel/painter";
 import { PowderRunRenderer } from "@cairn/shared/arcade/powder-run/render";
-import { PAR_FRAMES, PowderRunSim, RUN_LEN, gradeRun, pipeHeightAt } from "@cairn/shared/arcade/powder-run/sim";
+import { PowderRunSim, RUN_LEN, gradeRun, pipeHeightAt } from "@cairn/shared/arcade/powder-run/sim";
 
 describe("PowderRunSim", () => {
   it("starts a project run and launches into air tricks", () => {
@@ -54,10 +54,10 @@ describe("PowderRunSim", () => {
   });
 
   it("grades a run from collection, time and bails", () => {
-    expect(gradeRun(10, 10, PAR_FRAMES - 1, 0)).toBe("S");
-    expect(gradeRun(10, 10, PAR_FRAMES + 60, 0)).toBe("A");
-    expect(gradeRun(5, 10, PAR_FRAMES, 2)).toBe("B");
-    expect(gradeRun(1, 10, PAR_FRAMES, 0)).toBe("C");
+    expect(gradeRun(10, 10, 0)).toBe("S");
+    expect(gradeRun(8, 10, 1)).toBe("A");
+    expect(gradeRun(5, 10, 2)).toBe("B");
+    expect(gradeRun(1, 10, 0)).toBe("C");
   });
 
   it("carves higher on the halfpipe walls than the center floor", () => {
