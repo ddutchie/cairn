@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, EyeOff } from "lucide-react";
+import { ArrowLeft, Building2, EyeOff } from "lucide-react";
 import { ArcadeMenu, CARTRIDGES } from "@cairn/shared/arcade/menu";
 import { ArcadeRenderer } from "@cairn/shared/arcade/menu-render";
 import { BasecampRenderer } from "@cairn/shared/arcade/basecamp/render";
@@ -34,7 +34,9 @@ import { useCairnStore } from "@/store";
 import { IconButton } from "@/components/ui/icon-button";
 import { ViewToolbar } from "@/components/ui/view-toolbar";
 import { Tooltip } from "@/components/ui/tooltip";
+import { PreviewPane } from "@/components/chat/PreviewPane";
 import { buildArcadeData } from "./data";
+import { makeOfficeFactory } from "./office";
 import type { ArcadeGameId, GameFactory } from "./game";
 import { createCanvasBackend } from "./pixel/canvas-backend";
 import { loadBest, PixelScreen } from "./PixelScreen";
@@ -273,10 +275,19 @@ function makeMenuFactory(onPick: (id: ArcadeGameId) => void, onSelect: (id: Arca
 }
 
 export function ArcadeView() {
-  const [game, setGame] = useState<ArcadeGameId | null>(null);
+  const [game, setGame] = useState<ArcadeGameId | "workspace" | null>(null);
   const [menuSel, setMenuSel] = useState<ArcadeGameId>("task-force");
   const setArcadeUnlocked = useCairnStore((s) => s.setArcadeUnlocked);
   const setView = useCairnStore((s) => s.setView);
+  const setActivePreviewItem = useCairnStore((s) => s.setActivePreviewItem);
+  // The office opens tasks and notes beside itself, in the same preview pane chat uses.
+  const preview = useCairnStore((s) => s.activePreviewItem ?? s.activeContextPanel);
+  const centred = useCairnStore((s) => s.sessionPresentation === "center");
+  const office = useMemo(() => makeOfficeFactory((ref) => setActivePreviewItem({ type: ref.type, id: ref.id })), [setActivePreviewItem]);
+  const leave = () => {
+    if (game === "workspace") setActivePreviewItem(null);
+    setGame(null);
+  };
 
   // Read the workspace when a game starts, not on every store change, so a
   // background sync never restarts a run.
@@ -294,7 +305,7 @@ export function ArcadeView() {
   }, [game]);
 
   const menu = useMemo(() => makeMenuFactory((id) => setGame(id), (id) => setMenuSel(id)), []);
-  const title = game ? CARTRIDGES.find((c) => c.id === game)?.name : undefined;
+  const title = game === "workspace" ? "The Workspace" : game ? CARTRIDGES.find((c) => c.id === game)?.name : undefined;
 
   return (
     <div className="flex flex-col flex-1 min-h-0 min-w-0">
@@ -302,17 +313,34 @@ export function ArcadeView() {
         title={
           <span className="flex items-center gap-1.5">
             {game && (
-              <IconButton label="Back to the arcade" onClick={() => setGame(null)} className="size-auto p-1">
+              <IconButton label="Back to the arcade" onClick={leave} className="size-auto p-1">
                 <ArrowLeft size={13} />
               </IconButton>
             )}
             {title ? `Arcade · ${title}` : "Arcade"}
           </span>
         }
-        description={data.demo ? "Playing with a demo workspace (yours is a bit empty)" : "Your workspace, as games. Nothing here changes it."}
+        description={
+          game === "workspace"
+            ? "Your workspace as an office. Click a desk for its board and notes, and a card or note to open it."
+            : data.demo
+              ? "Playing with a demo workspace (yours is a bit empty)"
+              : "Your workspace, as games. Nothing here changes it."
+        }
         actions={
           <>
             <span className="text-2xs text-[var(--text-tertiary)]">{game ? "Esc for the menu" : "Pick a game"}</span>
+            {!game && (
+              <Tooltip content="An idle office that mirrors this workspace, live">
+                <button
+                  type="button"
+                  onClick={() => setGame("workspace")}
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
+                >
+                  <Building2 size={12} /> The Workspace
+                </button>
+              </Tooltip>
+            )}
             <Tooltip content="Hide the Arcade again. Five clicks on the workspace icon bring it back.">
               <button
                 type="button"
@@ -328,8 +356,13 @@ export function ArcadeView() {
           </>
         }
       />
-      {game ? (
-        <PixelScreen key={game} id={game} factory={GAMES[game]} data={data} onExit={() => setGame(null)} />
+      {game === "workspace" ? (
+        <div className="flex flex-1 min-h-0 min-w-0">
+          <PixelScreen key="workspace" id="workspace" factory={office} data={data} onExit={leave} />
+          {preview && !centred && <PreviewPane />}
+        </div>
+      ) : game ? (
+        <PixelScreen key={game} id={game} factory={GAMES[game]} data={data} onExit={leave} />
       ) : (
         <>
           <div role="listbox" aria-label="Arcade games" className="sr-only">

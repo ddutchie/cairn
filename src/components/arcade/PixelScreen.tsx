@@ -133,6 +133,7 @@ export function PixelScreen({
       window.removeEventListener("keyup", onKey);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      game.dispose?.();
       gameRef.current = null;
     };
   }, [id, factory, data, fit]);

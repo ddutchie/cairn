@@ -19,6 +19,8 @@ export interface PixelGame {
   key(code: string, down: boolean): boolean;
   /** Optional hook when the host canvas width changes mid-run. */
   resize?(width: number, height: number): void;
+  /** Called when the host tears the game down (stop listening to the store, timers). */
+  dispose?(): void;
   /** Best score so far (the host persists it when it rises). */
   readonly best: number;
 }

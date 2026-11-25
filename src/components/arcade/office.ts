@@ -1,0 +1,74 @@
+/**
+ * The Workspace (idle office) on desktop: builds the office from the store,
+ * keeps it live as the workspace changes, and opens a clicked task or note in
+ * the side preview pane. The office itself never writes anything.
+ */
+
+import { buildOffice } from "@cairn/shared/arcade/workspace/build";
+import type { OfficeData } from "@cairn/shared/arcade/workspace/data";
+import type { Ref } from "@cairn/shared/arcade/workspace/layout";
+import { OfficeRenderer } from "@cairn/shared/arcade/workspace/render";
+import { OfficeSim } from "@cairn/shared/arcade/workspace/sim";
+import { NO_HUD } from "@cairn/shared/arcade/pixel/hud";
+import { useCairnStore } from "@/store";
+import type { GameFactory } from "./game";
+import { createCanvasBackend } from "./pixel/canvas-backend";
+
+type StoreState = ReturnType<typeof useCairnStore.getState>;
+
+export function officeFromStore(s: StoreState = useCairnStore.getState()): OfficeData {
+  const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
+  return buildOffice({
+    workspaceName: ws?.name ?? "Workspace",
+    workspaceId: s.activeWorkspaceId,
+    projects: s.projects,
+    columns: s.columns,
+    cards: s.cards,
+    notes: s.notes,
+  });
+}
+
+/** Store slices the office mirrors; a change to any of them rebuilds it. */
+const watched = (s: StoreState) => [s.projects, s.columns, s.cards, s.notes, s.workspaces, s.activeWorkspaceId] as const;
+
+/** How long a burst of changes (an agent editing ten cards) settles before the office redraws them. */
+const SETTLE_MS = 250;
+
+export function makeOfficeFactory(open: (ref: Ref) => void): GameFactory {
+  return ({ canvas, width, height }) => {
+    const sim = new OfficeSim({ width, height, hud: NO_HUD, inputMode: "pointer", office: officeFromStore() });
+    const renderer = new OfficeRenderer(createCanvasBackend(canvas), sim);
+    let last = watched(useCairnStore.getState());
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = useCairnStore.subscribe((s) => {
+      const next = watched(s);
+      if (next.every((v, i) => v === last[i])) return;
+      last = next;
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        sim.setData(officeFromStore());
+      }, SETTLE_MS);
+    });
+    return {
+      update: () => {
+        sim.step();
+        for (const e of sim.events.splice(0)) {
+          // The demo office has nothing real behind it.
+          if (e.k === "open" && !sim.data.demo) open(e.ref);
+        }
+      },
+      render: () => renderer.draw(),
+      down: (x, y) => sim.down(x, y),
+      move: (x, y) => sim.move(x, y),
+      up: () => sim.up(),
+      key: (code, down) => sim.setKey(code, down),
+      resize: (w, h) => renderer.resize(w, h),
+      dispose: () => {
+        unsubscribe();
+        if (timer) clearTimeout(timer);
+      },
+      best: 0,
+    };
+  };
+}

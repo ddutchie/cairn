@@ -20,6 +20,8 @@ import { TideglassRenderer } from "@cairn/shared/arcade/tideglass/render";
 import { TideglassSim } from "@cairn/shared/arcade/tideglass/sim";
 import { WayfinderRenderer } from "@cairn/shared/arcade/wayfinder/render";
 import { WayfinderSim } from "@cairn/shared/arcade/wayfinder/sim";
+import { OfficeRenderer } from "@cairn/shared/arcade/workspace/render";
+import { OfficeSim } from "@cairn/shared/arcade/workspace/sim";
 
 // On a phone there is no keyboard or mouse: no screen may ask for Space, a click, Esc or the arrows.
 const KEYBOARD_COPY = /\b(SPACE|CLICK|PRESS|ESC|ENTER|WASD|ARROWS?)\b|\((E|L|M|ESC|ENTER)\)/;
@@ -49,6 +51,7 @@ const GAMES: [string, unknown, unknown][] = [
   ["task-force", TaskForceSim, TaskForceRenderer],
   ["tideglass", TideglassSim, TideglassRenderer],
   ["wayfinder", WayfinderSim, WayfinderRenderer],
+  ["workspace", OfficeSim, OfficeRenderer],
 ];
 
 const backend: PixelBackend<unknown, number> = {
