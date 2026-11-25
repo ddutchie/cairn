@@ -76,12 +76,10 @@ export interface Robot {
   dy: number;
   /** True while a tool call is in flight (glows). */
   active: boolean;
-  /** Carrying a missed paper ball to the bin. */
-  carry: boolean;
-  /** Heading for the bin (rather than a desk or the dock). */
-  toBin: boolean;
   /** The floor paper it is walking to pick up, if any. */
   fetch: Paper | null;
+  /** Where it steps back to before shooting a fetched ball, if any. */
+  windup: Pt | null;
   layoutKey: string;
 }
 
@@ -159,6 +157,12 @@ export const PLANT_MILESTONE = 10;
 /** Extra plants on the floor, at most (two corners are always there). */
 const MAX_EXTRA_PLANTS = 6;
 const plantId = (projectId: string) => `plant:${projectId}`;
+
+/** Flight time and arc height for a throw of `dist` pixels. */
+const flightFor = (dist: number) => ({
+  dur: Math.max(24, Math.min(60, Math.round(dist / 2.2))),
+  arcH: Math.max(12, Math.min(34, dist * 0.18)),
+});
 const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const KIND_COLOR: Record<OfficeChange["k"], string> = {
@@ -229,10 +233,9 @@ export class OfficeSim {
   papers: Paper[] = [];
   /** Swish splashes where balls went in (ring + label, 40 frames). */
   pops: { x: number; y: number; t0: number }[] = [];
-  /** Toss stats for tests and tuning: made, swished, robot-binned. */
+  /** Toss stats for tests and tuning: made, swished (thrown or robot-sunk). */
   tossMade = 0;
   tossScored = 0;
-  tossFetched = 0;
   /** Tool-call intents by id, with the frame they arrived (attribution window). */
   intents = new Map<string, number>();
   /** Ids whose change followed an intent: shown with the agent colour. For tests and hosts. */
@@ -412,7 +415,7 @@ export class OfficeSim {
     r.ref = ref;
     r.active = true;
     r.fetch = null;
-    r.toBin = false;
+    r.windup = null;
     if (!desk) {
       r.timer = 240;
       if (r.mode === "idle") r.mode = "work";
@@ -551,16 +554,21 @@ export class OfficeSim {
     return Math.min(MAX_EXTRA_PLANTS, this.decor.size);
   }
 
-  /** Where the robot docks: beside the water cooler, out of the walkways. */
+  /** Where the robot docks: a charging pad in the bottom-left corner. */
   private dock(): Pt {
-    return { x: this.floor.cooler.x + 16, y: this.floor.cooler.y + 12 };
+    return { x: 24, y: this.floor.h - 22 };
+  }
+
+  /** The charging pad, in floor coords, for the renderer. */
+  dockHome(): Pt {
+    return this.dock();
   }
 
   private syncRobot(): void {
     const key = `${this.floor.w}x${this.floor.h}p${this.page}`;
     const home = this.dock();
     if (!this.robot) {
-      this.robot = { x: home.x, y: home.y, path: [], mode: "idle", desk: null, ref: null, timer: 0, dx: 0, dy: -1, active: false, carry: false, toBin: false, fetch: null, layoutKey: key };
+      this.robot = { x: home.x, y: home.y, path: [], mode: "idle", desk: null, ref: null, timer: 0, dx: 0, dy: -1, active: false, fetch: null, windup: null, layoutKey: key };
       return;
     }
     const r = this.robot;
@@ -710,20 +718,27 @@ export class OfficeSim {
     if (r.mode === "walk") {
       const next = r.path[0];
       if (!next) {
-        // Arrived: drop a carried ball in the bin, pick up a fetched one, or start work.
-        if (r.toBin) {
-          r.toBin = false;
-          if (r.carry) {
-            r.carry = false;
-            this.tossFetched++;
-            this.pops.push({ x: r.x, y: r.y, t0: this.t });
-          }
+        // Arrived: take the shot from the windup spot, collect a fetched ball, or start work.
+        if (r.windup) {
+          r.windup = null;
+          this.robotShoot();
         } else if (r.fetch) {
           const p = r.fetch;
           r.fetch = null;
           if (p.state === "floor" && this.papers.includes(p)) {
             this.papers.splice(this.papers.indexOf(p), 1);
-            r.carry = true;
+            // Back off a step and shoot it back; the robot never misses.
+            const away = Math.atan2(p.y - this.floor.bin.y, p.x - this.floor.bin.x);
+            const d = 20 + this.rnd() * 12;
+            const to = {
+              x: Math.max(4, Math.min(this.floor.w - 4, p.x + Math.cos(away) * d)),
+              y: Math.max(this.floor.wall.h + 8, Math.min(this.floor.h - 4, p.y + Math.sin(away) * d)),
+            };
+            r.windup = to;
+            const from = this.nearestDesk(r) ?? this.floor.desks[0];
+            r.path = from ? route(r, to, from, from) : [to];
+            r.mode = "walk";
+            return;
           }
         } else if (r.desk !== null) {
           r.mode = "work";
@@ -768,7 +783,7 @@ export class OfficeSim {
     else if (r.active && r.desk !== null) r.mode = "work";
   }
 
-  /** The robot's next job: carry to the bin, fetch a missed paper, or dock. */
+  /** The robot's next job: fetch a missed paper, or dock. */
   private decideRobot(): void {
     const r = this.robot;
     if (!r || r.mode !== "idle") return;
@@ -777,15 +792,11 @@ export class OfficeSim {
       r.timer = 300;
       return;
     }
-    if (r.carry) {
-      this.routeRobot(this.floor.bin, true);
-      return;
-    }
     if (!r.active) {
       const paper = this.nearestPaper(r);
       if (paper) {
         r.fetch = paper;
-        this.routeRobot({ x: paper.x, y: paper.y }, false);
+        this.routeRobot({ x: paper.x, y: paper.y });
         return;
       }
     }
@@ -800,11 +811,12 @@ export class OfficeSim {
     }
     r.desk = null;
     r.fetch = null;
+    r.windup = null;
     r.path = route(r, home, from, from);
     r.mode = "walk";
   }
 
-  private routeRobot(to: Pt, toBin: boolean): void {
+  private routeRobot(to: Pt): void {
     const r = this.robot;
     const from = this.nearestDesk(r) ?? this.floor.desks[0];
     if (!from) {
@@ -812,9 +824,20 @@ export class OfficeSim {
       r.y = to.y;
       return;
     }
-    r.toBin = toBin;
     r.path = route(r, to, from, from);
     r.mode = "walk";
+  }
+
+  /** The robot's own shot: a guaranteed swish from where it stands. */
+  private robotShoot(): void {
+    const r = this.robot;
+    const F = this.floor;
+    const jx = (this.rnd() - 0.5) * 4, jy = (this.rnd() - 0.5) * 4;
+    const tx = F.bin.x + jx, ty = F.bin.y + jy;
+    const dist = Math.hypot(tx - r.x, ty - r.y);
+    const f = flightFor(dist);
+    this.papers.push({ x: r.x, y: r.y - 8, sx: r.x, sy: r.y - 8, tx, ty, t: 0, dur: f.dur, arcH: f.arcH, state: "fly", scores: true });
+    this.tossMade++;
   }
 
   private nearestPaper(r: Robot): Paper | null {

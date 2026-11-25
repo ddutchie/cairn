@@ -270,6 +270,22 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       prop(this.atlas("cooler", () => COOLER), F.cooler.x, F.cooler.y);
       prop(this.atlas("bin", () => BIN), F.bin.x, F.bin.y);
       for (const p of F.plants) prop(this.atlas("plant", () => PLANT), p.x, p.y);
+      // The robot's charging pad, bottom-left: lit while it is docked.
+      if (sim.robot) {
+        const r = sim.robot;
+        const home = sim.dockHome();
+        const docked = r.mode === "idle" && r.desk === null && Math.abs(r.x - home.x) < 1 && Math.abs(r.y - home.y) < 1;
+        items.push({
+          y: home.y - 0.5,
+          draw: () => {
+            this.rect(ox + home.x - 7, oy + home.y - 4, 14, 9, "#20273a");
+            this.rect(ox + home.x - 6, oy + home.y - 3, 12, 7, "#2e3a52");
+            this.rect(ox + home.x - 6, oy + home.y - 3, 12, 1, docked ? "#8fe0ff" : "#4a5068");
+            this.rect(ox + home.x - 6, oy + home.y + 3, 12, 1, docked ? "#8fe0ff" : "#4a5068", docked ? 0.9 : 0.5);
+            if (docked) this.circle(ox + home.x, oy + home.y + 1, 7, "#8fe0ff", 0.12 + 0.05 * Math.sin(sim.t / 9));
+          },
+        });
+      }
       // Crumpled paper: high arcs in flight (tumbling as they go), flat ones the robot hasn't fetched.
       for (const p of sim.papers) {
         const f = p.state === "fly" ? Math.min(1, p.t / p.dur) : 1;
@@ -412,11 +428,6 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     this.stack(m, x, y, ang, { k: z });
     // A working robot glows blue; a small tag says whose side it is on.
     if (r.active) this.circle(x, y - 12 * z, 3 * z, "#8fe0ff", 0.5 + 0.2 * Math.sin(this.sim.t / 9));
-    // A fetched ball rides overhead on the way to the bin.
-    if (r.carry) {
-      this.rect(x - 1, y - 14 * z, 3, 2, "#efe8d6");
-      this.rect(x - 1, y - 13 * z, 3, 1, "#c9c2b2");
-    }
     const label = r.active ? "AGENT" : "IDLE";
     this.text(label, x - Math.floor(textWidth(label) / 2), y - 11 * z - 7, r.active ? "#8fe0ff" : TEXT_DIM, 1, INK);
   }

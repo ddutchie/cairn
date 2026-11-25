@@ -744,7 +744,7 @@ describe("paper toss", () => {
     for (let i = 0; i < 4000; i++) s.step();
     expect(s.tossMade).toBeGreaterThan(0);
     const floor = s.papers.filter((p) => p.state === "floor").length;
-    expect(s.tossScored + s.tossFetched + floor).toBe(s.tossMade);
+    expect(s.tossScored + floor).toBe(s.tossMade);
   });
 
   it("scores with a swish splash", () => {
@@ -768,15 +768,21 @@ describe("paper toss", () => {
     expect(s.papers).toHaveLength(1);
   });
 
-  it("the robot fetches a missed ball to the bin", () => {
+  it("the robot steps back and sinks a missed ball", () => {
     const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: live(), clock: noon, seed: 3 });
     s.papers.push({ x: 200, y: 150, sx: 200, sy: 150, tx: 200, ty: 150, t: 0, dur: 1, arcH: 18, state: "floor", scores: false });
-    for (let i = 0; i < 12000 && (s.papers.length > 0 || s.robot.carry || s.robot.mode !== "idle"); i++) s.step();
+    for (let i = 0; i < 12000 && (s.papers.length > 0 || s.robot.mode !== "idle" || s.robot.fetch || s.robot.windup); i++) s.step();
     expect(s.papers).toHaveLength(0);
-    expect(s.robot.carry).toBe(false);
-    expect(s.tossFetched).toBe(1);
+    // The forced miss plus any ambient swishes along the way.
+    expect(s.tossScored).toBeGreaterThanOrEqual(1);
     expect(s.robot.mode).toBe("idle");
     expect(s.robot.desk).toBeNull();
+  });
+
+  it("docks the robot on its charging pad", () => {
+    const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: live(), clock: noon, seed: 3 });
+    expect({ x: s.robot.x, y: s.robot.y }).toEqual(s.dockHome());
+    expect(s.dockHome()).toEqual({ x: 24, y: s.floor.h - 22 });
   });
 
   it("stays put in calm mode", () => {
