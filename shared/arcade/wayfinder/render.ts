@@ -8,7 +8,7 @@
 
 import type { Priority } from "../../types/domain";
 import { textWidth } from "../pixel/font";
-import { hudFrame } from "../pixel/hud";
+import { hudFrame, type PixelHud } from "../pixel/hud";
 import { clamp, lerpHex } from "../pixel/kinds";
 import { INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel/painter";
 import { BAYER, BIOMES, fbm, hash2, mulberry32, rgb, type BiomeName } from "../pixel/terrain";
@@ -146,8 +146,8 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
     this.fogVer = -1;
   }
 
-  override resize(width: number, height: number): void {
-    this.sim.resize(width, height);
+  override resize(width: number, height: number, hud?: PixelHud): void {
+    this.sim.resize(width, height, hud);
     super.resize(width, height);
     this.allocFog(width, height);
   }

@@ -30,6 +30,7 @@ function createBreakout({ width, height, hud, best }: PixelGameSpec): PixelGame<
     },
     step: () => sim.step(),
     draw: () => renderer.draw(),
+    resize: (w, h, hud) => renderer.resize(w, h, hud),
     down: () => sim.tap(),
     move: (_x, _y, dx) => sim.nudgePad(dx),
   };

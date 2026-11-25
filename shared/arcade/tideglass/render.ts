@@ -9,7 +9,7 @@
  */
 
 import { textWidth } from "../pixel/font";
-import { hudFrame } from "../pixel/hud";
+import { hudFrame, type PixelHud } from "../pixel/hud";
 import { clamp } from "../pixel/kinds";
 import { INK, PixelPainter, type PixelBackend } from "../pixel/painter";
 import { Framebuffer3D, fbSizeFor, makeCam3D, meshFromModel, screenRay, worldToCam, type Cam3D, type Mesh3D } from "../pixel/raster3d";
@@ -188,8 +188,8 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
     return new Framebuffer3D(size.w, size.h);
   }
 
-  override resize(width: number, height: number): void {
-    this.sim.resize(width, height);
+  override resize(width: number, height: number, hud?: PixelHud): void {
+    this.sim.resize(width, height, hud);
     super.resize(width, height);
     this.fb = this.allocFB(width, height);
   }

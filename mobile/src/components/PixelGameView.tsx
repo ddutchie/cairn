@@ -29,6 +29,8 @@ export interface PixelGame<E extends string> {
   calm: boolean;
   step(): void;
   draw(): SkImage;
+  /** Playfield or insets changed (fold/unfold): adapt in place so a run in progress carries on. */
+  resize?(width: number, height: number, hud: PixelHud): void;
   /** Finger down at (x, y), game pixels. */
   down(x: number, y: number): void;
   /** Finger moved to (x, y); (dx, dy) since the last move. Game pixels. */
@@ -102,12 +104,16 @@ function Host<E extends string>({
   const gw = Math.ceil(width / k), gh = Math.ceil(height / k);
   const hud = useMemo(() => hudFromInsets(safe, k), [safe, k]);
 
-  // The game lives as long as the playfield keeps its size (folding or
-  // unfolding rebuilds it, keeping the best score). useState holder, not a
-  // ref read during render.
+  // The game lives for as long as the screen does: folding or unfolding
+  // resizes it in place (state kept) when it can, and only a game without
+  // `resize` is rebuilt, keeping the best score. useState holder, not a ref
+  // read during render.
   const [holder] = useState(() => ({ key: "", game: null as PixelGame<E> | null }));
   const sizeKey = `${gw}x${gh}x${Object.values(hud).join(",")}`;
-  if (holder.key !== sizeKey || !holder.game) {
+  if (holder.game?.resize && holder.key !== sizeKey) {
+    holder.game.resize(gw, gh, hud);
+    holder.key = sizeKey;
+  } else if (holder.key !== sizeKey || !holder.game) {
     holder.game = create({ width: gw, height: gh, hud, best: Math.max(loadBest(bestKey), holder.game?.best ?? 0) });
     holder.key = sizeKey;
   }

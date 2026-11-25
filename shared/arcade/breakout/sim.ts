@@ -141,8 +141,9 @@ export class BreakoutSim {
     this.cols = clamp(Math.floor((this.right - this.left - 8) / GAP_X), 1, MAX_COLS);
   }
 
-  resize(width: number, height: number): void {
-    if (this.W === width && this.H === height) return;
+  resize(width: number, height: number, hud?: PixelHud): void {
+    if (this.W === width && this.H === height && !hud) return;
+    if (hud) this.hud = hud;
     const oldCx = (this.left + this.right) / 2;
     const oldPadY = this.padY;
     this.W = width;

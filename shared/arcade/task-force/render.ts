@@ -4,7 +4,7 @@
 
 import type { Priority } from "../../types/domain";
 import { fontSafe } from "../pixel/font";
-import { hudFrame } from "../pixel/hud";
+import { hudFrame, type PixelHud } from "../pixel/hud";
 import { PRIORITY_PAL } from "../pixel/kinds";
 import { FIRE, INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel/painter";
 import { BIOMES } from "../pixel/terrain";
@@ -37,8 +37,8 @@ export class TaskForceRenderer<Img = unknown, Frame = unknown> extends PixelPain
     }));
   }
 
-  override resize(width: number, height: number): void {
-    this.sim.resize(width, height);
+  override resize(width: number, height: number, hud?: PixelHud): void {
+    this.sim.resize(width, height, hud);
     super.resize(width, height);
   }
 

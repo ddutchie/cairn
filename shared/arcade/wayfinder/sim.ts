@@ -569,8 +569,9 @@ export class WayfinderSim {
     if (this.pops.length > 2) this.pops.shift();
   }
 
-  resize(width: number, height: number): void {
-    if (this.W === width && this.H === height) return;
+  resize(width: number, height: number, hud?: PixelHud): void {
+    if (this.W === width && this.H === height && !hud) return;
+    if (hud) this.hud = hud;
     this.W = width;
     this.H = height;
     this.updateCamera();

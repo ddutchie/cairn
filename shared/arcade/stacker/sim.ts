@@ -180,9 +180,10 @@ export class StackerSim {
     return this.ground - (lvl + 1) * SH + this.cam;
   }
 
-  resize(width: number, height: number): void {
+  resize(width: number, height: number, hud?: PixelHud): void {
     const prevW = this.W;
-    if (prevW === width && this.H === height) return;
+    if (prevW === width && this.H === height && !hud) return;
+    if (hud) this.hud = hud;
     const dx = (width - prevW) / 2;
     this.W = width;
     this.H = height;

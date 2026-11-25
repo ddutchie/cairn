@@ -1,3 +1,4 @@
+import type { PixelHud } from "../pixel/hud";
 /**
  * Cairn Stacker renderer — sky, parallax mountains, clouds, tower, falling debris.
  * Extends PixelPainter so Canvas2D and Skia render identical pixel art.
@@ -59,8 +60,8 @@ export class StackerRenderer<Img = unknown, Frame = unknown> extends PixelPainte
     this.bakeTerrain();
   }
 
-  override resize(width: number, height: number): void {
-    this.sim.resize(width, height);
+  override resize(width: number, height: number, hud?: PixelHud): void {
+    this.sim.resize(width, height, hud);
     super.resize(width, height);
     if (this.bakedW !== this.sim.W || this.bakedH !== this.sim.H) {
       this.skyF = -1;

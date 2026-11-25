@@ -29,6 +29,7 @@ function createInboxZero({ width, height, hud, best }: PixelGameSpec): PixelGame
     },
     step: () => sim.step(),
     draw: () => renderer.draw(),
+    resize: (w, h, hud) => renderer.resize(w, h, hud),
     down(x, y) {
       sim.down(x, y);
     },

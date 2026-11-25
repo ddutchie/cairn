@@ -6,7 +6,7 @@
  */
 
 import { textWidth } from "../pixel/font";
-import { hudFrame } from "../pixel/hud";
+import { hudFrame, type PixelHud } from "../pixel/hud";
 import { clamp, lerpHex } from "../pixel/kinds";
 import { INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel/painter";
 import { fbmSampler, hash2, rgb } from "../pixel/terrain";
@@ -138,8 +138,8 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
     this.groundImg = this.bakeGround();
   }
 
-  override resize(width: number, height: number): void {
-    this.sim.resize(width, height);
+  override resize(width: number, height: number, hud?: PixelHud): void {
+    this.sim.resize(width, height, hud);
     super.resize(width, height);
   }
 

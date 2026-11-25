@@ -4,7 +4,7 @@
 
 import type { Priority } from "../../types/domain";
 import { fontSafe } from "../pixel/font";
-import { hudFrame } from "../pixel/hud";
+import { hudFrame, type PixelHud } from "../pixel/hud";
 import { INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel/painter";
 import { hash2 } from "../pixel/terrain";
 import {
@@ -53,8 +53,8 @@ export class InboxZeroRenderer<Img = unknown, Frame = unknown> extends PixelPain
     this.bakeBoard();
   }
 
-  override resize(width: number, height: number): void {
-    this.sim.resize(width, height);
+  override resize(width: number, height: number, hud?: PixelHud): void {
+    this.sim.resize(width, height, hud);
     super.resize(width, height);
   }
 

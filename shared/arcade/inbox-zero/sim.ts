@@ -188,10 +188,11 @@ export class InboxZeroSim {
     return a + this.rand() * (b - a);
   }
 
-  resize(width: number, height: number): void {
+  resize(width: number, height: number, hud?: PixelHud): void {
     const prevCoreX = this.lay.coreX;
     const prevTopY = this.lay.topY;
-    if (this.W === width && this.H === height) return;
+    if (this.W === width && this.H === height && !hud) return;
+    if (hud) this.hud = hud;
     this.W = width;
     this.H = height;
     const shopH = this.inputMode === "pointer" ? 40 : 32;
