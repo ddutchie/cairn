@@ -6,7 +6,7 @@ import { NO_HUD } from "@cairn/shared/arcade/pixel/hud";
 import type { PixelBackend, PixelSurface } from "@cairn/shared/arcade/pixel/painter";
 import { buildOffice } from "@cairn/shared/arcade/workspace/build";
 import { CONTRACTOR, DEMO_OFFICE, zoneForColumn, type OfficeCard, type OfficeData, type OfficeProject } from "@cairn/shared/arcade/workspace/data";
-import { layoutDesk, layoutFloor, pileHeight, route, staff } from "@cairn/shared/arcade/workspace/layout";
+import { layoutDesk, layoutFloor, pileHeight, route, routeFree, staff } from "@cairn/shared/arcade/workspace/layout";
 import { OfficeRenderer } from "@cairn/shared/arcade/workspace/render";
 import { daylightAt, OfficeSim } from "@cairn/shared/arcade/workspace/sim";
 import { burstLabel, diffOffice, FLURRY, groupChanges } from "@cairn/shared/arcade/workspace/events";
@@ -147,6 +147,17 @@ describe("the floor plan", () => {
     for (const p of path) {
       expect(p.x === prev.x || p.y === prev.y).toBe(true);
       prev = p;
+    }
+  });
+
+  it("walks straight when clear and around a desk when blocked", () => {
+    const block = [{ x: 40, y: 30, w: 30, h: 30 }];
+    expect(routeFree({ x: 10, y: 10 }, { x: 20, y: 20 }, block, 200, 200)).toEqual([{ x: 20, y: 20 }]);
+    const around = routeFree({ x: 10, y: 45 }, { x: 100, y: 45 }, block, 200, 200);
+    expect(around.length).toBeGreaterThan(1);
+    expect(around[around.length - 1]).toEqual({ x: 100, y: 45 });
+    for (const p of around) {
+      expect(p.x < 37 || p.x > 73 || p.y < 27 || p.y > 63).toBe(true);
     }
   });
 });
@@ -651,13 +662,13 @@ describe("idle polish", () => {
     expect(s.decor.has("plant:a")).toBe(true);
     expect(s.decor.has("plant:b")).toBe(false);
     expect(s.decorDirty).toBe(true);
-    expect(s.floor.plants).toHaveLength(3);
+    expect(s.floor.plants).toHaveLength(2);
     // The host persists and hands it back; nothing new unlocks after that.
     s.setDecor([...s.decor]);
     expect(s.decorDirty).toBe(false);
     s.setData(office(ps));
     expect(s.decorDirty).toBe(false);
-    expect(s.floor.plants).toHaveLength(3);
+    expect(s.floor.plants).toHaveLength(2);
   });
 
   it("caps the milestone plants at six extra", () => {
@@ -665,7 +676,7 @@ describe("idle polish", () => {
     for (const p of ps) p.doneTotal = 30;
     const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: office(ps), clock: noon, seed: 3 });
     expect(s.decor.size).toBe(10);
-    expect(s.floor.plants).toHaveLength(8);
+    expect(s.floor.plants).toHaveLength(7);
   });
 });
 
@@ -771,7 +782,14 @@ describe("paper toss", () => {
   it("the robot steps back and sinks a missed ball", () => {
     const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: live(), clock: noon, seed: 3 });
     s.papers.push({ x: 200, y: 150, sx: 200, sy: 150, tx: 200, ty: 150, t: 0, dur: 1, arcH: 18, state: "floor", scores: false });
-    for (let i = 0; i < 12000 && (s.papers.length > 0 || s.robot.mode !== "idle" || s.robot.fetch || s.robot.windup); i++) s.step();
+    const blocks = s.floor.desks.map((d) => d.hit);
+    for (let i = 0; i < 12000 && (s.papers.length > 0 || s.robot.mode !== "idle" || s.robot.fetch || s.robot.windup); i++) {
+      s.step();
+      // The robot walks around desks, never through them.
+      for (const b of blocks) {
+        expect(s.robot.x < b.x - 2 || s.robot.x > b.x + b.w + 2 || s.robot.y < b.y - 2 || s.robot.y > b.y + b.h + 2).toBe(true);
+      }
+    }
     expect(s.papers).toHaveLength(0);
     // The forced miss plus any ambient swishes along the way.
     expect(s.tossScored).toBeGreaterThanOrEqual(1);

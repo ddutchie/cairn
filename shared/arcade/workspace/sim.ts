@@ -15,7 +15,7 @@ import { hudFrame, NO_HUD, type InputMode, type PixelHud } from "../pixel/hud";
 import { mulberry32 } from "../pixel/terrain";
 import { CONTRACTOR, DEMO_OFFICE, type OfficeData, type OfficeProject } from "./data";
 import { burstLabel, diffOffice, FLURRY, groupChanges, type Burst, type OfficeChange } from "./events";
-import { inRect, layoutDesk, layoutFloor, layoutWeek, route, type Desk, type DeskTab, type DeskView, type FloorLayout, type Pt, type Rect, type Ref, type WeekView } from "./layout";
+import { inRect, layoutDesk, layoutFloor, layoutWeek, route, routeFree, type Desk, type DeskTab, type DeskView, type FloorLayout, type Pt, type Rect, type Ref, type WeekView } from "./layout";
 import { bucketWeek, type WeekDay } from "./week";
 
 export interface OfficeSpec {
@@ -426,9 +426,8 @@ export class OfficeSim {
       r.timer = 300;
       return;
     }
-    const from = this.nearestDesk(r) ?? desk;
     r.desk = desk.index;
-    r.path = route(r, { x: desk.side.x, y: desk.side.y }, from, desk);
+    r.path = this.robotPath({ x: desk.side.x, y: desk.side.y });
     r.mode = "walk";
     r.timer = 300;
   }
@@ -735,8 +734,7 @@ export class OfficeSim {
               y: Math.max(this.floor.wall.h + 8, Math.min(this.floor.h - 4, p.y + Math.sin(away) * d)),
             };
             r.windup = to;
-            const from = this.nearestDesk(r) ?? this.floor.desks[0];
-            r.path = from ? route(r, to, from, from) : [to];
+            r.path = this.robotPath(to);
             r.mode = "walk";
             return;
           }
@@ -802,8 +800,7 @@ export class OfficeSim {
     }
     const home = this.dock();
     if (r.desk === null && Math.abs(r.x - home.x) < 0.5 && Math.abs(r.y - home.y) < 0.5) return;
-    const from = this.nearestDesk(r) ?? this.floor.desks[0];
-    if (!from) {
+    if (!this.floor.desks.length) {
       r.x = home.x;
       r.y = home.y;
       r.desk = null;
@@ -812,20 +809,22 @@ export class OfficeSim {
     r.desk = null;
     r.fetch = null;
     r.windup = null;
-    r.path = route(r, home, from, from);
+    r.path = this.robotPath(home);
     r.mode = "walk";
   }
 
   private routeRobot(to: Pt): void {
     const r = this.robot;
-    const from = this.nearestDesk(r) ?? this.floor.desks[0];
-    if (!from) {
-      r.x = to.x;
-      r.y = to.y;
-      return;
-    }
-    r.path = route(r, to, from, from);
+    r.path = this.robotPath(to);
     r.mode = "walk";
+  }
+
+  /** The robot's walk to a point, around desks instead of through them. */
+  private robotPath(to: Pt): Pt[] {
+    const r = this.robot;
+    if (!this.floor.desks.length) return [{ x: Math.round(to.x), y: Math.round(to.y) }];
+    const blocks = this.floor.desks.map((d) => d.hit);
+    return routeFree({ x: r.x, y: r.y }, to, blocks, this.floor.w, this.floor.h);
   }
 
   /** The robot's own shot: a guaranteed swish from where it stands. */

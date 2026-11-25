@@ -181,13 +181,10 @@ export function layoutFloor(projects: readonly OfficeProject[], w: number, h: nu
   });
   const coffee = { x: right - 8, y: floorTop - 2 };
   const cooler = { x: left + 6, y: floorTop - 2 };
-  const plants = [
-    { x: left - 6, y: h - 6 },
-    { x: right + 6, y: h - 6 },
-  ];
-  // Milestone plants line the bottom edge, alternating inward from the corners.
+  const plants = [{ x: right + 6, y: h - 6 }];
+  // Milestone plants cluster bottom-right with a staggered edge; the bottom-left stays clear for the robot.
   for (let i = 0; i < Math.max(0, Math.min(6, Math.floor(extraPlants))); i++) {
-    plants.push(i % 2 ? { x: right - 18 - Math.floor(i / 2) * 24, y: h - 6 } : { x: left + 18 + Math.floor(i / 2) * 24, y: h - 6 });
+    plants.push({ x: right - 18 - i * 26, y: h - 6 - (i % 2) * 5 });
   }
   const firstAisle = desks.length ? desks[0].aisleY - stepY : floorTop + 6;
   const top = { aisleY: Math.max(floorTop + 6, firstAisle), laneX: left };
@@ -225,6 +222,84 @@ export function route(a: Pt, b: Pt, from: { aisleY: number; laneX: number }, to:
   }
   push(b.x, to.aisleY);
   push(b.x, b.y);
+  return out;
+}
+
+/**
+ * A walk that goes around desks instead of through them, for the robot's
+ * fetch and windup trips (workers keep the aisle routes above). Breadth-first
+ * search on a coarse grid over the room, `blocks` as inflated desk footprints,
+ * with no corner-cutting; straight when the line is clear. Returns waypoints
+ * in floor coords, ending at (or beside, when blocked) `b`.
+ */
+export function routeFree(a: Pt, b: Pt, blocks: Rect[], w: number, h: number, cell = 10): Pt[] {
+  const clear = (x: number, y: number) => !blocks.some((r) => x >= r.x - 3 && x < r.x + r.w + 3 && y >= r.y - 3 && y < r.y + r.h + 3);
+  const nx = Math.max(1, Math.ceil(w / cell)), ny = Math.max(1, Math.ceil(h / cell));
+  const gx = (x: number) => Math.max(0, Math.min(nx - 1, Math.floor(x / cell)));
+  const gy = (y: number) => Math.max(0, Math.min(ny - 1, Math.floor(y / cell)));
+  const cellBlocked = (ix: number, iy: number) => !clear(ix * cell + cell / 2, iy * cell + cell / 2);
+  // Snap a blocked endpoint to the nearest free cell (the robot tidies from beside the desk).
+  const snap = (ix: number, iy: number): [number, number] => {
+    if (!cellBlocked(ix, iy)) return [ix, iy];
+    for (let r = 1; r < 8; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const x = ix + dx, y = iy + dy;
+          if (x >= 0 && y >= 0 && x < nx && y < ny && !cellBlocked(x, y)) return [x, y];
+        }
+      }
+    }
+    return [ix, iy];
+  };
+  const [sx, sy] = snap(gx(a.x), gy(a.y));
+  const [tx, ty] = snap(gx(b.x), gy(b.y));
+  // Stop on the exact point when it is clear; otherwise stop beside it (pickup needs no contact).
+  const goal: Pt = clear(b.x, b.y) ? { x: b.x, y: b.y } : { x: tx * cell + cell / 2, y: ty * cell + cell / 2 };
+  const seesClear = (from: Pt, to: Pt): boolean => {
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    for (let d = 2; d < dist; d += 2) {
+      const f = d / dist;
+      if (!clear(from.x + (to.x - from.x) * f, from.y + (to.y - from.y) * f)) return false;
+    }
+    return true;
+  };
+  if (seesClear({ x: a.x, y: a.y }, goal)) return [{ x: Math.round(goal.x), y: Math.round(goal.y) }];
+  const key = (x: number, y: number) => y * nx + x;
+  const prev = new Map<number, number>();
+  const seen = new Set<number>([key(sx, sy)]);
+  const queue: [number, number][] = [[sx, sy]];
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  while (queue.length) {
+    const [cx, cy] = queue.shift()!;
+    if (cx === tx && cy === ty) break;
+    for (const [dx, dy] of DIRS) {
+      const x = cx + dx, y = cy + dy;
+      if (x < 0 || y < 0 || x >= nx || y >= ny || seen.has(key(x, y)) || cellBlocked(x, y)) continue;
+      // No cutting corners through a blocked cell.
+      if (dx !== 0 && dy !== 0 && (cellBlocked(cx + dx, cy) || cellBlocked(cx, cy + dy))) continue;
+      seen.add(key(x, y));
+      prev.set(key(x, y), key(cx, cy));
+      queue.push([x, y]);
+    }
+  }
+  if (!seen.has(key(tx, ty))) return [{ x: Math.round(b.x), y: Math.round(b.y) }];
+  const cells: [number, number][] = [[tx, ty]];
+  for (let k = key(tx, ty); k !== key(sx, sy); k = prev.get(k)!) cells.push([k % nx, Math.floor(k / nx)]);
+  cells.reverse();
+  // Drop waypoints on a straight, clear stretch, ending at (or beside) the goal.
+  const pts = cells.map(([ix, iy]) => ({ x: ix * cell + cell / 2, y: iy * cell + cell / 2 }));
+  const out: Pt[] = [];
+  let anchor = { x: a.x, y: a.y };
+  for (let i = 1; i <= pts.length; i++) {
+    const end = i < pts.length ? pts[i] : goal;
+    if (!seesClear(anchor, end) || i === pts.length) {
+      const p = pts[i - 1];
+      out.push({ x: Math.round(p.x), y: Math.round(p.y) });
+      anchor = p;
+    }
+  }
+  out.push({ x: Math.round(goal.x), y: Math.round(goal.y) });
   return out;
 }
 
