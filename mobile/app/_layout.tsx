@@ -287,7 +287,7 @@ function RootNavigator({
           Close item floats over the game (in the side rail on the Duo). Each game
           draws its own backdrop; no side padding means it runs under the rail. */}
       {PIXEL_GAME_ROUTES.map((name) => (
-        <Stack.Screen key={name} name={name} options={PIXEL_GAME_OPTIONS} />
+        <Stack.Screen key={name} name={name} options={{ ...PIXEL_GAME_OPTIONS, contentStyle: { backgroundColor } }} />
       ))}
       <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
       <Stack.Screen name="restore" options={{ title: "Deleted Notes" }} />

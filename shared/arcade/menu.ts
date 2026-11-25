@@ -102,7 +102,7 @@ export class ArcadeMenu {
     const avail = Math.max(160, this.H - topMargin - botMargin);
     const cardH = Math.min(CARD_H, Math.floor((avail - (slice.length - 1) * GAP) / Math.max(1, slice.length)));
     const total = slice.length * cardH + Math.max(0, slice.length - 1) * GAP;
-    const y0 = Math.max(topMargin, Math.round((this.H - total) / 2) + 4);
+    const y0 = Math.max(topMargin, Math.round(topMargin + (this.H - topMargin - botMargin - total) / 2));
     this.titleY = y0 - 38;
     this.pageY = y0 + total + 8;
     this.cards = slice.map((c, i) => ({

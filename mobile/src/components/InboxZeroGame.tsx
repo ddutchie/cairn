@@ -38,6 +38,9 @@ function createInboxZero({ width, height, hud, best }: PixelGameSpec): PixelGame
     up() {
       sim.up();
     },
+    cancel() {
+      sim.cancel();
+    },
   };
 }
 

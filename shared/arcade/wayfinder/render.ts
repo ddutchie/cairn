@@ -486,7 +486,9 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
     for (const st of s.storms) {
       const cx = this.sx(st.x), cy = this.sy(st.y);
       if (cx < -40 || cx > W + 40 || cy < -40 || cy > H + 40) continue;
-      this.image(st.bolt > 4 ? this.stormFlashImg : this.stormImg, Math.round(cx - STORM_R) + this.SX, Math.round(cy - STORM_R - 14) + this.SY);
+      const img = st.bolt > 4 ? this.stormFlashImg : this.stormImg;
+      const sz = Math.round(st.r * 2 + 1);
+      this.imageRect(img, 0, 0, STORM_SZ, STORM_SZ, Math.round(cx - st.r) + this.SX, Math.round(cy - st.r - 14) + this.SY, sz, sz);
       for (let i = 0; i < 10; i++) {
         const rx = cx + this.rng(-st.r, st.r) * 0.8, ry = cy - 6 + ((t * 3 + i * 23) % (st.r + 10));
         this.px(rx, ry, "#9fb3d6");
@@ -926,6 +928,10 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
     const key = `${biome}|${variant}|${mirror}|${haze}|${shade}|${sun}|${scale}`;
     let a = this.cliffAtlas.get(key);
     if (!a) {
+      if (this.cliffAtlas.size >= 48) {
+        const oldest = this.cliffAtlas.keys().next().value;
+        if (oldest !== undefined) this.cliffAtlas.delete(oldest);
+      }
       a = this.makeAtlas(cliffModel(biome, variant, mirror, FOG[biome], haze, shade, sun, scale));
       this.cliffAtlas.set(key, a);
     }
@@ -944,11 +950,11 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
    * trail, smaller, as it approaches; `exit` (0..1) swells it out past the
    * edge and below the frame as the captain walks by.
    */
-  private standCliff(e: Expedition, L: ExploreLayout, side: -1 | 1, variant: number, k0: number, y0: number, inset: number, ap: number, exit: number, haze = 0, shade = 0, sun: -1 | 0 | 1 = 0): void {
+  private standCliff(e: Expedition, L: ExploreLayout, side: -1 | 1, variant: number, k0: number, y0: number, inset: number, ap: number, exit: number, haze = 0, shade = 0, sun: -1 | 0 | 1 = 0, wingPass = false): void {
     // Fine-grained rock drawn at half the scale: blocks match the captain's.
     const a = this.cliff(e.biome, variant, side > 0, haze, shade, sun, 2);
     const hor = L.horizon, y = Math.round(y0 + (hor + 4 - y0) * ap + exit * exit * this.H * 0.5), k = (k0 / 2) * (1 - ap * 0.75) * (1 + exit * 0.7);
-    if (!this.inWingPass(y)) return;
+    if (wingPass && !this.inWingPass(y)) return;
     const half = (a.model.w * k) / 2;
     const f = Math.max(0, Math.min(1, (y - hor) / (this.H - hor)));
     const pathEdge = L.cx + this.pathBend(f, e.trail) + side * (this.pathHalf(f, this.W) + 6 + 6 * f);
@@ -1061,8 +1067,8 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
   /** One step's near wings: two cliffs on `side`, and a tree or rock heap opposite. */
   private drawNearWings(e: Expedition, L: ExploreLayout, step: number, side: -1 | 1, ap: number, exit: number, nearW: number, nearK: number, sun: -1 | 1): void {
     const H = this.H, hor = L.horizon;
-    this.standCliff(e, L, side, this.rockVariant(e, step, 2, true), nearK * 0.8, hor + Math.round((H - hor) * 0.35), nearW * 0.05, ap, exit, 0.12, 0, sun);
-    this.standCliff(e, L, side, this.rockVariant(e, step, 3, false), nearK, H + Math.round(nearK * 4), nearW * 0.25, ap, exit, 0, 0.12, sun);
+    this.standCliff(e, L, side, this.rockVariant(e, step, 2, true), nearK * 0.8, hor + Math.round((H - hor) * 0.35), nearW * 0.05, ap, exit, 0.12, 0, sun, true);
+    this.standCliff(e, L, side, this.rockVariant(e, step, 3, false), nearK, H + Math.round(nearK * 4), nearW * 0.25, ap, exit, 0, 0.12, sun, true);
     this.drawNearProp(e, L, step, -side as -1 | 1, ap, exit, nearW, nearK, sun);
   }
 
@@ -1070,7 +1076,7 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
   private drawNearProp(e: Expedition, L: ExploreLayout, step: number, side: -1 | 1, ap: number, exit: number, nearW: number, nearK: number, sun: -1 | 1): void {
     const W = this.W, H = this.H, hor = L.horizon, pick = hash2(e.isleIndex, step, 91);
     if (pick < 0.3) {
-      this.standCliff(e, L, side, 3 + (step & 1) * 4, nearK * 0.95, H + Math.round(nearK * 2), nearW * 0.1, ap, exit, 0, 0.1, sun);
+      this.standCliff(e, L, side, 3 + (step & 1) * 4, nearK * 0.95, H + Math.round(nearK * 2), nearW * 0.1, ap, exit, 0, 0.1, sun, true);
       return;
     }
     // Approach and exit, as for the cliffs: up the trail and small, or swollen and swept out.
@@ -1443,14 +1449,13 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
     this.parchment(R);
     this.rect(R.x + 3, R.y + 3, R.w - 6, 11, "#1e2842");
     this.text(card.tag, R.x + 6, R.y + 6, "#fff2a0", 1, null);
-    this.text(`${Math.min(4, e.step + 1)}/4`, R.x + R.w - 20, R.y + 6, "#c7e4ff", 1, null);
+    this.text(`${Math.min(e.deck.length, e.step + 1)}/${e.deck.length}`, R.x + R.w - 20, R.y + 6, "#c7e4ff", 1, null);
     const maxCh = Math.floor((R.w - 8) / 4);
     this.textC(PixelPainter.clip(card.title, maxCh), L.cx, R.y + 18, "#2a1a10", 1, null);
     this.textC(PixelPainter.clip(card.lines[0], maxCh), L.cx, R.y + 28, "#4a3729", 1, null);
     this.textC(PixelPainter.clip(card.lines[1], maxCh), L.cx, R.y + 36, "#4a3729", 1, null);
     const pointer = s.inputMode === "pointer";
-    ([["a", L.a, card.a, 0], ["b", L.b, card.b, 1]] as const).forEach(([, box, opt, i]) => {
-      const b = { ...box, y: box.y - slide };
+    ([["a", L.a, card.a, 0], ["b", L.b, card.b, 1]] as const).forEach(([, b, opt, i]) => {
       const hot = pointer && e.sel === i;
       this.rect(b.x, b.y, b.w, b.h, hot && (t >> 4) & 1 ? "#fff2a0" : INK);
       this.rect(b.x + 1, b.y + 1, b.w - 2, b.h - 2, "#1c2742");

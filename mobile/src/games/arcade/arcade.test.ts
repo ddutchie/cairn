@@ -16,6 +16,12 @@ describe("arcade menu", () => {
 
     m.setPage(1);
     expect(m.cards.map((c) => c.id)).toEqual(["breakout", "basecamp", "tideglass", "powder-run"]);
+
+    // Asymmetric bottom inset: last card and footer stay clear of hud.bottom = 60.
+    const mBot = new ArcadeMenu({ width: 220, height: 320, hud: { ...NO_HUD, bottom: 60 } });
+    const last = mBot.cards[mBot.cards.length - 1];
+    expect(last.y + last.h).toBeLessThanOrEqual(320 - 60);
+    expect(mBot.pageY).toBeLessThanOrEqual(320 - 60);
   });
 
   it("opens the tapped game after its blink, and only once", () => {

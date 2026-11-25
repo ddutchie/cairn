@@ -28,10 +28,13 @@ describe("breakout", () => {
     sim.tap();
     sim.bricks = [];
     Object.assign(sim.ball, { x: 200, y: 200, vx: 3, vy: 0.2 });
+    let bounced = false;
     for (let i = 0; i < 20; i++) {
       sim.step();
-      expect(sim.ball.x).toBeLessThanOrEqual(210);
+      expect(sim.ball.x + 2).toBeLessThanOrEqual(210);
+      if (sim.ball.vx < 0) bounced = true;
     }
+    expect(bounced).toBe(true);
   });
 
   it("waits on the paddle until a tap, then breaks bricks", () => {

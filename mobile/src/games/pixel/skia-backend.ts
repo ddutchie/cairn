@@ -12,6 +12,7 @@ import {
   FilterMode,
   MipmapMode,
   Skia,
+  type SkCanvas,
   type SkImage,
   type SkPaint,
   type SkSurface,
@@ -23,7 +24,8 @@ import type { AtlasHandle, PixelBackend, PixelSurface, StackOptions } from "@cai
 export const SAMPLING = { filter: FilterMode.Nearest, mipmap: MipmapMode.None } as const;
 
 function rgbaToImage(w: number, h: number, rgba: Uint8Array): SkImage {
-  const data = Skia.Data.fromBytes(rgba);
+  const bytes = rgba.byteOffset === 0 && rgba.byteLength === rgba.buffer.byteLength ? rgba : new Uint8Array(rgba);
+  const data = Skia.Data.fromBytes(bytes);
   const img = Skia.Image.MakeImage(
     { width: w, height: h, alphaType: AlphaType.Unpremul, colorType: ColorType.RGBA_8888 },
     data,
@@ -54,6 +56,7 @@ class SkiaPixelSurface implements PixelSurface<SkImage, SkImage> {
   W: number;
   H: number;
   private surface: SkSurface;
+  private canvasRef: SkCanvas;
   private readonly paint: SkPaint = Skia.Paint();
   private readonly imgPaint: SkPaint = Skia.Paint();
   private readonly tintCache = new Map<string, SkPaint>();
@@ -64,10 +67,11 @@ class SkiaPixelSurface implements PixelSurface<SkImage, SkImage> {
     const s = Skia.Surface.Make(width, height);
     if (!s) throw new Error(`Skia.Surface.Make(${width}x${height}) failed`);
     this.surface = s;
+    this.canvasRef = s.getCanvas();
   }
 
   private get canvas() {
-    return this.surface.getCanvas();
+    return this.canvasRef;
   }
 
   private tintPaint(color: string, alpha = 1): SkPaint {
@@ -88,6 +92,7 @@ class SkiaPixelSurface implements PixelSurface<SkImage, SkImage> {
     const s = Skia.Surface.Make(width, height);
     if (!s) throw new Error(`Skia.Surface.Make(${width}x${height}) failed`);
     this.surface = s;
+    this.canvasRef = s.getCanvas();
   }
 
   clear(color: string): void {

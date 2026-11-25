@@ -120,17 +120,18 @@ export function bakeCavern(W: number, lip: number, hor: number, col: string[], d
   };
   for (let x = 0; x < W; x += 2) {
     const h = lipAt(x);
+    const strata = fbm(x * 0.05, 2, 7) * 10;
     for (let y = 0; y < h; y += 2) {
       const depth = Math.min(3, Math.floor(((y / Math.max(1, h)) ** 0.7) * 4));
       // Strata: bands that wander, broken into blocks.
-      const band = Math.floor((y + fbm(x * 0.05, 2, 7) * 10) / 7);
+      const band = Math.floor((y + strata) / 7);
       const t = hash2(x >> 3, band, 13) < 0.35 ? 0 : 1;
       const dith = BAYER[((y >> 1) & 3) * 4 + ((x >> 1) & 3)] < (y / h) * 4 - depth ? Math.min(3, depth + 1) : depth;
       // The soffit: the last rows above the lip catch daylight from outside.
       const soff = h - y < 12 && BAYER[((y >> 1) & 3) * 4 + ((x >> 1) & 3)] < (1 - (h - y) / 12) * 1.2;
       r.fill(x, y, 2, 2, soff ? tone[2][Math.min(3, dith + 1)] : tone[t][dith]);
       // Block ledges: a lit top and a dark seam where strata change.
-      const next = Math.floor((y + 2 + fbm(x * 0.05, 2, 7) * 10) / 7);
+      const next = Math.floor((y + 2 + strata) / 7);
       if (next !== band && !soff) {
         if (hash2(x >> 3, band, 31) < 0.55) r.fill(x, y + 1, 2, 1, tone[2][Math.max(0, dith - 1)]);
         else r.fill(x, y + 1, 2, 1, tone[0][Math.max(0, dith - 2)]);
@@ -216,6 +217,7 @@ export function bakeShafts(W: number, bottom: number, sx: number, sy: number, co
       for (let x = Math.round(c - w); x < Math.round(c + w); x++) {
         if (x < 0 || x >= W) continue;
         const edge = 1 - Math.abs(x - c) / w;
+        if (edge <= 0) continue;
         r.fill(x, y, 1, 1, pack(col, a * fade * Math.min(1, edge * 2)));
       }
     }

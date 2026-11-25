@@ -646,6 +646,10 @@ export function cliffModel(biome: BiomeName, variant: number, mirror: boolean, f
     if (look.seam && z % 9 === 4) return col(look.seam);
     return col(z % 9 === 0 ? look.body[0] : look.body[1]);
   });
+  if (cliffCache.size >= 48) {
+    const oldest = cliffCache.keys().next().value;
+    if (oldest !== undefined) cliffCache.delete(oldest);
+  }
   cliffCache.set(key, m);
   return m;
 }

@@ -133,6 +133,10 @@ export class StackerSim {
     this.rand = spec.rand ?? mulberry32(spec.seed ?? 90210);
 
     this.ground = this.H - Math.max(44, this.hud.bottom + 36);
+    const topLvl = this.mover ? this.mover.lvl : this.tower.length ? this.tower[this.tower.length - 1].lvl + 1 : 1;
+    const keepY = Math.round(this.H * 0.42);
+    this.camT = Math.max(0, keepY - (this.ground - (topLvl + 1) * SH));
+    this.cam = this.camT;
     this.baseW = Math.min(BASE_W, Math.round(this.W * 0.56));
 
     const demoSpecs: [string, Label["kind"], number][] = [
@@ -183,6 +187,10 @@ export class StackerSim {
     this.W = width;
     this.H = height;
     this.ground = this.H - Math.max(44, this.hud.bottom + 36);
+    const topLvl = this.mover ? this.mover.lvl : this.tower.length ? this.tower[this.tower.length - 1].lvl + 1 : 1;
+    const keepY = Math.round(this.H * 0.42);
+    this.camT = Math.max(0, keepY - (this.ground - (topLvl + 1) * SH));
+    this.cam = this.camT;
     if (dx) {
       for (const s of this.tower) s.x += dx;
       if (this.mover) this.mover.x += dx;

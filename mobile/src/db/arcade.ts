@@ -82,7 +82,7 @@ export function listArcadeProjects(now = new Date()): ArcadeProject[] {
     notes: x.notes.map((n) => ({
       id: n.id,
       title: cleanArcadeTitle(n.title),
-      words: Math.max(80, (n.content?.trim().length ?? 0) * 6),
+      words: Math.max(80, Math.round((n.content?.trim().length ?? 0) / 5)),
       links: parseIds(n.linked_note_ids).filter((id) => id !== n.id && noteIds.has(id)),
     })),
   }));

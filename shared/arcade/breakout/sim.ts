@@ -72,10 +72,11 @@ export function fitBricksToWidth(bricks: Brick[], dx: number, span: number, left
   const maxX = left + span - BW / 2 - 2;
   for (const b of bricks) b.x += dx;
   if (!bricks.some((b) => b.x < minX || b.x > maxX)) return;
-  const cols = clamp(Math.floor((span - 8) / GAP_X), MIN_COLS, MAX_COLS);
+  const cols = clamp(Math.floor((span - 8) / GAP_X), 1, MAX_COLS);
   const bx0 = left + (span - (cols - 1) * GAP_X) / 2;
   const rows = Math.ceil(bricks.length / cols);
-  const gapY = rows > ROWS ? Math.min(GAP_Y, Math.max(BH, Math.floor((padY - 30 - by0) / Math.max(1, rows - 1)))) : GAP_Y;
+  const maxSpanY = Math.max(BH, padY - 30 - by0);
+  const gapY = (rows - 1) * GAP_Y > maxSpanY ? Math.max(BH, Math.floor(maxSpanY / Math.max(1, rows - 1))) : GAP_Y;
   for (let i = 0; i < bricks.length; i++) {
     bricks[i].x = bx0 + (i % cols) * GAP_X;
     bricks[i].y = by0 + Math.floor(i / cols) * gapY;
@@ -137,12 +138,13 @@ export class BreakoutSim {
     this.right = this.W - this.hud.right;
     this.ceiling = this.hud.top + 18;
     this.padY = this.H - Math.max(34, this.hud.bottom + 24);
-    this.cols = clamp(Math.floor((this.right - this.left - 8) / GAP_X), MIN_COLS, MAX_COLS);
+    this.cols = clamp(Math.floor((this.right - this.left - 8) / GAP_X), 1, MAX_COLS);
   }
 
   resize(width: number, height: number): void {
     if (this.W === width && this.H === height) return;
     const oldCx = (this.left + this.right) / 2;
+    const oldPadY = this.padY;
     this.W = width;
     this.H = height;
     this.computeMetrics();
@@ -155,6 +157,9 @@ export class BreakoutSim {
       this.ball.y = this.padY - 8;
     } else {
       this.ball.x = clamp(this.ball.x + dx, this.left + BALL_R + 1, this.right - BALL_R - 1);
+      if (this.ball.y < oldPadY) {
+        this.ball.y = clamp(this.ball.y, this.ceiling + BALL_R + 1, this.padY - BALL_R - 2);
+      }
     }
     if (this.terrain.resize(this.W)) this.terrainGen++;
   }

@@ -1006,7 +1006,7 @@ export class WayfinderSim {
     const v = this.voyage;
     if (v.supplies > 0) {
       v.supplies--;
-      this.say(why, "#c7e4ff");
+      this.say(`${why} -1 SUPPLY`, "#c7e4ff");
       return true;
     }
     this.hurtCaptain(`${why} -1 HEART`);
@@ -1105,7 +1105,7 @@ export class WayfinderSim {
       case "camp":
         if (A && e.crate && !e.crateTaken) {
           e.crateTaken = true;
-          this.say("CRATE LOADED ON THE BOAT", "#8dff9a");
+          this.say(this.boat.cargo.length < this.holdSize ? "CRATE LOADED ON THE BOAT" : "CRATE RESERVED AT CAMP", this.boat.cargo.length < this.holdSize ? "#8dff9a" : "#fff2a0");
           this.events.push("loot");
         } else if (A) this.gain(e, goldFor(e, 6), `FORAGED +${goldFor(e, 6)}G`);
         else {
@@ -1117,7 +1117,7 @@ export class WayfinderSim {
         if (A) {
           if (unlucky(e, 1, 0.4)) this.hurtCaptain("A PLANK SNAPPED -1 HEART");
           else this.gain(e, goldFor(e, 14), `ACROSS! +${goldFor(e, 14)}G`);
-        } else if (!this.pay("CLIMBED DOWN -1 SUPPLY")) return true;
+        } else if (!this.pay("CLIMBED DOWN")) return true;
         return onward();
       case "ford":
         if (A) {
@@ -1159,7 +1159,7 @@ export class WayfinderSim {
       case "trap":
         if (A) {
           if (e.scouted) this.say("STEPPED AROUND IT", "#c7e4ff");
-          else if (!this.pay("DETOUR -1 SUPPLY")) return true;
+          else if (!this.pay("DETOUR")) return true;
         } else {
           e.gold += goldFor(e, 10);
           if (e.scouted) this.say(`+${goldFor(e, 10)}G STASH`, "#fff2a0");

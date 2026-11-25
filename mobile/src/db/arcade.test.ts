@@ -10,7 +10,7 @@ vi.mock("./index", () => ({
 }));
 
 const { listArcadeProjects, loadArcadeProjects } = await import("./arcade");
-const NOW = new Date("2026-11-24T12:00:00.000Z");
+const NOW = new Date(2026, 10, 24, 12, 0, 0);
 const STAMP = "2026-11-24T10:00:00.000Z";
 
 function project(id: string, name: string, updated = STAMP) {

@@ -323,7 +323,7 @@ export function stepCard(e: Expedition, v: Voyage): StepCard {
         title: "THE GORGE",
         lines: ["A FRAYED BRIDGE", "SPANS A GORGE"],
         a: { label: "CROSS FAST", desc: `RISKY +${goldFor(e, 14)}G` },
-        b: { label: "CLIMB DOWN", desc: "-1 SUPPLY" },
+        b: { label: "CLIMB DOWN", desc: v.supplies > 0 ? "-1 SUPPLY" : "-1 HEART" },
       };
     case "ford":
       return {
@@ -358,7 +358,7 @@ export function stepCard(e: Expedition, v: Voyage): StepCard {
         tag: "STONE CAIRN",
         title: "MARKED PATH",
         lines: e.scouted ? ["YOUR SCOUT SPOTTED", "A SNARE AHEAD"] : ["STACKED STONES", "WARN OF DANGER"],
-        a: { label: "STEP AROUND", desc: e.scouted ? "SAFE" : "-1 SUPPLY" },
+        a: { label: "STEP AROUND", desc: e.scouted ? "SAFE" : v.supplies > 0 ? "-1 SUPPLY" : "-1 HEART" },
         b: { label: "PUSH ON", desc: e.scouted ? `+${goldFor(e, 10)}G` : `+${goldFor(e, 10)}G -1 HEART` },
       };
     case "shrine":

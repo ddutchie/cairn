@@ -385,6 +385,11 @@ export class InboxZeroSim {
     this.cursor = { x, y };
   }
 
+  cancel(): void {
+    this.dragging = false;
+    this.cursor = null;
+  }
+
   up(): void {
     if (this.inputMode !== "touch" || !this.dragging || !this.cursor) {
       this.dragging = false;

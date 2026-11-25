@@ -33,8 +33,10 @@ export interface PixelGame<E extends string> {
   down(x: number, y: number): void;
   /** Finger moved to (x, y); (dx, dy) since the last move. Game pixels. */
   move(x: number, y: number, dx: number, dy: number): void;
-  /** Finger lifted or gesture cancelled. */
+  /** Finger lifted normally. */
   up?(): void;
+  /** Gesture cancelled by OS / parent responder. */
+  cancel?(): void;
 }
 
 const STEP_MS = 1000 / 60;
@@ -174,7 +176,7 @@ function Host<E extends string>({
         ly = g.dy;
       },
       onPanResponderRelease: () => game.up?.(),
-      onPanResponderTerminate: () => game.up?.(),
+      onPanResponderTerminate: () => (game.cancel ? game.cancel() : game.up?.()),
     });
   }, [game, k, left]);
 

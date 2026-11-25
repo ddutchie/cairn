@@ -35,7 +35,8 @@ export function glyphIndices(s: string): number[] {
 export const textWidth = (s: string, k = 1) => Math.max(0, (s.length * ADVANCE - 1) * k);
 
 /** Clip to `max` characters with a trailing "." when cut. */
-export const clip = (s: string, max: number) => (s.length > max ? s.slice(0, Math.max(1, max - 1)) + "." : s);
+export const clip = (s: string, max: number) =>
+  s.length <= max ? s : max <= 0 ? "" : max === 1 ? "." : s.slice(0, max - 1) + ".";
 
 /** Strip characters the font lacks while preserving word boundaries across whitespace. */
 export function fontSafe(s: string): string {

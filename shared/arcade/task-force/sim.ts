@@ -529,6 +529,7 @@ export class TaskForceSim {
     if (this.state === "over" || this.state === "win") {
       if (this.stateT > 0) this.stateT--;
       this.updBullets();
+      this.settleBest();
       return;
     }
 
