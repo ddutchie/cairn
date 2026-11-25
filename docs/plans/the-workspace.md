@@ -106,7 +106,7 @@ A toggle (tab on the HUD) swaps the floor for **the week**:
 
 ## Idle layer (pure cosmetics, no data writes)
 
-- Workers have small routines: coffee machine, water cooler, sitting at their desk when they hold an in-progress card, leaving at the end of the day, and crumpling paper at the bin by the done board on their own cadence (most swish with a splash, misses land for the idle robot; tapping the bin calls for a shot).
+- Workers have small routines: coffee machine, water cooler, sitting at their desk when they hold an in-progress card, leaving at the end of the day, and crumpling paper at the bin by the done board on their own cadence (most swish with a splash, misses land for the idle robot, which steps back and sinks them; tapping the bin calls for a shot).
 - The done board lists DONE this week and the OVERDUE count (derived, not stored); the wall clock opens a big analogue/digital overlay.
 - Unlockable decor from real milestones (first 10 tasks done in a project → a plant). Stored per workspace in local storage like the Angler tank; purely cosmetic and never shown as a reward for "busywork" metrics.
 - Optional sound: not built (the pixel hosts have no audio path).
