@@ -16,7 +16,7 @@ import { mulberry32 } from "../pixel/terrain";
 import { CONTRACTOR, DEMO_OFFICE, type OfficeData, type OfficeProject } from "./data";
 import { burstLabel, diffOffice, FLURRY, groupChanges, type Burst, type OfficeChange } from "./events";
 import { inRect, layoutDesk, layoutFloor, layoutWeek, route, type Desk, type DeskTab, type DeskView, type FloorLayout, type Pt, type Rect, type Ref, type WeekView } from "./layout";
-import { bucketWeek, dayShort, toDateKey, type WeekDay } from "./week";
+import { bucketWeek, type WeekDay } from "./week";
 
 export interface OfficeSpec {
   width: number;
@@ -51,6 +51,8 @@ export interface Worker {
   path: Pt[];
   mode: "sit" | "walk" | "stay";
   timer: number;
+  /** Steps until this seated worker crumples another sheet (toss heartbeat). */
+  tossIn: number;
   homeward: boolean;
   /** Last walking direction, for facing. */
   dx: number;
@@ -74,13 +76,39 @@ export interface Robot {
   dy: number;
   /** True while a tool call is in flight (glows). */
   active: boolean;
+  /** Carrying a missed paper ball to the bin. */
+  carry: boolean;
+  /** Heading for the bin (rather than a desk or the dock). */
+  toBin: boolean;
+  /** The floor paper it is walking to pick up, if any. */
+  fetch: Paper | null;
   layoutKey: string;
+}
+
+/** A crumpled paper ball: arcs to the bin, or lands on the floor for the robot. */
+export interface Paper {
+  x: number;
+  y: number;
+  sx: number;
+  sy: number;
+  tx: number;
+  ty: number;
+  t: number;
+  dur: number;
+  /** Arc peak in pixels, from the throw distance. */
+  arcH: number;
+  state: "fly" | "floor";
+  /** True when aimed at the bin (a swish removes it); a miss lands. */
+  scores: boolean;
 }
 
 export type Hit =
   | { k: "desk"; desk: Desk }
   | { k: "worker"; worker: Worker }
   | { k: "robot" }
+  | { k: "clock" }
+  | { k: "clockMode" }
+  | { k: "bin" }
   | { k: "hot"; text: string }
   | { k: "card"; ref: Ref; rect: Rect; text: string }
   | { k: "note"; ref: Ref; rect: Rect; text: string }
@@ -131,6 +159,8 @@ export const PLANT_MILESTONE = 10;
 /** Extra plants on the floor, at most (two corners are always there). */
 const MAX_EXTRA_PLANTS = 6;
 const plantId = (projectId: string) => `plant:${projectId}`;
+const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const KIND_COLOR: Record<OfficeChange["k"], string> = {
   "task.added": "#7cc46a",
   "task.moved": "#5b8dd6",
@@ -195,6 +225,14 @@ export class OfficeSim {
   week = false;
   weekDays: WeekDay[] = [];
   weekView: WeekView | null = null;
+  /** Crumpled paper balls in flight or on the floor. */
+  papers: Paper[] = [];
+  /** Swish splashes where balls went in (ring + label, 40 frames). */
+  pops: { x: number; y: number; t0: number }[] = [];
+  /** Toss stats for tests and tuning: made, swished, robot-binned. */
+  tossMade = 0;
+  tossScored = 0;
+  tossFetched = 0;
   /** Tool-call intents by id, with the frame they arrived (attribution window). */
   intents = new Map<string, number>();
   /** Ids whose change followed an intent: shown with the agent colour. For tests and hosts. */
@@ -203,6 +241,10 @@ export class OfficeSim {
   decor = new Set<string>();
   /** Set when a refresh unlocks new decor; the host saves `decor` and clears it. */
   decorDirty = false;
+  /** The big pixel clock overlay (tap the wall clock). */
+  clockOpen = false;
+  /** The overlay shows the time digital instead of analogue. */
+  clockDigital = false;
   private wasNight = false;
   hover: Hover | null = null;
   bubble: Bubble | null = null;
@@ -251,18 +293,34 @@ export class OfficeSim {
     return this.daylight <= 0;
   }
 
-  /** The wall ticker: this week's done count and the next due task. Derived, never stored. */
-  get ticker(): string {
-    const done = this.projects.reduce((s, p) => s + p.doneThisWeek, 0);
-    const today = toDateKey(this.clock());
-    let next: { key: string; title: string } | null = null;
-    for (const p of this.projects) {
-      for (const c of p.cards) {
-        if (!c.dueKey || c.dueKey < today) continue;
-        if (!next || c.dueKey < next.key) next = { key: c.dueKey, title: c.title };
-      }
-    }
-    return next ? `${done} DONE THIS WEEK · NEXT ${dayShort(next.key)} ${next.title}` : `${done} DONE THIS WEEK · NOTHING DUE`;
+  /** The done board: this week's done count and how many open cards are overdue. */
+  get boardStats(): { done: number; overdue: number } {
+    let overdue = 0;
+    for (const p of this.projects) for (const c of p.cards) if (c.overdue) overdue++;
+    return { done: this.projects.reduce((s, p) => s + p.doneThisWeek, 0), overdue };
+  }
+
+  /** The overlay panel, in screen coords (null when closed). Up to 300 px wide. */
+  clockPanel(): { x: number; y: number; w: number; h: number } | null {
+    if (!this.clockOpen) return null;
+    const a = this.area;
+    const w = Math.min(300, Math.max(120, a.w - 16));
+    const h = Math.round((w * 64) / 150);
+    return { x: Math.round(a.x + (a.w - w) / 2), y: Math.round(a.y + (a.h - h) / 2), w, h };
+  }
+
+  /** The overlay's analogue/digital toggle, in screen coords (null when closed). */
+  clockToggleRect(): Rect | null {
+    const p = this.clockPanel();
+    if (!p) return null;
+    const w = Math.min(120, p.w - 24), h = Math.max(10, Math.round(p.h * 0.16));
+    return { x: Math.round(p.x + (p.w - w) / 2), y: p.y + p.h - h - 4, w, h };
+  }
+
+  /** "WED 25 NOV" for the big clock overlay. */
+  get dateLine(): string {
+    const d = this.clock();
+    return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
   }
 
   /** Replace the unlocked decor (host load / workspace switch) and re-lay the floor. */
@@ -353,6 +411,8 @@ export class OfficeSim {
     const r = this.robot;
     r.ref = ref;
     r.active = true;
+    r.fetch = null;
+    r.toBin = false;
     if (!desk) {
       r.timer = 240;
       if (r.mode === "idle") r.mode = "work";
@@ -459,7 +519,7 @@ export class OfficeSim {
           const home = spot === "seat" ? d.seat : d.side;
           let w = this.workers.get(holder);
           if (!w) {
-            w = { holder, look: lookFor(holder), desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", timer: this.sitTime(), homeward: false, dx: 0, dy: -1, layoutKey: key };
+            w = { holder, look: lookFor(holder), desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", timer: this.sitTime(), tossIn: 400 + Math.floor(this.rnd() * 800), homeward: false, dx: 0, dy: -1, layoutKey: key };
             this.workers.set(holder, w);
           }
           const moved = w.desk !== d.index || w.spot !== spot;
@@ -500,7 +560,7 @@ export class OfficeSim {
     const key = `${this.floor.w}x${this.floor.h}p${this.page}`;
     const home = this.dock();
     if (!this.robot) {
-      this.robot = { x: home.x, y: home.y, path: [], mode: "idle", desk: null, ref: null, timer: 0, dx: 0, dy: -1, active: false, layoutKey: key };
+      this.robot = { x: home.x, y: home.y, path: [], mode: "idle", desk: null, ref: null, timer: 0, dx: 0, dy: -1, active: false, carry: false, toBin: false, fetch: null, layoutKey: key };
       return;
     }
     const r = this.robot;
@@ -587,10 +647,61 @@ export class OfficeSim {
     }
     if (this.opened && this.t - this.opened.t > 40) this.opened = null;
     if (this.fx.length) this.fx = this.fx.filter((f) => this.t - f.t0 < f.life + f.delay);
+    if (this.pops.length) this.pops = this.pops.filter((p) => this.t - p.t0 < 40);
     if (this.fresh.size) for (const [id, t] of this.fresh) if (this.t - t > FRESH_FRAMES) this.fresh.delete(id);
     if (this.intents.size) for (const [id, t] of this.intents) if (this.t - t > AGENT_WINDOW + 600) this.intents.delete(id);
     for (const w of this.workers.values()) this.stepWorker(w);
+    this.stepPapers();
     this.stepRobot();
+  }
+
+  /** Tapping the bin makes a seated worker shoot one (misses included). */
+  private forceToss(): void {
+    if (this.focus !== null || this.week || this.papers.length >= 12) return;
+    const sitters = [...this.workers.values()].filter((w) => w.mode === "sit" && this.deskFor(w));
+    if (!sitters.length) return;
+    this.toss(sitters[Math.floor(this.rnd() * sitters.length)]);
+  }
+
+  /** A seated worker shoots a crumpled paper ball at the bin; most land, some miss. */
+  private toss(w: Worker): void {
+    const F = this.floor;
+    const k = F.zoom / 2;
+    const sx = w.x, sy = w.y - 8 * k;
+    const scores = this.rnd() >= 0.35;
+    let tx = F.bin.x + (scores ? (this.rnd() - 0.5) * 4 : 0);
+    let ty = F.bin.y + (scores ? (this.rnd() - 0.5) * 4 : 0);
+    if (!scores) {
+      const a = this.rnd() * Math.PI * 2, r = 10 + this.rnd() * 14;
+      tx = F.bin.x + Math.cos(a) * r;
+      ty = F.bin.y + Math.sin(a) * r * 0.6;
+    }
+    tx = Math.max(4, Math.min(F.w - 4, tx));
+    ty = Math.max(F.wall.h + 8, Math.min(F.h - 4, ty));
+    const dist = Math.hypot(tx - sx, ty - sy);
+    const arcH = Math.max(12, Math.min(34, dist * 0.18));
+    this.papers.push({ x: sx, y: sy, sx, sy, tx, ty, t: 0, dur: Math.max(24, Math.min(60, Math.round(dist / 2.2))), arcH, state: "fly", scores });
+    this.tossMade++;
+  }
+
+  private stepPapers(): void {
+    for (let i = this.papers.length - 1; i >= 0; i--) {
+      const p = this.papers[i];
+      if (p.state !== "floor") {
+        p.t++;
+        const f = Math.min(1, p.t / p.dur);
+        p.x = p.sx + (p.tx - p.sx) * f;
+        p.y = p.sy + (p.ty - p.sy) * f;
+        if (f < 1) continue;
+        if (p.scores) {
+          this.papers.splice(i, 1);
+          this.tossScored++;
+          this.pops.push({ x: p.tx, y: p.ty, t0: this.t });
+        } else {
+          p.state = "floor";
+        }
+      }
+    }
   }
 
   private stepRobot(): void {
@@ -599,17 +710,33 @@ export class OfficeSim {
     if (r.mode === "walk") {
       const next = r.path[0];
       if (!next) {
-        if (r.desk === null) {
-          r.mode = "idle";
-          r.timer = 0;
-          r.dx = 0;
-          r.dy = -1;
-        } else {
+        // Arrived: drop a carried ball in the bin, pick up a fetched one, or start work.
+        if (r.toBin) {
+          r.toBin = false;
+          if (r.carry) {
+            r.carry = false;
+            this.tossFetched++;
+            this.pops.push({ x: r.x, y: r.y, t0: this.t });
+          }
+        } else if (r.fetch) {
+          const p = r.fetch;
+          r.fetch = null;
+          if (p.state === "floor" && this.papers.includes(p)) {
+            this.papers.splice(this.papers.indexOf(p), 1);
+            r.carry = true;
+          }
+        } else if (r.desk !== null) {
           r.mode = "work";
           r.timer = r.active ? 300 : 120;
           r.dx = 0;
           r.dy = -1;
+          return;
         }
+        r.mode = "idle";
+        r.timer = 0;
+        r.dx = 0;
+        r.dy = -1;
+        this.decideRobot();
         return;
       }
       const dx = next.x - r.x;
@@ -629,26 +756,79 @@ export class OfficeSim {
     }
     if (r.mode === "work" && !this.calm) {
       if (--r.timer > 0) return;
-      // Done working: back to the dock when idle, or keep waiting at the desk while active.
+      // Done working: stay while a tool call is in flight, else find the next job.
       if (r.active && r.desk !== null) {
         r.timer = 300;
         return;
       }
-      const home = this.dock();
-      const from = this.nearestDesk(r) ?? this.floor.desks[0];
-      if (!from) {
-        r.x = home.x;
-        r.y = home.y;
-        r.mode = "idle";
-        r.desk = null;
+      r.desk = null;
+      r.mode = "idle";
+    }
+    if (r.mode === "idle") this.decideRobot();
+    else if (r.active && r.desk !== null) r.mode = "work";
+  }
+
+  /** The robot's next job: carry to the bin, fetch a missed paper, or dock. */
+  private decideRobot(): void {
+    const r = this.robot;
+    if (!r || r.mode !== "idle") return;
+    if (r.active && r.desk !== null) {
+      r.mode = "work";
+      r.timer = 300;
+      return;
+    }
+    if (r.carry) {
+      this.routeRobot(this.floor.bin, true);
+      return;
+    }
+    if (!r.active) {
+      const paper = this.nearestPaper(r);
+      if (paper) {
+        r.fetch = paper;
+        this.routeRobot({ x: paper.x, y: paper.y }, false);
         return;
       }
-      r.path = route(r, home, from, from);
-      r.mode = "walk";
+    }
+    const home = this.dock();
+    if (r.desk === null && Math.abs(r.x - home.x) < 0.5 && Math.abs(r.y - home.y) < 0.5) return;
+    const from = this.nearestDesk(r) ?? this.floor.desks[0];
+    if (!from) {
+      r.x = home.x;
+      r.y = home.y;
       r.desk = null;
       return;
     }
-    if (r.mode === "idle" && r.active && r.desk !== null) r.mode = "work";
+    r.desk = null;
+    r.fetch = null;
+    r.path = route(r, home, from, from);
+    r.mode = "walk";
+  }
+
+  private routeRobot(to: Pt, toBin: boolean): void {
+    const r = this.robot;
+    const from = this.nearestDesk(r) ?? this.floor.desks[0];
+    if (!from) {
+      r.x = to.x;
+      r.y = to.y;
+      return;
+    }
+    r.toBin = toBin;
+    r.path = route(r, to, from, from);
+    r.mode = "walk";
+  }
+
+  private nearestPaper(r: Robot): Paper | null {
+    let best: Paper | null = null;
+    let bd = Infinity;
+    for (const p of this.papers) {
+      if (p.state !== "floor") continue;
+      const d = Math.abs(p.x - r.x) + Math.abs(p.y - r.y);
+      if (d < bd) {
+        bd = d;
+        best = p;
+      }
+    }
+    return best;
   }
 
   private stepWorker(w: Worker): void {
@@ -686,6 +866,14 @@ export class OfficeSim {
       return;
     }
     if (this.calm) return;
+    // A seated worker's own cadence: a crumpled sheet at the bin every so often.
+    if (w.mode === "sit" && this.focus === null && !this.week &&
+        Math.abs(w.x - home.x) < 0.5 && Math.abs(w.y - home.y) < 0.5) {
+      if (--w.tossIn <= 0) {
+        w.tossIn = 500 + Math.floor(this.rnd() * 1000);
+        if (this.papers.length < 12 && this.rnd() < 0.75) this.toss(w);
+      }
+    }
     if (--w.timer > 0) return;
     const atHome = Math.abs(w.x - home.x) < 0.5 && Math.abs(w.y - home.y) < 0.5;
     if (!atHome) {
@@ -713,6 +901,11 @@ export class OfficeSim {
   // ── Input ────────────────────────────────────────────────────────────
 
   hit(x: number, y: number): Hit | null {
+    // The open clock overlay eats every tap; only its toggle answers.
+    if (this.clockOpen) {
+      const t = this.clockToggleRect();
+      return t && inRect(t, x, y) ? { k: "clockMode" } : null;
+    }
     const b = this.bubble;
     if (b && inRect(b.rect, x, y)) {
       const line = b.lines.find((l) => inRect(l.rect, x, y));
@@ -750,8 +943,10 @@ export class OfficeSim {
     if (desk) return { k: "desk", desk };
     const F = this.floor;
     if (inRect(F.doneBoard, lx, ly)) return { k: "hot", text: `DONE THIS WEEK · ${this.projects.reduce((s, p) => s + p.doneThisWeek, 0)}` };
+    if (Math.abs(lx - (F.doneBoard.x + F.doneBoard.w + 12)) <= 9 && Math.abs(ly - 15) <= 9) return { k: "clock" };
     if (Math.abs(lx - F.coffee.x) < 8 && ly > F.coffee.y - 26 && ly < F.coffee.y + 4) return { k: "hot", text: "COFFEE" };
     if (Math.abs(lx - F.cooler.x) < 7 && ly > F.cooler.y - 30 && ly < F.cooler.y + 4) return { k: "hot", text: "WATER COOLER" };
+    if (Math.abs(lx - F.bin.x) < 7 && ly > F.bin.y - 12 && ly < F.bin.y + 4) return { k: "bin" };
     return null;
   }
 
@@ -792,10 +987,22 @@ export class OfficeSim {
 
   down(x: number, y: number): void {
     this.pointer = { x, y };
+    // The big clock covers the room: the toggle switches it, any other tap closes it.
+    if (this.clockOpen) {
+      const h = this.hit(x, y);
+      if (h?.k === "clockMode") this.clockDigital = !this.clockDigital;
+      else this.clockOpen = false;
+      this.bubble = null;
+      return;
+    }
     const h = this.hit(x, y);
     if (h?.k !== "bubble") this.bubble = null;
     if (!h) return;
     switch (h.k) {
+      case "clock":
+        this.bubble = null;
+        this.clockOpen = true;
+        return;
       case "bubble":
         if (h.ref) this.open(h.ref);
         return;
@@ -813,6 +1020,9 @@ export class OfficeSim {
         this.bubble = null;
         this.opened = null;
         this.events.push({ k: "openAgent" });
+        return;
+      case "bin":
+        this.forceToss();
         return;
       case "back":
         this.setFocus(null);
@@ -851,6 +1061,10 @@ export class OfficeSim {
   setKey(code: string, down: boolean): boolean {
     if (!down) return false;
     if (code === "Escape") {
+      if (this.clockOpen) {
+        this.clockOpen = false;
+        return true;
+      }
       if (this.bubble) {
         this.bubble = null;
         return true;
@@ -968,6 +1182,12 @@ export class OfficeSim {
       }
       case "hot":
         return { text: h.text, rect: null };
+      case "clock":
+        return { text: `TIME · ${tap} TO ENLARGE`, rect: null };
+      case "clockMode":
+        return { text: `SHOW ${this.clockDigital ? "ANALOGUE" : "DIGITAL"}`, rect: this.clockToggleRect() };
+      case "bin":
+        return { text: `PAPER BIN · ${tap} FOR A TOSS`, rect: null };
       case "card":
         return { text: `TASK · ${h.text}`, rect: h.rect };
       case "note":

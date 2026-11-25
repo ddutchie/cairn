@@ -109,6 +109,18 @@ export const COOLER = makeModel(6, 6, 14, (x, y, z) => {
   return dx <= 2 && dy <= 2 ? (z === 13 ? "#9fd0ff" : "#7fb8ec") : null;
 });
 
+/** A paper bin: an open box, dark inside, with a rolled rim. */
+export const BIN = makeModel(6, 6, 7, (x, y, z) => {
+  if (x < 0 || x > 5 || y < 0 || y > 5) return null;
+  if (z === 6) {
+    if (x === 0 || x === 5 || y === 0 || y === 5) return "#8a93a8";
+    return null;
+  }
+  if (z === 0) return "#3a3f55";
+  if (x === 0 || x === 5 || y === 0 || y === 5) return z % 2 ? "#565d75" : "#6b7488";
+  return z === 1 ? "#10131c" : null;
+});
+
 /** The agent's robot: a small boxy bot on wheels, facing away from the viewer (+y is its back). */
 export const ROBOT = makeModel(7, 5, 10, (x, y, z) => {
   // Wheels at the base corners.

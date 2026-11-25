@@ -80,6 +80,8 @@ export interface FloorLayout {
   windows: Rect[];
   coffee: Pt;
   cooler: Pt;
+  /** The paper bin: tossed balls score in it, misses land on the floor for the robot. */
+  bin: Pt;
   plants: Pt[];
   /** Errand spots, each with the walkway that reaches it. */
   spots: { at: Pt; aisleY: number; laneX: number }[];
@@ -194,13 +196,16 @@ export function layoutFloor(projects: readonly OfficeProject[], w: number, h: nu
     { at: { x: cooler.x + 10, y: cooler.y + 10 }, ...top },
   ];
   // Windows along the back wall, either side of the done board.
-  const doneBoard = { x: Math.floor(w / 2) - 24, y: 7, w: 48, h: 20 };
+  // The done board carries DONE this week and the OVERDUE count, so it is wider than it was.
+  const doneBoard = { x: Math.floor(w / 2) - 31, y: 4, w: 62, h: 28 };
+  // The paper bin stands against the wall, left of the done board.
+  const bin = { x: doneBoard.x - 12, y: floorTop + 2 };
   const windows: Rect[] = [];
   for (let x = 12; x + 30 < w - 12; x += 46) {
     const r = { x, y: 6, w: 30, h: 20 };
     if (r.x + r.w < doneBoard.x - 6 || r.x > doneBoard.x + doneBoard.w + 6) windows.push(r);
   }
-  return { w, h, zoom: g.z, desks, page: pg, pageCount, wall: { x: 0, y: 0, w, h: WALL_H }, doneBoard, windows, coffee, cooler, plants, spots };
+  return { w, h, zoom: g.z, desks, page: pg, pageCount, wall: { x: 0, y: 0, w, h: WALL_H }, doneBoard, windows, coffee, cooler, bin, plants, spots };
 }
 
 /**

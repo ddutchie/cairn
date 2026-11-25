@@ -1,6 +1,6 @@
 # The Workspace — idle office view of the live workspace
 
-Status: phases 1–5 built on `feat/the-workspace` (2026-11-25): the office, live changes, the agent robot, the week wall, and the mobile host. The rest is planned.
+Status: phases 1–6 built on `feat/the-workspace` (2026-11-25): the office, live changes, the agent robot, the week wall, the mobile host, and idle polish. The rest is planned.
 
 ## Idea
 
@@ -106,10 +106,10 @@ A toggle (tab on the HUD) swaps the floor for **the week**:
 
 ## Idle layer (pure cosmetics, no data writes)
 
-- Workers have small routines: coffee machine, water cooler, sitting at their desk when they hold an in-progress card, leaving at the end of the day.
-- A ticker on the wall: "3 done today", "next due: Fri" (derived, not stored).
+- Workers have small routines: coffee machine, water cooler, sitting at their desk when they hold an in-progress card, leaving at the end of the day, and crumpling paper at the bin by the done board on their own cadence (most swish with a splash, misses land for the idle robot; tapping the bin calls for a shot).
+- The done board lists DONE this week and the OVERDUE count (derived, not stored); the wall clock opens a big analogue/digital overlay.
 - Unlockable decor from real milestones (first 10 tasks done in a project → a plant). Stored per workspace in local storage like the Angler tank; purely cosmetic and never shown as a reward for "busywork" metrics.
-- Optional sound: off by default.
+- Optional sound: not built (the pixel hosts have no audio path).
 
 ## Performance
 
@@ -124,15 +124,16 @@ A toggle (tab on the HUD) swaps the floor for **the week**:
 3. **Agent presence (built).** `session:event` intent → the robot walks to the desk (`agentIntent`); attribution heuristic (`AGENT_WINDOW`, agent-blue labels); click the robot → open the chat (`openAgent` → agent view).
 4. **Calendar mode (built: the wall).** The WEEK tab (C) swaps the floor for seven day boards with due tasks pinned on their day and a red overdue tray; clicking a pin opens it. Weekends dim, today is gold. Not built: calendar events as appointment cards, the meeting room, workers walking to meetings.
 5. **Mobile (built).** `/office` route (`WorkspaceGame.tsx` host, `PixelGameView`, Skia), a 3-second SQLite poll bridge (fingerprint-gated `setData`), card/note routes, robot → chat; listed and pinnable as a Workspace tool next to the arcade games.
-6. **Idle polish.** More routines, decor from milestones, ambient sound.
+6. **Idle polish (built).** Nights empty the room, the done board shows DONE + OVERDUE, the wall clock opens a big analogue/digital overlay, seated workers shoot paper at the bin (the idle robot bins the misses), and 10 done cards earn a floor plant (host-persisted). Not built: ambient sound (no audio path in the pixel hosts).
 7. **Pixel chat (the easter egg's easter egg).** While the office is open, restyle the chat panel to match: pixel font for messages, chunky bordered bubbles, and the agent's avatar as the office robot. This should be a theme layer only (a `data-pixel` attribute on the chat root that swaps CSS variables and fonts), never a second chat component, so behaviour can't drift. Respect the font-scale setting and keep code blocks readable: monospace stays monospace.
 
 ## Files
 
 - `shared/arcade/workspace/data.ts`: `OfficeData`, zones, the demo office
 - `shared/arcade/workspace/build.ts`: store → `OfficeData` (pure)
-- `shared/arcade/workspace/layout.ts`: the floor, staffing, walk routes, an opened desk's board and notes
-- `shared/arcade/workspace/models.ts`: voxel desks (piles by count), chair, people, props
+- `shared/arcade/workspace/layout.ts`: the floor, staffing, walk routes, an opened desk's board and notes, the week wall
+- `shared/arcade/workspace/week.ts`: pure Sunday-start week bucketing for the wall
+- `shared/arcade/workspace/models.ts`: voxel desks (piles by count), chair, people, props, robot, paper bin
 - `shared/arcade/workspace/sim.ts`, `render.ts`, `DESIGN.md`
 - `src/components/arcade/office.ts`: desktop factory (store subscription, open → preview pane)
 - `mobile/src/components/WorkspaceGame.tsx` + `mobile/app/office.tsx`: mobile host (3-second poll bridge, card/note/chat routes), registered in `_layout.tsx` and `workspace-tools.ts` (phase 5)

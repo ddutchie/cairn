@@ -636,11 +636,12 @@ describe("idle polish", () => {
     expect(s.workers.size).toBeGreaterThan(0);
   });
 
-  it("runs the wall ticker off done counts and the next due task", () => {
-    const s = at(noon, [dated("today", "2026-11-26"), dated("old", "2026-11-20")]);
-    expect(s.ticker).toBe("0 DONE THIS WEEK · NEXT THU TODAY");
-    const empty = at(noon, [dated("none", null)]);
-    expect(empty.ticker).toBe("0 DONE THIS WEEK · NOTHING DUE");
+  it("reports done-this-week and overdue counts for the clock whiteboard", () => {
+    const ps = [project("a", [card("1", "backlog", null, { overdue: true }), card("2", "doing")])];
+    ps[0].doneThisWeek = 4;
+    const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: office(ps), clock: noon, seed: 3 });
+    expect(s.boardStats).toEqual({ done: 4, overdue: 1 });
+    expect(at(noon, [dated("none", null)]).boardStats).toEqual({ done: 0, overdue: 0 });
   });
 
   it("unlocks a plant per finished-ten project and keeps it", () => {
@@ -665,5 +666,123 @@ describe("idle polish", () => {
     const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: office(ps), clock: noon, seed: 3 });
     expect(s.decor.size).toBe(10);
     expect(s.floor.plants).toHaveLength(8);
+  });
+});
+
+describe("the big clock", () => {
+  const clockAt = (s: OfficeSim) => ({
+    x: s.area.x + s.floor.doneBoard.x + s.floor.doneBoard.w + 12,
+    y: s.area.y + 15,
+  });
+
+  it("opens on clock tap and closes on the next tap or Escape", () => {
+    const s = make(office([project("a", [card("1", "doing")])]));
+    const c = clockAt(s);
+    expect(s.hit(c.x, c.y)).toMatchObject({ k: "clock" });
+    s.down(c.x, c.y);
+    expect(s.clockOpen).toBe(true);
+    expect(s.setKey("Escape", true)).toBe(true);
+    expect(s.clockOpen).toBe(false);
+    s.down(c.x, c.y);
+    expect(s.clockOpen).toBe(true);
+    s.down(10, 10);
+    expect(s.clockOpen).toBe(false);
+  });
+
+  it("names the date for the overlay", () => {
+    expect(make().dateLine).toBe("WED 25 NOV");
+  });
+
+  it("toggles analogue and digital inside the overlay", () => {
+    const s = make(office([project("a", [card("1", "doing")])]));
+    const c = clockAt(s);
+    s.down(c.x, c.y);
+    expect(s.clockOpen).toBe(true);
+    expect(s.clockDigital).toBe(false);
+    const t = s.clockToggleRect()!;
+    s.down(t.x + 2, t.y + 2);
+    expect(s.clockOpen).toBe(true);
+    expect(s.clockDigital).toBe(true);
+    expect(s.hit(t.x + 2, t.y + 2)).toMatchObject({ k: "clockMode" });
+    s.down(t.x + 2, t.y + 2);
+    expect(s.clockDigital).toBe(false);
+  });
+
+  it("draws the overlay without throwing", () => {
+    const backend: PixelBackend<unknown, number> = {
+      createSurface(width, height): PixelSurface<unknown, number> {
+        let w = width, h = height;
+        return {
+          get W() { return w; },
+          get H() { return h; },
+          resize(nw, nh) { w = nw; h = nh; },
+          clear() {}, snapshot() { return 1; }, toImage() { return null; },
+          drawRect() {}, drawStrokeRect() {}, drawCircle() {}, drawLine() {}, drawImage() {}, drawImageRect() {},
+          drawTintedImage() {}, drawSprite() {}, drawStack() {}, drawShadow() {}, drawGlyphs() {},
+          clipRect(_x, _y, _w, _h, fn) { fn(); },
+        };
+      },
+      makeImage: () => ({}),
+      makeAtlas: (model) => ({ model, image: {}, shadow: {} }),
+    };
+    const s = make(office([project("a", [card("1", "doing", "SAM")])]));
+    const r = new OfficeRenderer(backend, s);
+    s.clockOpen = true;
+    for (let i = 0; i < 5; i++) {
+      s.step();
+      r.draw();
+    }
+  });
+});
+
+describe("paper toss", () => {
+  const noon = () => new Date(2026, 10, 25, 11, 30);
+  const live = () => office([project("a", [card("1", "doing", "SAM"), card("2", "doing", "SAM")])]);
+
+  it("throws balls that either swish or land, and the books balance", () => {
+    const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: live(), clock: noon, seed: 3 });
+    for (let i = 0; i < 4000; i++) s.step();
+    expect(s.tossMade).toBeGreaterThan(0);
+    const floor = s.papers.filter((p) => p.state === "floor").length;
+    expect(s.tossScored + s.tossFetched + floor).toBe(s.tossMade);
+  });
+
+  it("scores with a swish splash", () => {
+    const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: live(), clock: noon, seed: 3 });
+    s.papers.push({ x: 200, y: 150, sx: 0, sy: 0, tx: 200, ty: 150, t: 0, dur: 1, arcH: 18, state: "fly", scores: true });
+    s.step();
+    expect(s.papers).toHaveLength(0);
+    expect(s.tossScored).toBe(1);
+    expect(s.pops).toHaveLength(1);
+    for (let i = 0; i < 50; i++) s.step();
+    expect(s.pops).toHaveLength(0);
+  });
+
+  it("tosses on demand when the bin is tapped", () => {
+    const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: live(), clock: noon, seed: 3 });
+    const F = s.floor;
+    expect(s.hit(s.area.x + F.bin.x, s.area.y + F.bin.y)).toMatchObject({ k: "bin" });
+    const before = s.tossMade;
+    s.down(s.area.x + F.bin.x, s.area.y + F.bin.y);
+    expect(s.tossMade).toBe(before + 1);
+    expect(s.papers).toHaveLength(1);
+  });
+
+  it("the robot fetches a missed ball to the bin", () => {
+    const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: live(), clock: noon, seed: 3 });
+    s.papers.push({ x: 200, y: 150, sx: 200, sy: 150, tx: 200, ty: 150, t: 0, dur: 1, arcH: 18, state: "floor", scores: false });
+    for (let i = 0; i < 12000 && (s.papers.length > 0 || s.robot.carry || s.robot.mode !== "idle"); i++) s.step();
+    expect(s.papers).toHaveLength(0);
+    expect(s.robot.carry).toBe(false);
+    expect(s.tossFetched).toBe(1);
+    expect(s.robot.mode).toBe("idle");
+    expect(s.robot.desk).toBeNull();
+  });
+
+  it("stays put in calm mode", () => {
+    const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: live(), clock: noon, seed: 3 });
+    s.calm = true;
+    for (let i = 0; i < 4000; i++) s.step();
+    expect(s.tossMade).toBe(0);
   });
 });

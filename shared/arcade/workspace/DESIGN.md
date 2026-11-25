@@ -35,6 +35,14 @@ The sim never writes. `setData` takes a fresh `OfficeData` (built by `build.ts` 
 
 A change for an id the agent just touched (a `tool/call` with a `cairnRef` in the last ~2 s) is drawn in agent blue and counts as the agent's: a timing guess, not an audit log. The robot walks to the touched desk when the call starts; the change feed lands what it did. Click the robot to open the agent view.
 
+## Idle life
+
+- **Nights are empty.** The room follows the wall clock: after dark everyone goes home and the workers, their hit areas and their errands go with them. The robot keeps working. At dawn they walk back in and sit down again.
+- **The done board keeps score.** DONE this week in big green numerals (it pops when a card lands), with an OVERDUE count in red under it. Tapping the wall clock opens a big analogue-or-digital overlay with the date; the toggle switches faces, any other tap or Esc closes it.
+- **Paper basketball.** A seated worker crumples a sheet at the bin by the done board on their own cadence, and tapping the bin calls for one on demand: most swish with a splash, about a third clank off and land on the floor, and the idle robot walks over, picks them up and bins them. Balls arc higher the further they fly and tumble end over end; `calm` (Reduce Motion) stops the cadence but a bin tap still works.
+- **Milestone plants.** A project with 10 finished cards earns a plant on the floor, kept once unlocked. Up to six show; the host persists the unlocked set per workspace (desktop local storage, phone device storage) and the sim flags new ones with `decorDirty`.
+- Ambient sound is not built: the pixel hosts have no audio path, so the office stays silent.
+
 ## Calendar mode
 
 The WEEK tab (C) swaps the floor for the week wall: seven day cork boards from the shared `week.ts` bucketing, with dated open cards pinned on their day (priority stripe, project accent chip) and a red OVERDUE tray along the bottom for everything past due. Today is gold, weekends dim. Clicking a pin opens that task in the side panel, exactly like a desk card; Esc or OFFICE goes back. Meeting-room events and workers walking to meetings are not built yet.

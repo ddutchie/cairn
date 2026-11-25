@@ -12,7 +12,7 @@ import { INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel
 import type { Model } from "../pixel/models";
 import { CONTRACTOR, type OfficeCard } from "./data";
 import { COL_HEAD, type Desk, type Rect } from "./layout";
-import { buildDesk, buildPerson, CHAIR, COFFEE, COOLER, deskKey, PLANT, ROBOT } from "./models";
+import { buildDesk, buildPerson, BIN, CHAIR, COFFEE, COOLER, deskKey, PLANT, ROBOT } from "./models";
 import { lookFor, type OfficeSim, type Robot, type Worker } from "./sim";
 
 const BG = "#10131c";
@@ -136,7 +136,45 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     this.drawBubble();
     this.drawHeader();
     this.drawFooter();
+    if (sim.clockOpen) this.drawClockOverlay();
     return this.snapshot();
+  }
+
+  /** The big pixel clock: analogue or digital, the date under it, tap anywhere to close. */
+  private drawClockOverlay(): void {
+    const sim = this.sim;
+    const a = sim.area;
+    const tap = sim.inputMode === "pointer" ? "CLICK" : "TAP";
+    const p = sim.clockPanel();
+    if (!p) return;
+    this.rect(a.x, a.y, a.w, a.h, INK, 0.78);
+    this.rect(p.x + 2, p.y + 2, p.w, p.h, INK, 0.5);
+    this.rect(p.x, p.y, p.w, p.h, "#f4f6fa");
+    this.rect(p.x, p.y, p.w, 2, "#ffffff");
+    if (sim.clockDigital) {
+      const s = Math.max(3, Math.round(p.w / 50));
+      const time = sim.clockText;
+      this.text(time, Math.round(p.x + (p.w - textWidth(time, s)) / 2), Math.round(p.y + p.h * 0.1), "#1d2232", s, null);
+    } else {
+      const [hh, mm] = sim.clockText.split(":").map(Number);
+      const r = Math.round(p.h * 0.2);
+      const cx = p.x + Math.floor(p.w / 2), cy = Math.round(p.y + p.h * 0.3);
+      this.circle(cx, cy, r + 1, "#20273a");
+      this.circle(cx, cy, r, "#ffffff");
+      const ma = (mm / 60) * Math.PI * 2 - Math.PI / 2;
+      const ha = (((hh % 12) + mm / 60) / 12) * Math.PI * 2 - Math.PI / 2;
+      this.line(cx, cy, Math.round(cx + Math.cos(ma) * (r - 2)), Math.round(cy + Math.sin(ma) * (r - 2)), INK);
+      this.line(cx, cy, Math.round(cx + Math.cos(ha) * Math.round(r / 2)), Math.round(cy + Math.sin(ha) * Math.round(r / 2)), "#d9483b");
+    }
+    const date = sim.dateLine;
+    this.text(date, Math.round(p.x + (p.w - textWidth(date)) / 2), Math.round(p.y + p.h * 0.58), TEXT_DIM, 1, null);
+    const t = sim.clockToggleRect();
+    if (t) {
+      const label = sim.clockDigital ? "ANALOGUE" : "DIGITAL";
+      this.button(t, label, false);
+    }
+    const hint = `${tap} OUTSIDE TO CLOSE`;
+    this.text(clip(hint, 36), Math.round(p.x + (p.w - textWidth(clip(hint, 36))) / 2), p.y + p.h + 6, TEXT, 1, null);
   }
 
   // ── The week wall (calendar mode) ──────────────────────────────────
@@ -209,9 +247,6 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       for (const w of F.windows) this.drawWindow(ox + w.x, oy + w.y, w.w, w.h, day);
       this.drawDoneBoard(ox + F.doneBoard.x, oy + F.doneBoard.y, F.doneBoard.w, F.doneBoard.h);
       this.drawClock(ox + F.doneBoard.x + F.doneBoard.w + 12, oy + 15);
-      // The ticker: this week's done count and the next due task, right-aligned on the wall.
-      const tick = clip(sim.ticker, Math.floor(a.w / 4));
-      this.text(tick, ox + a.w - textWidth(tick) - 4, oy + 15, TEXT_DIM, 1, null);
 
       // Everything that stands on the floor, back to front.
       const items: Drawable[] = [];
@@ -233,7 +268,24 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
         });
       prop(this.atlas("coffee", () => COFFEE), F.coffee.x, F.coffee.y);
       prop(this.atlas("cooler", () => COOLER), F.cooler.x, F.cooler.y);
+      prop(this.atlas("bin", () => BIN), F.bin.x, F.bin.y);
       for (const p of F.plants) prop(this.atlas("plant", () => PLANT), p.x, p.y);
+      // Crumpled paper: high arcs in flight (tumbling as they go), flat ones the robot hasn't fetched.
+      for (const p of sim.papers) {
+        const f = p.state === "fly" ? Math.min(1, p.t / p.dur) : 1;
+        const arc = p.state === "fly" ? Math.sin(f * Math.PI) * p.arcH : 0;
+        const tumble = p.state === "fly" && (p.t >> 2) % 2 === 1;
+        items.push({
+          y: p.y + 0.6,
+          draw: () => {
+            // Tumbling: wide one frame, tall the next.
+            const w = tumble ? 2 : 3, h = tumble ? 3 : 2;
+            const sh = tumble ? "#c9c2b2" : "#efe8d6";
+            this.rect(ox + p.x - 1, oy + p.y - h - arc, w, h, sh);
+            if (!tumble) this.rect(ox + p.x - 1, oy + p.y - 1 - arc, 3, 1, "#c9c2b2");
+          },
+        });
+      }
       items.sort((p, q) => p.y - q.y);
       for (const it of items) it.draw();
 
@@ -282,15 +334,16 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
 
   private drawDoneBoard(x: number, y: number, w: number, h: number): void {
     const sim = this.sim;
-    const done = sim.projects.reduce((s, p) => s + p.doneThisWeek, 0);
+    const { done, overdue } = sim.boardStats;
+    const pop = this.sim.t - this.sim.boardPulse;
+    const popping = pop >= 0 && pop < 40;
     this.rect(x - 1, y - 1, w + 2, h + 2, "#7d8496");
     this.rect(x, y, w, h, "#f4f6fa");
     this.text("DONE", x + 3, y + 3, "#3f7a36", 1, null);
+    this.text("THIS WEEK", x + 3, y + 11, TEXT_DIM, 1, null);
     const n = `${done}`;
-    const pop = this.sim.t - this.sim.boardPulse;
-    const popping = pop >= 0 && pop < 40;
     this.text(n, x + w - textWidth(n, 2) - 3, y + 3 - (popping ? Math.round(3 * Math.sin((pop / 40) * Math.PI)) : 0), popping && pop % 8 < 4 ? "#ffb347" : "#3f7a36", 2, null);
-    this.text("THIS WEEK", x + 3, y + h - 7, TEXT_DIM, 1, null);
+    this.text(clip(`OVERDUE ${overdue}`, Math.floor((w - 6) / 4)), x + 3, y + h - 8, overdue > 0 ? "#d9483b" : TEXT_DIM, 1, null);
   }
 
   private drawClock(cx: number, cy: number): void {
@@ -359,6 +412,11 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     this.stack(m, x, y, ang, { k: z });
     // A working robot glows blue; a small tag says whose side it is on.
     if (r.active) this.circle(x, y - 12 * z, 3 * z, "#8fe0ff", 0.5 + 0.2 * Math.sin(this.sim.t / 9));
+    // A fetched ball rides overhead on the way to the bin.
+    if (r.carry) {
+      this.rect(x - 1, y - 14 * z, 3, 2, "#efe8d6");
+      this.rect(x - 1, y - 13 * z, 3, 1, "#c9c2b2");
+    }
     const label = r.active ? "AGENT" : "IDLE";
     this.text(label, x - Math.floor(textWidth(label) / 2), y - 11 * z - 7, r.active ? "#8fe0ff" : TEXT_DIM, 1, INK);
   }
@@ -447,6 +505,17 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       const x = Math.round(ox + d.cx - w / 2);
       this.rect(x, y - 1, w, 9, INK, 0.75 * fade);
       this.text(f.text, x + 4, y + 1, lerpHex(BG, f.color, fade), 1, null);
+    }
+    // Swishes: a ring and a label where a ball went in.
+    for (const pop of sim.pops) {
+      const age = sim.t - pop.t0;
+      if (age < 0 || age > 40) continue;
+      const f = age / 40;
+      this.circle(ox + pop.x, oy + pop.y - 4 - f * 8, 2 + f * 7, "#ffe066", 0.7 * (1 - f));
+      const w = textWidth("SWISH!") + 6;
+      this.rect(ox + pop.x - w / 2 + 1, oy + pop.y - 14 - f * 10 + 1, w, 9, INK, 0.5 * (1 - f));
+      this.rect(ox + pop.x - w / 2, oy + pop.y - 14 - f * 10, w, 9, "#f4f1e8");
+      this.text("SWISH!", ox + pop.x - w / 2 + 3, oy + pop.y - 12 - f * 10, INK, 1, null);
     }
     // Notes being written: a bubble with moving dots, and a pulse on the desk.
     for (const id of sim.writing) {
