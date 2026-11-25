@@ -575,7 +575,7 @@ export class TaskForceSim {
     for (const e of this.enemies) this.updEnemy(e);
     this.enemies = this.enemies.filter((e) => {
       if (e.hp <= 0) return false;
-      if (e.y > this.H + 24 || e.x < -30 || e.x > this.W + 30) {
+      if (e.y > this.H + 24 || e.y < this.hudTop - 36 || e.x < -30 || e.x > this.W + 30) {
         this.queue.push(e.task);
         this.addText("CARRIED OVER", clamp(e.x, 28, this.W - 28), this.H - 34 - this.hudBottom, "#ff9a6b", 60);
         this.events.push("carried");

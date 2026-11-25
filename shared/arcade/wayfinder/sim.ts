@@ -1497,7 +1497,7 @@ export class WayfinderSim {
       else if (this.rand() < 0.006) s.bolt = 8;
     }
 
-    if (this.clock >= DAY_FRAMES || (!this.crates.length && !this.boat.cargo.length && this.charted === this.islands.length)) {
+    if (this.clock >= DAY_FRAMES || (!this.crates.length && !this.boat.cargo.length && this.islands.every((is) => is.explored))) {
       this.state = "log";
       this.stateT = 0;
       this.steer = null;
