@@ -261,6 +261,8 @@ const WALK = 0.4;
 export const PRINT_FRAMES = 50;
 export const PARTY_FRAMES = 90;
 export const SAY_FRAMES = 160;
+/** Frames the big clock takes to zoom off the wall, or back onto it. */
+export const CLOCK_ZOOM = 12;
 const REPLIES = ["NICE!", "NO WAY", "HA!", "SAME", "WOW", "TOLD YOU"];
 const CLEANER_LINES = ["EVENING!", "MIND THE FLOOR", "ALL CLEAN", "LATE ONE?", "NIGHT NIGHT"];
 const CLEANER: Look = { shirt: "#4f7a4a", hair: "#9aa3b8", skin: "#d9a57a", style: "short" };
@@ -378,6 +380,9 @@ export class OfficeSim {
   decorDirty = false;
   /** The big pixel clock overlay (tap the wall clock). */
   clockOpen = false;
+  /** When the overlay opened and closed, for its zoom out of the wall clock and back. */
+  clockOpenedAt = -999;
+  clockClosedAt = -999;
   /** The overlay shows the time digital instead of analogue. */
   clockDigital = false;
   private wasNight = false;
@@ -483,9 +488,13 @@ export class OfficeSim {
     return { done: this.projects.reduce((s, p) => s + p.doneThisWeek, 0), overdue };
   }
 
-  /** The overlay panel, in screen coords (null when closed). Up to 300 px wide. */
+  /** The overlay's frame, in screen coords (null when closed). Up to 220 px wide. */
   clockPanel(): { x: number; y: number; w: number; h: number } | null {
-    if (!this.clockOpen) return null;
+    return this.clockOpen ? this.clockFrame() : null;
+  }
+
+  /** Where the overlay sits, open or not (it animates back to the wall after closing). */
+  clockFrame(): Rect {
     const a = this.area;
     const w = Math.min(220, Math.max(120, a.w - 16));
     const h = Math.min(a.h - 24, Math.round(w * 0.85));
@@ -498,6 +507,28 @@ export class OfficeSim {
     if (!p) return null;
     const w = Math.min(120, p.w - 24), h = 12;
     return { x: Math.round(p.x + (p.w - w) / 2), y: p.y + p.h - h - 4, w, h };
+  }
+
+  /** The wall clock's centre (floor coords): the flip clock is wider, so it hangs a little left of the bin. */
+  wallClockAt(): Pt {
+    const c = this.floor.clock;
+    return this.clockDigital ? { x: c.x - 6, y: c.y } : c;
+  }
+
+  /** Close the big clock: it shrinks back onto the wall. */
+  closeClock(): void {
+    this.clockOpen = false;
+    this.clockClosedAt = this.t;
+  }
+
+  /** True while the big clock is open or still flying back to the wall. */
+  get clockShown(): boolean {
+    return this.clockOpen || (!this.calm && this.t - this.clockClosedAt < CLOCK_ZOOM);
+  }
+
+  /** The time now, to the second (the overlay's second hand). */
+  get now(): Date {
+    return this.clock();
   }
 
   /** "WED 25 NOV" for the big clock overlay. */
@@ -1649,7 +1680,8 @@ export class OfficeSim {
     if (desk) return { k: "desk", desk };
     const F = this.floor;
     if (inRect(F.doneBoard, lx, ly)) return { k: "board" };
-    if (Math.abs(lx - F.clock.x) <= 9 && Math.abs(ly - F.clock.y) <= 9) return { k: "clock" };
+    const wc = this.wallClockAt();
+    if (Math.abs(lx - wc.x) <= (this.clockDigital ? 17 : 9) && Math.abs(ly - wc.y) <= 9) return { k: "clock" };
     if (Math.abs(lx - F.coffee.x) < 8 && ly > F.coffee.y - 26 && ly < F.coffee.y + 4) return { k: "coffee" };
     if (Math.abs(lx - F.cooler.x) < 7 && ly > F.cooler.y - 30 && ly < F.cooler.y + 4) return { k: "cooler" };
     if (Math.abs(lx - F.bin.x) < 7 && ly > F.bin.y - 12 && ly < F.bin.y + 4) return { k: "bin" };
@@ -1707,7 +1739,7 @@ export class OfficeSim {
     if (this.clockOpen) {
       const h = this.hit(x, y);
       if (h?.k === "clockMode") this.clockDigital = !this.clockDigital;
-      else this.clockOpen = false;
+      else this.closeClock();
       this.bubble = null;
       return;
     }
@@ -1754,6 +1786,7 @@ export class OfficeSim {
       case "clock":
         this.bubble = null;
         this.clockOpen = true;
+        this.clockOpenedAt = this.t;
         return;
       case "bubble":
         if (h.ref) this.open(h.ref);
@@ -1812,7 +1845,7 @@ export class OfficeSim {
     if (!down) return false;
     if (code === "Escape") {
       if (this.clockOpen) {
-        this.clockOpen = false;
+        this.closeClock();
         return true;
       }
       if (this.bubble || this.boardPanel) {

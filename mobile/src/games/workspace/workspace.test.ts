@@ -796,6 +796,23 @@ describe("the big clock", () => {
     expect(s.clockOpen).toBe(false);
   });
 
+  it("flies back to the wall on close, which keeps the face you picked", () => {
+    const s = make(office([project("a", [card("1", "doing")])]));
+    const c = clockAt(s);
+    s.down(c.x, c.y);
+    const t = s.clockToggleRect()!;
+    s.down(t.x + 2, t.y + 2);
+    s.down(10, 10);
+    expect(s.clockOpen).toBe(false);
+    // Still on screen while it shrinks back, then gone.
+    expect(s.clockShown).toBe(true);
+    for (let i = 0; i < 13; i++) s.step();
+    expect(s.clockShown).toBe(false);
+    // The wall clock is a flip clock now, a little wider to tap.
+    expect(s.clockDigital).toBe(true);
+    expect(s.hit(c.x + 11, c.y)).toMatchObject({ k: "clock" });
+  });
+
   it("names the date for the overlay", () => {
     expect(make().dateLine).toBe("WED 25 NOV");
   });
@@ -835,7 +852,14 @@ describe("the big clock", () => {
     const s = make(office([project("a", [card("1", "doing", "SAM")])]));
     const r = new OfficeRenderer(backend, s);
     s.clockOpen = true;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 20; i++) {
+      s.step();
+      r.draw();
+    }
+    // The flip clock too, through a minute change.
+    s.clockDigital = true;
+    for (let i = 0; i < 20; i++) {
+      if (i === 5) s.clockText = "11:31";
       s.step();
       r.draw();
     }

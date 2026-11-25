@@ -14,7 +14,7 @@ import { rgb } from "../pixel/terrain";
 import { CONTRACTOR, type OfficeCard } from "./data";
 import { COL_HEAD, type Desk, type Rect } from "./layout";
 import { buildDesk, buildPerson, BIN, CAT, CAT_ASLEEP, CHAIR, COFFEE, COOLER, deskKey, PLANTER_BUSH, PLANTER_TALL, PRINTER, ROBOT } from "./models";
-import { cleanerLook, lookKey, PARTY_FRAMES, PRINT_FRAMES, type Janitor, type OfficeSim, type Robot, type Worker } from "./sim";
+import { cleanerLook, CLOCK_ZOOM, lookKey, PARTY_FRAMES, PRINT_FRAMES, type Janitor, type OfficeSim, type Robot, type Worker } from "./sim";
 
 const BG = "#10131c";
 const WALL = "#3a4258";
@@ -45,6 +45,8 @@ const hashId = (s: string) => {
 };
 
 type Drawable = { y: number; draw: () => void };
+/** The flip clock's width on the wall. */
+const WALL_FLIP = 30;
 
 export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter<Img, Frame> {
   private readonly sim: OfficeSim;
@@ -215,54 +217,188 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     this.drawBoardPanel();
     this.drawHeader();
     this.drawFooter();
-    if (sim.clockOpen) this.drawClockOverlay();
+    if (sim.clockShown) this.drawClockOverlay();
     return this.snapshot();
   }
 
-  /** The big pixel clock: analogue or digital, the date under it, tap anywhere to close. */
+  /** The minute the flip clock last showed, and when its cards started turning. */
+  private flip: { from: string; to: string; t0: number } | null = null;
+
+  /**
+   * The big pixel clock: analogue or digital, the date under it, tap anywhere to close.
+   * No panel behind it: it floats over the dimmed room, lit from the top left like the room: a bevelled wooden bezel, a face sunk into it,
+   * hands and markers that cast shadows, a ticking second hand and glass over it all;
+   * or flip cards. It zooms out of the wall clock when it opens.
+   */
   private drawClockOverlay(): void {
     const sim = this.sim;
     const a = sim.area;
     const tap = sim.inputMode === "pointer" ? "CLICK" : "TAP";
-    const p = sim.clockPanel();
-    if (!p) return;
-    this.rect(a.x, a.y, a.w, a.h, INK, 0.78);
-    this.rect(p.x + 2, p.y + 2, p.w, p.h, INK, 0.5);
-    this.rect(p.x, p.y, p.w, p.h, "#f4f6fa");
-    this.rect(p.x, p.y, p.w, 2, "#ffffff");
+    const p = sim.clockFrame();
+    // Out of the wall clock as it opens, back onto the wall as it closes.
+    const e = sim.clockOpen
+      ? sim.calm ? 1 : Math.min(1, Math.max(0, sim.t - sim.clockOpenedAt) / CLOCK_ZOOM)
+      : 1 - Math.min(1, (sim.t - sim.clockClosedAt) / CLOCK_ZOOM);
+    if (e <= 0) return;
+    const ease = 1 - (1 - e) ** 3;
+    // No panel: the clock floats over the dimmed room on its own shadow.
+    this.rect(a.x, a.y, a.w, a.h, INK, 0.8 * ease);
     // Everything above the toggle is the face, with the date under it.
-    const r = Math.max(12, Math.min(Math.floor((p.w - 24) / 2), Math.floor((p.h - 38) / 2)));
-    const cx = p.x + Math.floor(p.w / 2), cy = p.y + 6 + r;
+    const R = Math.max(12, Math.min(Math.floor((p.w - 24) / 2), Math.floor((p.h - 38) / 2)));
+    const fx = p.x + Math.floor(p.w / 2), fy = p.y + 6 + R;
+    // Zoom out of the wall clock: from its spot and size to the middle of the panel.
+    const wall = sim.wallClockAt();
+    const wx = sim.sx(wall.x), wy = sim.sy(wall.y);
+    const cx = Math.round(wx + (fx - wx) * ease), cy = Math.round(wy + (fy - wy) * ease);
+    const r = Math.max(6, Math.round(7 + (R - 7) * ease));
     if (sim.clockDigital) {
-      const time = sim.clockText;
-      const k = Math.max(3, Math.floor((p.w - 24) / textWidth(time)));
-      this.text(time, Math.round(cx - textWidth(time, k) / 2), Math.round(cy - 2.5 * k), "#1d2232", k, null);
-    } else {
-      const [hh, mm] = sim.clockText.split(":").map(Number);
-      this.circle(cx, cy, r + 1, "#20273a");
-      this.circle(cx, cy, r - 1, "#ffffff");
-      for (let i = 0; i < 12; i++) {
-        const t = (i / 12) * Math.PI * 2;
-        const size = i % 3 === 0 ? 3 : 1;
-        this.rect(Math.round(cx + Math.cos(t) * (r - 5) - size / 2), Math.round(cy + Math.sin(t) * (r - 5) - size / 2), size, size, "#20273a");
-      }
-      const ma = (mm / 60) * Math.PI * 2 - Math.PI / 2;
-      const ha = (((hh % 12) + mm / 60) / 12) * Math.PI * 2 - Math.PI / 2;
-      for (let o = 0; o < 2; o++) {
-        this.line(cx + o, cy, Math.round(cx + o + Math.cos(ma) * (r - 9)), Math.round(cy + Math.sin(ma) * (r - 9)), INK);
-        this.line(cx + o, cy, Math.round(cx + o + Math.cos(ha) * Math.round(r * 0.5)), Math.round(cy + Math.sin(ha) * Math.round(r * 0.5)), "#d9483b");
-      }
-      this.circle(cx, cy, 2, "#20273a");
+      const W = Math.min(p.w - 24, 200);
+      this.drawFlipClock(cx, cy, Math.round(WALL_FLIP + (W - WALL_FLIP) * ease), Math.round(9 + (R * 2 - 15) * ease));
     }
+    else this.drawAnalogue(cx, cy, r);
+    // The room's light falls on it too: a little monitor-blue at night.
+    if (!sim.clockDigital && sim.gloom > 0) this.circle(cx, cy, r + 2, "#1e3a8a", 0.14 * sim.gloom);
+    if (e < 1) return;
     const date = sim.dateLine;
-    this.text(date, Math.round(cx - textWidth(date) / 2), cy + r + 5, TEXT_DIM, 1, null);
+    this.text(date, Math.round(fx - textWidth(date) / 2), fy + R + 6, TEXT, 1, INK);
     const t = sim.clockToggleRect();
-    if (t) {
-      const label = sim.clockDigital ? "ANALOGUE" : "DIGITAL";
-      this.button(t, label, false);
-    }
+    if (t) this.button(t, sim.clockDigital ? "ANALOGUE" : "DIGITAL", false);
     const hint = `${tap} OUTSIDE TO CLOSE`;
     this.text(clip(hint, 36), Math.round(p.x + (p.w - textWidth(clip(hint, 36))) / 2), p.y + p.h + 6, TEXT, 1, null);
+  }
+
+  private drawAnalogue(cx: number, cy: number, r: number): void {
+    const sim = this.sim;
+    const now = sim.now;
+    const hh = now.getHours(), mm = now.getMinutes(), ss = now.getSeconds();
+    // Hung off the panel: a soft shadow down and to the right.
+    this.circle(cx + 3, cy + 4, r + 2, INK, 0.22);
+    this.circle(cx + 2, cy + 2, r + 2, INK, 0.18);
+    // A wooden bezel, bevelled: lit edge top-left, dark edge bottom-right.
+    this.circle(cx, cy, r + 2, "#20273a");
+    this.circle(cx + 1, cy + 1, r + 1, "#4e3420");
+    this.circle(cx - 1, cy - 1, r + 1, "#d4a874");
+    this.circle(cx, cy, r, "#9a6c44");
+    // The face sits below the bezel, which shades its top-left inside edge.
+    const f = Math.max(4, r - Math.max(3, Math.round(r / 9)));
+    this.circle(cx, cy, f, "#2c2418");
+    this.circle(cx, cy, f, "#f4f1e8");
+    this.circle(cx, cy, f, INK, 0.2);
+    this.circle(cx + 2, cy + 2, f - 1, "#f4f1e8");
+    // Markers: raised blocks at 12, 3, 6 and 9, dots between, each with a shadow.
+    const big = Math.max(2, Math.round(f / 10));
+    for (let i = 0; i < 12; i++) {
+      const t = (i / 12) * Math.PI * 2;
+      const size = i % 3 === 0 ? big + 1 : Math.max(1, big - 1);
+      const mx = Math.round(cx + Math.cos(t) * (f - 4 - big) - size / 2), my = Math.round(cy + Math.sin(t) * (f - 4 - big) - size / 2);
+      this.rect(mx + 1, my + 1, size, size, INK, 0.25);
+      this.rect(mx, my, size, size, i % 3 === 0 ? "#20273a" : "#5a6079");
+    }
+    // The hands, each lifted above the face: shadow first, then the hand.
+    const hand = (ang: number, len: number, width: number, color: string, tail = 0) => {
+      const dx = Math.cos(ang), dy = Math.sin(ang);
+      const draw = (ox: number, oy: number, c: string, alpha: number) => {
+        for (let o = 0; o < width; o++) {
+          // Thicken across the hand, not along it.
+          const px = Math.round(-dy * (o - (width - 1) / 2)), py = Math.round(dx * (o - (width - 1) / 2));
+          this.line(Math.round(cx - dx * tail) + px + ox, Math.round(cy - dy * tail) + py + oy, Math.round(cx + dx * len) + px + ox, Math.round(cy + dy * len) + py + oy, c, alpha);
+        }
+      };
+      draw(2, 2, INK, 0.22);
+      draw(0, 0, color, 1);
+    };
+    const ha = (((hh % 12) + mm / 60) / 12) * Math.PI * 2 - Math.PI / 2;
+    const ma = ((mm + ss / 60) / 60) * Math.PI * 2 - Math.PI / 2;
+    // The second hand ticks, overshooting a touch and settling back.
+    const frac = now.getMilliseconds() / 1000;
+    const kick = sim.calm || frac > 0.18 ? 0 : 0.35 * Math.sin((frac / 0.18) * Math.PI);
+    const sa = ((ss + kick) / 60) * Math.PI * 2 - Math.PI / 2;
+    const thick = Math.max(2, Math.round(f / 14));
+    hand(ha, Math.round(f * 0.5), thick + 1, "#20273a");
+    hand(ma, Math.round(f * 0.78), thick, "#20273a");
+    hand(sa, Math.round(f * 0.86), 1, "#d9483b", Math.round(f * 0.18));
+    // A domed cap over the hands' pivot.
+    this.circle(cx, cy, thick + 1, "#20273a");
+    this.circle(cx, cy, Math.max(1, thick), "#d9483b");
+    this.rect(cx - 1, cy - 1, 1, 1, "#ffb3a8");
+    // Glass: a soft sheen and a bright glint across the top left.
+    this.circle(Math.round(cx - f * 0.35), Math.round(cy - f * 0.38), Math.round(f * 0.42), "#ffffff", 0.1);
+    for (let i = 0; i < 9; i++) {
+      const t = Math.PI * (1.08 + i * 0.045);
+      this.rect(Math.round(cx + Math.cos(t) * (f - 3)), Math.round(cy + Math.sin(t) * (f - 3)), 2, 1, "#ffffff", 0.55 - i * 0.04);
+    }
+  }
+
+  /** Flip cards for HH:MM: lighter top halves, a split line and hinges, each card on its own shadow. */
+  private drawFlipClock(cx: number, cy: number, W: number, maxH: number): void {
+    const sim = this.sim;
+    const time = sim.clockText;
+    // A changed minute turns the cards that changed.
+    if (!this.flip || this.flip.to !== time) this.flip = { from: this.flip?.to ?? time, to: time, t0: sim.t };
+    const turn = sim.calm ? 1 : Math.min(1, (sim.t - this.flip.t0) / 14);
+    const digits = time.replace(":", "").split("");
+    const old = this.flip.from.replace(":", "").split("");
+    // Everything scales with the width, from the wall's 22px up to the overlay's 200.
+    const s = Math.min(1, W / 200);
+    const colon = Math.max(2, Math.round(8 * s));
+    const gap = Math.max(1, Math.round(3 * s));
+    const inner = Math.max(1, Math.round(3 * s));
+    const cw = Math.max(4, Math.floor((W - colon - gap * 2 - inner * 2) / 4));
+    const ch = Math.max(6, Math.min(Math.round(cw * 1.45), maxH));
+    // The digit fills about two thirds of its card.
+    const k = Math.max(1, Math.min(Math.floor((cw * 0.66) / textWidth("8")), Math.floor((ch * 0.66) / 5)));
+    const sh = W < 60 ? 1 : 2;
+    const total = cw * 4 + inner * 2 + gap * 2 + colon;
+    let x = Math.round(cx - total / 2);
+    const y = Math.round(cy - ch / 2);
+    const card = (cx0: number, d: string, prev: string) => {
+      const mid = y + Math.floor(ch / 2);
+      this.rect(cx0 + sh, y + sh + 1, cw, ch, INK, 0.35);
+      const face = (dd: string, top: boolean, y0: number, h: number) =>
+        this.clip(cx0, y0, cw, h, () => {
+          this.rect(cx0, y, cw, ch, top ? "#323b52" : "#262d40");
+          this.text(dd, Math.round(cx0 + (cw - textWidth(dd, k)) / 2), Math.round(y + (ch - 5 * k) / 2), "#f4f6fa", k, null);
+        });
+      const flipping = turn < 1 && d !== prev;
+      // Settled halves: the new top, and the bottom still old until the flap lands.
+      face(d, true, y, mid - y);
+      face(flipping && turn < 0.5 ? prev : d, false, mid, y + ch - mid);
+      if (flipping) {
+        if (turn < 0.5) {
+          // The old top folds down toward the hinge.
+          const h = Math.max(1, Math.round((mid - y) * (1 - turn * 2)));
+          face(prev, true, mid - h, h);
+          this.rect(cx0, mid - h, cw, 1, "#ffffff", 0.25);
+        } else {
+          // The new bottom falls open below it.
+          const h = Math.max(1, Math.round((y + ch - mid) * (turn - 0.5) * 2));
+          face(d, false, mid, h);
+          this.rect(cx0, mid + h - 1, cw, 1, INK, 0.4);
+        }
+      }
+      this.rect(cx0, y, cw, 1, "#4a5370");
+      // At 1× the hinge line would land on the digit's middle row and turn an 8 into a 0.
+      if (k > 1) this.rect(cx0, mid, cw, 1, "#10131c");
+      if (cw >= 10) {
+        this.rect(cx0 - 1, mid - 1, 2, 3, "#8a93a8");
+        this.rect(cx0 + cw - 1, mid - 1, 2, 3, "#8a93a8");
+      }
+    };
+    for (let i = 0; i < 4; i++) {
+      card(x, digits[i] ?? "0", old[i] ?? digits[i] ?? "0");
+      x += cw + (i === 1 ? gap + colon + gap : inner);
+      if (i === 1) {
+        // The colon blinks with the seconds.
+        const on = sim.calm || sim.now.getSeconds() % 2 === 0;
+        const dot = Math.max(1, Math.round(k * 0.8));
+        const colonX = x - gap - colon + Math.floor((colon - dot) / 2);
+        for (const dy of [-1, 1]) {
+          const dyy = Math.round(y + ch / 2 + dy * ch * 0.18 - dot / 2);
+          this.rect(colonX + 1, dyy + 1, dot, dot, INK, 0.3);
+          this.rect(colonX, dyy, dot, dot, on ? "#e8ecf4" : "#5a6079");
+        }
+      }
+    }
   }
 
   // ── The week wall (calendar mode) ──────────────────────────────────
@@ -319,7 +455,8 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       this.rect(ox, oy + F.wall.h, a.w, 3, INK, 0.25);
       F.windows.forEach((w, i) => this.drawWindow(ox + w.x, oy + w.y, w.w, w.h, day, sim.blinds.has(i)));
       this.drawDoneBoard(ox + F.doneBoard.x, oy + F.doneBoard.y, F.doneBoard.w, F.doneBoard.h);
-      this.drawClock(ox + F.clock.x, oy + F.clock.y);
+      // Off the wall while the big clock is out (it is the same clock).
+      if (!sim.clockShown) this.drawClock(ox + F.clock.x, oy + F.clock.y);
       this.drawLightSwitch(ox + F.lightSwitch.x, oy + F.lightSwitch.y, F.lightSwitch.w, F.lightSwitch.h);
 
       // Everything that stands on the floor, back to front.
@@ -487,7 +624,16 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     this.text(clip(`OVERDUE ${overdue}`, Math.floor((w - 6) / 4)), x + 3, y + h - 8, overdue > 0 ? "#d9483b" : TEXT_DIM, 1, null);
   }
 
+  /** The wall clock: a small round one, or a small flip clock once you've picked the digital face. */
   private drawClock(cx: number, cy: number): void {
+    if (this.sim.clockDigital) {
+      const x = cx - 6;
+      this.rect(x - 16, cy - 7, 34, 16, INK, 0.35);
+      this.rect(x - 17, cy - 8, 34, 15, "#20273a");
+      this.rect(x - 17, cy - 8, 34, 1, "#4a5370");
+      this.drawFlipClock(x, cy, WALL_FLIP, 9);
+      return;
+    }
     const [hh, mm] = this.sim.clockText.split(":").map(Number);
     this.circle(cx, cy, 7, "#20273a");
     this.circle(cx, cy, 6, "#f4f6fa");

@@ -243,7 +243,8 @@ export function layoutFloor(projects: readonly OfficeProject[], w: number, h: nu
     let x = from + Math.floor((span - (n * ww + (n - 1) * gap)) / 2);
     for (let i = 0; i < n; i++, x += ww + gap) windows.push({ x, y: 6, w: ww, h: 20 });
   };
-  fitWindows(12, clock.x - 10);
+  // Room for the clock as a small flip clock too (34px wide, hung a little left of the bin).
+  fitWindows(12, clock.x - 26);
   fitWindows(doneBoard.x + doneBoard.w + 6, w - 10);
   // Planters in front of the windows (the corner plant first), then in the gaps along the wall.
   const slots: number[] = [];
