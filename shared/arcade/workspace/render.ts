@@ -209,13 +209,18 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       for (const w of F.windows) this.drawWindow(ox + w.x, oy + w.y, w.w, w.h, day);
       this.drawDoneBoard(ox + F.doneBoard.x, oy + F.doneBoard.y, F.doneBoard.w, F.doneBoard.h);
       this.drawClock(ox + F.doneBoard.x + F.doneBoard.w + 12, oy + 15);
+      // The ticker: this week's done count and the next due task, right-aligned on the wall.
+      const tick = clip(sim.ticker, Math.floor(a.w / 4));
+      this.text(tick, ox + a.w - textWidth(tick) - 4, oy + 15, TEXT_DIM, 1, null);
 
       // Everything that stands on the floor, back to front.
       const items: Drawable[] = [];
       for (const d of F.desks) this.queueDesk(items, d, ox, oy);
-      for (const w of sim.workers.values()) {
-        if (!sim.deskFor(w)) continue;
-        items.push({ y: w.y + (w.mode === "sit" ? 0 : 0.5), draw: () => this.drawWorker(w, ox, oy) });
+      if (!sim.night) {
+        for (const w of sim.workers.values()) {
+          if (!sim.deskFor(w)) continue;
+          items.push({ y: w.y + (w.mode === "sit" ? 0 : 0.5), draw: () => this.drawWorker(w, ox, oy) });
+        }
       }
       if (sim.robot) items.push({ y: sim.robot.y + 0.5, draw: () => this.drawRobot(sim.robot, ox, oy) });
       const prop = (m: AtlasHandle<Img>, x: number, y: number) =>

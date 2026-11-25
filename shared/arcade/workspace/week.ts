@@ -37,6 +37,13 @@ export function toDateKey(d: Date): string {
 
 const DOW = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
+/** "FRI" for "2026-11-27", "?" when the key isn't a date. */
+export function dayShort(key: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  if (!m) return "?";
+  return DOW[new Date(+m[1], +m[2] - 1, +m[3]).getDay()];
+}
+
 /** The Sunday-start week containing `anchor`, as midnight-local dates. */
 export function weekDates(anchor: Date): Date[] {
   const start = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() - anchor.getDay());

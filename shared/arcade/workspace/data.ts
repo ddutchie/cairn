@@ -52,6 +52,8 @@ export interface OfficeProject {
   notes: OfficeNote[];
   /** Cards finished in the last seven days: the done cabinet shows the count. */
   doneThisWeek: number;
+  /** Cards finished ever (done columns): decor milestones, not a score. */
+  doneTotal: number;
 }
 
 export interface OfficeData {
@@ -114,6 +116,7 @@ export const DEMO_OFFICE: OfficeData = {
       name: "LAUNCH",
       accent: ACCENTS[0],
       doneThisWeek: 7,
+      doneTotal: 23,
       cards: [
         demoCard("l1", "PRICING PAGE COPY", "doing", "SAM", "high"),
         demoCard("l2", "PRESS KIT", "doing", "SAM"),
@@ -132,6 +135,7 @@ export const DEMO_OFFICE: OfficeData = {
       name: "MOBILE APP",
       accent: ACCENTS[2],
       doneThisWeek: 3,
+      doneTotal: 14,
       cards: [
         demoCard("a1", "OFFLINE SYNC", "doing", "KIM", "high"),
         demoCard("a2", "WIDGETS", "doing", "LEE"),
@@ -147,6 +151,7 @@ export const DEMO_OFFICE: OfficeData = {
       name: "RESEARCH",
       accent: ACCENTS[4],
       doneThisWeek: 1,
+      doneTotal: 4,
       cards: [demoCard("r1", "INTERVIEW 5 USERS", "doing", "ADA"), demoCard("r2", "SYNTHESIS", "backlog", null)],
       notes: [demoNote("rn1", "INTERVIEW GUIDE"), demoNote("rn2", "FINDINGS"), demoNote("rn3", "PERSONAS"), demoNote("rn4", "COMPETITORS"), demoNote("rn5", "READING LIST")],
     },

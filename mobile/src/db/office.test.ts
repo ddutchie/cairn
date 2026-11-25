@@ -59,6 +59,7 @@ describe("loadOfficeData", () => {
   it("counts a recently-touched done card for the done board", () => {
     const { office } = loadOfficeData(new Date(NOW));
     expect(office.projects.find((p) => p.id === "p1")!.doneThisWeek).toBe(1);
+    expect(office.projects.find((p) => p.id === "p1")!.doneTotal).toBe(1);
   });
 
   it("changes its fingerprint when the workspace changes", () => {

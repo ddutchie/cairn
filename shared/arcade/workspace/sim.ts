@@ -16,7 +16,7 @@ import { mulberry32 } from "../pixel/terrain";
 import { CONTRACTOR, DEMO_OFFICE, type OfficeData, type OfficeProject } from "./data";
 import { burstLabel, diffOffice, FLURRY, groupChanges, type Burst, type OfficeChange } from "./events";
 import { inRect, layoutDesk, layoutFloor, layoutWeek, route, type Desk, type DeskTab, type DeskView, type FloorLayout, type Pt, type Rect, type Ref, type WeekView } from "./layout";
-import { bucketWeek, type WeekDay } from "./week";
+import { bucketWeek, dayShort, toDateKey, type WeekDay } from "./week";
 
 export interface OfficeSpec {
   width: number;
@@ -26,6 +26,8 @@ export interface OfficeSpec {
   office?: OfficeData;
   best?: number;
   seed?: number;
+  /** Previously unlocked decor (host-persisted); new unlocks set decorDirty. */
+  decor?: string[];
   /** Wall-clock source for the clock and daylight (tests pass a fixed one). */
   clock?: () => Date;
 }
@@ -124,6 +126,11 @@ export const AGENT_WINDOW = 120;
 const HEADER = 13;
 const FX_CAP = 24;
 const FRESH_FRAMES = 150;
+/** Done cards that earn a project its plant (kept once unlocked). */
+export const PLANT_MILESTONE = 10;
+/** Extra plants on the floor, at most (two corners are always there). */
+const MAX_EXTRA_PLANTS = 6;
+const plantId = (projectId: string) => `plant:${projectId}`;
 const KIND_COLOR: Record<OfficeChange["k"], string> = {
   "task.added": "#7cc46a",
   "task.moved": "#5b8dd6",
@@ -192,6 +199,11 @@ export class OfficeSim {
   intents = new Map<string, number>();
   /** Ids whose change followed an intent: shown with the agent colour. For tests and hosts. */
   agentMade = new Set<string>();
+  /** Unlocked decor ids (`plant:<projectId>`); the host persists these. */
+  decor = new Set<string>();
+  /** Set when a refresh unlocks new decor; the host saves `decor` and clears it. */
+  decorDirty = false;
+  private wasNight = false;
   hover: Hover | null = null;
   bubble: Bubble | null = null;
   events: OfficeEvent[] = [];
@@ -228,7 +240,35 @@ export class OfficeSim {
     this.data = spec.office && spec.office.projects.length ? spec.office : DEMO_OFFICE;
     this.rnd = mulberry32(spec.seed ?? 7);
     this.clock = spec.clock ?? (() => new Date());
+    this.decor = new Set(spec.decor ?? []);
     this.tickClock();
+    this.layout();
+    this.wasNight = this.night;
+  }
+
+  /** After hours the office is empty: everyone went home (the robot keeps working). */
+  get night(): boolean {
+    return this.daylight <= 0;
+  }
+
+  /** The wall ticker: this week's done count and the next due task. Derived, never stored. */
+  get ticker(): string {
+    const done = this.projects.reduce((s, p) => s + p.doneThisWeek, 0);
+    const today = toDateKey(this.clock());
+    let next: { key: string; title: string } | null = null;
+    for (const p of this.projects) {
+      for (const c of p.cards) {
+        if (!c.dueKey || c.dueKey < today) continue;
+        if (!next || c.dueKey < next.key) next = { key: c.dueKey, title: c.title };
+      }
+    }
+    return next ? `${done} DONE THIS WEEK · NEXT ${dayShort(next.key)} ${next.title}` : `${done} DONE THIS WEEK · NOTHING DUE`;
+  }
+
+  /** Replace the unlocked decor (host load / workspace switch) and re-lay the floor. */
+  setDecor(ids: string[]): void {
+    this.decor = new Set(ids);
+    this.decorDirty = false;
     this.layout();
   }
 
@@ -365,7 +405,8 @@ export class OfficeSim {
 
   layout(): void {
     const a = this.area;
-    this.floor = layoutFloor(this.projects, a.w, a.h, this.page);
+    const extra = this.syncDecor();
+    this.floor = layoutFloor(this.projects, a.w, a.h, this.page, extra);
     this.page = this.floor.page;
     const p = this.focused;
     this.view = p ? layoutDesk(p, this.deskArea, this.notesPage) : null;
@@ -406,35 +447,48 @@ export class OfficeSim {
   private syncWorkers(): void {
     const key = `${this.floor.w}x${this.floor.h}p${this.page}`;
     const live = new Set<string>();
-    for (const d of this.floor.desks) {
-      const places: [string | null, "seat" | "side"][] = [
-        [d.holder, "seat"],
-        [d.visitor, "side"],
-      ];
-      for (const [holder, spot] of places) {
-        if (!holder) continue;
-        live.add(holder);
-        const home = spot === "seat" ? d.seat : d.side;
-        let w = this.workers.get(holder);
-        if (!w) {
-          w = { holder, look: lookFor(holder), desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", timer: this.sitTime(), homeward: false, dx: 0, dy: -1, layoutKey: key };
-          this.workers.set(holder, w);
-        }
-        const moved = w.desk !== d.index || w.spot !== spot;
-        if (w.layoutKey !== key) {
-          Object.assign(w, { desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", homeward: false, layoutKey: key, dx: 0, dy: -1 });
-        } else if (moved) {
-          // Their work moved to another desk: walk over.
-          const from = this.nearestDesk(w) ?? d;
-          w.desk = d.index;
-          w.spot = spot;
-          w.path = route(w, home, from, d);
-          w.mode = "walk";
-          w.homeward = true;
+    if (!this.night) {
+      for (const d of this.floor.desks) {
+        const places: [string | null, "seat" | "side"][] = [
+          [d.holder, "seat"],
+          [d.visitor, "side"],
+        ];
+        for (const [holder, spot] of places) {
+          if (!holder) continue;
+          live.add(holder);
+          const home = spot === "seat" ? d.seat : d.side;
+          let w = this.workers.get(holder);
+          if (!w) {
+            w = { holder, look: lookFor(holder), desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", timer: this.sitTime(), homeward: false, dx: 0, dy: -1, layoutKey: key };
+            this.workers.set(holder, w);
+          }
+          const moved = w.desk !== d.index || w.spot !== spot;
+          if (w.layoutKey !== key) {
+            Object.assign(w, { desk: d.index, spot, x: home.x, y: home.y, path: [], mode: spot === "seat" ? "sit" : "stay", homeward: false, layoutKey: key, dx: 0, dy: -1 });
+          } else if (moved) {
+            // Their work moved to another desk: walk over.
+            const from = this.nearestDesk(w) ?? d;
+            w.desk = d.index;
+            w.spot = spot;
+            w.path = route(w, home, from, d);
+            w.mode = "walk";
+            w.homeward = true;
+          }
         }
       }
     }
     for (const k of [...this.workers.keys()]) if (!live.has(k)) this.workers.delete(k);
+  }
+
+  /** Mint plants for projects past the done milestone; returns the floor's extra plant count. */
+  private syncDecor(): number {
+    for (const p of this.projects) {
+      if (p.doneTotal >= PLANT_MILESTONE && !this.decor.has(plantId(p.id))) {
+        this.decor.add(plantId(p.id));
+        this.decorDirty = true;
+      }
+    }
+    return Math.min(MAX_EXTRA_PLANTS, this.decor.size);
   }
 
   /** Where the robot docks: beside the water cooler, out of the walkways. */
@@ -526,6 +580,11 @@ export class OfficeSim {
   step(): void {
     this.t++;
     if (this.t % 60 === 0) this.tickClock();
+    const night = this.night;
+    if (night !== this.wasNight) {
+      this.wasNight = night;
+      this.syncWorkers();
+    }
     if (this.opened && this.t - this.opened.t > 40) this.opened = null;
     if (this.fx.length) this.fx = this.fx.filter((f) => this.t - f.t0 < f.life + f.delay);
     if (this.fresh.size) for (const [id, t] of this.fresh) if (this.t - t > FRESH_FRAMES) this.fresh.delete(id);
@@ -678,7 +737,10 @@ export class OfficeSim {
       if (lx >= r.x - 6 * k && lx <= r.x + 6 * k && ly >= r.y - 22 * k && ly <= r.y + 2) return { k: "robot" };
     }
     // Workers first (they stand in front of desks), nearest the viewer first.
-    const ws = [...this.workers.values()].filter((w) => this.deskFor(w)).sort((a, b) => b.y - a.y);
+    // At night everyone went home; the robot still answers.
+    const ws = this.night
+      ? []
+      : [...this.workers.values()].filter((w) => this.deskFor(w)).sort((a, b) => b.y - a.y);
     for (const w of ws) {
       const k = this.floor.zoom / 2;
       const tall = (w.mode === "sit" ? 10 : 24) * k;

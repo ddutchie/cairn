@@ -10,7 +10,7 @@ import { layoutDesk, layoutFloor, pileHeight, route, staff } from "@cairn/shared
 import { OfficeRenderer } from "@cairn/shared/arcade/workspace/render";
 import { daylightAt, OfficeSim } from "@cairn/shared/arcade/workspace/sim";
 import { burstLabel, diffOffice, FLURRY, groupChanges } from "@cairn/shared/arcade/workspace/events";
-import { bucketWeek, toDateKey, weekDates } from "@cairn/shared/arcade/workspace/week";
+import { bucketWeek, dayShort, toDateKey, weekDates } from "@cairn/shared/arcade/workspace/week";
 
 const NOW = new Date(2026, 10, 25, 11, 30);
 const clock = () => NOW;
@@ -38,6 +38,7 @@ const project = (id: string, cards: OfficeCard[], notes = 0): OfficeProject => (
   cards,
   notes: Array.from({ length: notes }, (_, i) => ({ id: `${id}-n${i}`, title: `NOTE ${i}`, pinned: i === 0 })),
   doneThisWeek: 0,
+  doneTotal: 0,
 });
 
 const office = (projects: OfficeProject[]): OfficeData => ({ workspace: "TEST", projects, demo: false });
@@ -87,6 +88,7 @@ describe("building the office from the workspace", () => {
 
   it("counts only this week's done cards, and skips archived ones", () => {
     expect(o.projects[0].doneThisWeek).toBe(1);
+    expect(o.projects[0].doneTotal).toBe(2);
     expect(o.projects[0].cards.map((c) => c.id)).not.toContain("g");
   });
 
@@ -538,6 +540,8 @@ describe("the week wall", () => {
     ]);
     const { days } = bucketWeek([], today());
     expect(days.filter((d) => d.isWeekend).map((d) => d.key)).toEqual(["2026-11-22", "2026-11-28"]);
+    expect(dayShort("2026-11-27")).toBe("FRI");
+    expect(dayShort("nope")).toBe("?");
   });
 });
 
@@ -583,8 +587,7 @@ describe("calendar mode", () => {
     expect(s.weekView).toBeNull();
   });
 
-  it("draws the week wall without throwing", () => {
-    const backend: PixelBackend<unknown, number> = {
+  it("draws the week wall without throwing", () => {    const backend: PixelBackend<unknown, number> = {
       createSurface(width, height): PixelSurface<unknown, number> {
         let w = width, h = height;
         return {
@@ -609,5 +612,58 @@ describe("calendar mode", () => {
     }
     s.move(s.calBtn.x + 1, s.calBtn.y + 1);
     expect(s.hover?.text).toMatch(/OFFICE/);
+  });
+});
+
+describe("idle polish", () => {
+  const noon = () => new Date(2026, 10, 25, 11, 30);
+  const night = () => new Date(2026, 10, 25, 3, 0);
+  const dated = (id: string, dueKey: string | null): OfficeCard => ({ ...card(id, "backlog"), dueKey });
+  const at = (clock: () => Date, cards: OfficeCard[] = [card("1", "doing", "SAM")]) =>
+    new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: office([project("a", cards)]), clock, seed: 3 });
+
+  it("sends everyone home at night and brings them back by day", () => {
+    let now = night();
+    const s = at(() => now);
+    expect(s.night).toBe(true);
+    expect(s.workers.size).toBe(0);
+    expect(s.robot).toBeDefined();
+    // Nobody to click at night; the robot still answers.
+    expect(s.hit(s.sx(s.robot.x), s.sy(s.robot.y) - 4)).toMatchObject({ k: "robot" });
+    now = noon();
+    for (let i = 0; i < 61; i++) s.step();
+    expect(s.night).toBe(false);
+    expect(s.workers.size).toBeGreaterThan(0);
+  });
+
+  it("runs the wall ticker off done counts and the next due task", () => {
+    const s = at(noon, [dated("today", "2026-11-26"), dated("old", "2026-11-20")]);
+    expect(s.ticker).toBe("0 DONE THIS WEEK · NEXT THU TODAY");
+    const empty = at(noon, [dated("none", null)]);
+    expect(empty.ticker).toBe("0 DONE THIS WEEK · NOTHING DUE");
+  });
+
+  it("unlocks a plant per finished-ten project and keeps it", () => {
+    const ps = [project("a", []), project("b", [])];
+    ps[0].doneTotal = 12;
+    const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: office(ps), clock: noon, seed: 3 });
+    expect(s.decor.has("plant:a")).toBe(true);
+    expect(s.decor.has("plant:b")).toBe(false);
+    expect(s.decorDirty).toBe(true);
+    expect(s.floor.plants).toHaveLength(3);
+    // The host persists and hands it back; nothing new unlocks after that.
+    s.setDecor([...s.decor]);
+    expect(s.decorDirty).toBe(false);
+    s.setData(office(ps));
+    expect(s.decorDirty).toBe(false);
+    expect(s.floor.plants).toHaveLength(3);
+  });
+
+  it("caps the milestone plants at six extra", () => {
+    const ps = Array.from({ length: 10 }, (_, i) => project(`p${i}`, []));
+    for (const p of ps) p.doneTotal = 30;
+    const s = new OfficeSim({ width: 480, height: 320, hud: NO_HUD, inputMode: "pointer", office: office(ps), clock: noon, seed: 3 });
+    expect(s.decor.size).toBe(10);
+    expect(s.floor.plants).toHaveLength(8);
   });
 });

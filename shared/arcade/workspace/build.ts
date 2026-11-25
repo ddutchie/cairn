@@ -51,10 +51,12 @@ export function buildOffice(src: OfficeSource): OfficeData {
     const cards: OfficeCard[] = [];
     const order = new Map<string, number>();
     let doneThisWeek = 0;
+    let doneTotal = 0;
     for (const c of src.cards) {
       if (c.projectId !== p.id || c.archivedAt) continue;
       const z = zone.get(c.columnId) ?? "backlog";
       if (z === "done") {
+        doneTotal++;
         const at = c.completedAt ? Date.parse(c.completedAt) : NaN;
         if (Number.isFinite(at) && now.getTime() - at < WEEK_MS) doneThisWeek++;
         continue;
@@ -79,7 +81,7 @@ export function buildOffice(src: OfficeSource): OfficeData {
       .sort((a, b) => Number(b.isPinned) - Number(a.isPinned) || b.updatedAt.localeCompare(a.updatedAt))
       .map((n) => ({ id: n.id, title: officeTitle(n.title), pinned: n.isPinned, rev: n.updatedAt }));
     const columns: OfficeColumn[] = (byProject.get(p.id) ?? []).map((c) => ({ id: c.id, name: officeTitle(c.name) || "COLUMN", zone: zone.get(c.id) ?? "backlog" }));
-    projects.push({ id: p.id, name: officeTitle(p.name), accent: "", columns, cards, notes, doneThisWeek });
+    projects.push({ id: p.id, name: officeTitle(p.name), accent: "", columns, cards, notes, doneThisWeek, doneTotal });
   }
   // Busiest rooms first; colours follow that order so a room keeps its colour while the order holds.
   projects.sort((a, b) => b.cards.length + b.notes.length - (a.cards.length + a.notes.length));

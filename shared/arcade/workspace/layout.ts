@@ -128,7 +128,7 @@ export function staff(projects: readonly OfficeProject[]): { holder: string | nu
   return out;
 }
 
-export function layoutFloor(projects: readonly OfficeProject[], w: number, h: number, page: number): FloorLayout {
+export function layoutFloor(projects: readonly OfficeProject[], w: number, h: number, page: number, extraPlants = 0): FloorLayout {
   w = Math.max(160, Math.floor(w));
   h = Math.max(150, Math.floor(h));
   const floorTop = WALL_H + 10;
@@ -183,6 +183,10 @@ export function layoutFloor(projects: readonly OfficeProject[], w: number, h: nu
     { x: left - 6, y: h - 6 },
     { x: right + 6, y: h - 6 },
   ];
+  // Milestone plants line the bottom edge, alternating inward from the corners.
+  for (let i = 0; i < Math.max(0, Math.min(6, Math.floor(extraPlants))); i++) {
+    plants.push(i % 2 ? { x: right - 18 - Math.floor(i / 2) * 24, y: h - 6 } : { x: left + 18 + Math.floor(i / 2) * 24, y: h - 6 });
+  }
   const firstAisle = desks.length ? desks[0].aisleY - stepY : floorTop + 6;
   const top = { aisleY: Math.max(floorTop + 6, firstAisle), laneX: left };
   const spots = [
