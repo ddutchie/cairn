@@ -1,12 +1,10 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { NativeTabs } from "expo-router/native-tabs";
-import { BarChart3, Network, RefreshCw, Sun, Users } from "lucide-react-native";
 import { WORKSPACE_TOOLS, liveLine, type ToolId } from "@/lib/workspace-tools";
 import { showAccessoryMenu } from "@/lib/pin-menu";
+import { ToolIcon } from "@/components/tool-icons";
 import { useTheme, type as typeScale } from "@/theme";
-
-const ICONS: Record<ToolId, typeof Users> = { today: Sun, people: Users, graph: Network, usage: BarChart3, sync: RefreshCw };
 
 /**
  * The tool the user pinned from the Workspace tab, shown above the tab bar.
@@ -19,7 +17,6 @@ export function PinnedAccessory({ tool }: { tool: ToolId }) {
   const router = useRouter();
   const placement = NativeTabs.BottomAccessory.usePlacement();
   const meta = WORKSPACE_TOOLS[tool];
-  const Icon = ICONS[tool];
   return (
     <Pressable
       style={s.root}
@@ -29,7 +26,7 @@ export function PinnedAccessory({ tool }: { tool: ToolId }) {
       accessibilityLabel={`${meta.title}, ${liveLine(tool)}`}
       accessibilityHint="Press and hold to change or hide"
     >
-      <Icon size={18} color={t.accent} />
+      <ToolIcon tool={tool} size={18} color={t.accent} />
       <View style={s.text}>
         <Text style={[typeScale.control, { color: t.textPrimary }]} numberOfLines={1}>{meta.title}</Text>
         {placement === "inline" ? null : (

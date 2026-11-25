@@ -3,8 +3,8 @@ import type { BoardColumn, TaskCard } from "@cairn/shared/types/board";
 import type { Note } from "@cairn/shared/types/notes";
 import type { Project, Tag } from "@cairn/shared/types/workspace";
 import { buildArcadeData, interleave } from "./data";
-import { BW, fitBricksToWidth, type Brick } from "./games/breakout";
-import { fontSafe } from "./pixel/kit";
+import { BW, fitBricksToWidth, type Brick } from "@cairn/shared/arcade/breakout/sim";
+import { fontSafe } from "@cairn/shared/arcade/pixel/font";
 
 const TS = "2026-11-24T10:00:00.000Z";
 
@@ -66,6 +66,27 @@ describe("arcade PR review fixes", () => {
     expect(n1.links).toEqual(["n9"]);
     const p2 = data.projects.find((p) => p.id === "p2")!;
     expect(p2.tasks[2].dueScope).toBe("later");
+  });
+
+  it("lists every live task and note in liveIds, past the per-project caps", () => {
+    const cards = [
+      ...Array.from({ length: 15 }, (_, i) => makeCard(`c${i}`, "p1", `Task ${i}`)),
+      makeCard("q1", "p2", "Other task"),
+    ];
+    const notes = Array.from({ length: 10 }, (_, i) => makeNote(`n${i}`, "p1", `Note ${i}`));
+    const data = buildArcadeData({
+      projects: [makeProject("p1", "Alpha"), makeProject("p2", "Beta")],
+      columns: [makeCol("p1-col", "p1"), makeCol("p2-col", "p2")],
+      cards,
+      tags: [],
+      notes,
+      workspaceId: "ws",
+    });
+    expect(data.demo).toBe(false);
+    const p1 = data.projects.find((p) => p.id === "p1")!;
+    expect(p1.tasks.length).toBeLessThan(15);
+    expect(p1.notes.length).toBeLessThan(10);
+    expect(new Set(data.liveIds)).toEqual(new Set([...cards.map((c) => c.id), ...notes.map((n) => n.id)]));
   });
 
   it("caps interleave at 64 labels", () => {

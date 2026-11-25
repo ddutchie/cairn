@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
-import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
+import { Stack, useRouter, useFocusEffect, useIsFocused, type Href } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, listUnindexedNotes, listUnindexedCards, type NoteRow, type CardRow, type UnindexedNote } from "@/db/queries";
 import { ResultRow } from "@/components/ResultRow";
@@ -45,7 +45,25 @@ export default function SearchScreen() {
   // Wide iOS windows drop the "Search" title (like Chat) and dock the header
   // items into the side rail via Stack.Toolbar. The native search field stays —
   // only the title row collapses. Same threshold as every other wide layout.
-  const wideBar = Platform.OS === "ios" && width >= WIDE_MIN_WIDTH;
+  const wideNow = Platform.OS === "ios" && width >= WIDE_MIN_WIDTH;
+  // Switch the header between headerRight and the rail toolbar only while this
+  // screen is showing. Folding or unfolding the iPhone Duo under a modal (a
+  // pixel game) would otherwise swap them while covered, and the native header
+  // keeps an empty pill instead of the rail items when the modal closes. After
+  // a modal, wait for its dismissal to finish: the header ignores updates made
+  // while its controller is still presenting.
+  const focused = useIsFocused();
+  const [wideBar, setWideBar] = useState(wideNow);
+  const wasCovered = useRef(false);
+  useEffect(() => {
+    if (!focused) { wasCovered.current = true; return; }
+    if (wideBar === wideNow) { wasCovered.current = false; return; }
+    const id = setTimeout(() => {
+      wasCovered.current = false;
+      setWideBar(wideNow);
+    }, wasCovered.current ? 450 : 0);
+    return () => clearTimeout(id);
+  }, [focused, wideNow, wideBar]);
   const [query, setQuery] = useState("");
   // Semantic ranking on by default when available; the header ✨ toggles it.
   const [semanticMode, setSemanticMode] = useState(semanticAvailable);

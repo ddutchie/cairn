@@ -1,10 +1,10 @@
-import { useRef, useState, type ReactNode } from "react";
-import { View, Text, Image, Pressable, StyleSheet, Platform, ActionSheetIOS, Alert } from "react-native";
+import { useRef, type ReactNode } from "react";
+import { View, Text, Image, Pressable, StyleSheet } from "react-native";
 import Constants from "expo-constants";
-import { BreakoutGame } from "@/components/BreakoutGame";
-import { StackerGame } from "@/components/StackerGame";
+import { useRouter } from "expo-router";
 import { haptics } from "@/haptics";
 import { useCreaseClearance } from "@/lib/use-fold";
+import { unlockArcade } from "@/lib/workspace-tools";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 const APP_VERSION = Constants.expoConfig?.version ?? "";
@@ -13,15 +13,13 @@ const APP_VERSION = Constants.expoConfig?.version ?? "";
 const CAIRN_ICON = require("../../assets/splashIcon.png");
 
 // Easter egg: tap the Cairn icon this many times within the window to reveal the
-// hidden mini-games menu (Breakout / Cairn stacker).
+// Cairn Arcade, the hidden mini-games (Task Force / Cairn stacker / Breakout).
 const EGG_TAPS = 5;
 
 /** The scaffold's own padding on every side (see `styles.root`). */
 const ROOT_PADDING = 32;
 const EGG_WINDOW_MS = 3000;
 
-/** Which hidden mini-game is currently open (null = none). */
-type EggGame = "breakout" | "stacker" | null;
 
 /**
  * Shared empty-state scaffold used across tabs (Search, Projects, Graph, …).
@@ -83,34 +81,14 @@ export function EmptyState({
   const effectiveAlign = pinned ? "top" : align;
   const effectiveBias = pinned ? topBias ?? "25%" : topBias;
 
-  // Easter egg: 5 quick taps on the Cairn icon reveals a hidden mini-games menu
-  // (Breakout, or the on-brand Cairn stacker). Picking one opens it full-screen.
-  const [game, setGame] = useState<EggGame>(null);
+  // Easter egg: 5 quick taps on the Cairn icon opens the Cairn Arcade, a
+  // pixel-art picker for the hidden games (Task Force, Stacker, Breakout).
+  const router = useRouter();
   const tapTimes = useRef<number[]>([]);
   const openEggMenu = () => {
-    haptics.success(); // celebratory buzz as the secret menu reveals
-    const games: { label: string; value: Exclude<EggGame, null> }[] = [
-      { label: "Cairn Stacker", value: "stacker" },
-      { label: "Breakout", value: "breakout" },
-    ];
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: "You found a secret",
-          message: "Pick a hidden mini-game.",
-          options: [...games.map((g) => g.label), "Cancel"],
-          cancelButtonIndex: games.length,
-        },
-        (i) => {
-          if (i >= 0 && i < games.length) setGame(games[i].value);
-        },
-      );
-      return;
-    }
-    Alert.alert("You found a secret", "Pick a hidden mini-game.", [
-      ...games.map((g) => ({ text: g.label, onPress: () => setGame(g.value) })),
-      { text: "Cancel", style: "cancel" as const },
-    ]);
+    haptics.success(); // celebratory buzz as the secret reveals
+    unlockArcade(); // from now on the games are Workspace tools too
+    router.push("/arcade");
   };
   const onIconTap = () => {
     const now = Date.now();
@@ -165,9 +143,6 @@ export function EmptyState({
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         {children ? <View style={styles.action}>{children}</View> : null}
       </View>
-
-      <BreakoutGame visible={game === "breakout"} onClose={() => setGame(null)} />
-      <StackerGame visible={game === "stacker"} onClose={() => setGame(null)} />
     </View>
   );
 }

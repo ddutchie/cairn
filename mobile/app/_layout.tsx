@@ -30,8 +30,25 @@ export { RouteErrorBoundary as ErrorBoundary };
 
 // Keep the native splash up until the DB is ready, so there's no flash between
 // the splash and the first screen. Fade it out for a smooth handoff.
-SplashScreen.preventAutoHideAsync().catch(() => {});
+SplashScreen.preventAutoHideAsync().catch(() => { });
 SplashScreen.setOptions({ duration: 300, fade: true });
+
+/** Routes of the hidden pixel games (EmptyState's secret menu). */
+const PIXEL_GAME_ROUTES = ["arcade", "task-force", "wayfinder", "inbox-zero", "stacker", "breakout", "basecamp", "tideglass", "powder-run", "angler"] as const;
+const PIXEL_GAME_OPTIONS = {
+  title: "",
+  // Over full screen, not fullScreenModal: a full-screen modal takes the tabs
+  // out of the window, so folding or unfolding the iPhone Duo mid-game never
+  // reaches them and they come back with the side rail gone (no tab bar, the
+  // toolbar left horizontal). Kept in the window underneath, they relayout
+  // with the fold. The game paints every pixel, so nothing shows through.
+  presentation: "transparentModal",
+  headerTransparent: true,
+  headerStyle: { backgroundColor: "transparent" },
+  headerShadowVisible: false,
+  scrollEdgeEffects: { top: "hidden", bottom: "hidden", left: "hidden", right: "hidden" },
+  contentStyle: { backgroundColor: "#0a0f1e" },
+} as const;
 
 export default function RootLayout() {
   const t = useTheme();
@@ -115,7 +132,7 @@ export default function RootLayout() {
   // Hide the native splash once we've either loaded or hit an error, so the
   // splash never lingers past the point the UI is ready to show.
   useEffect(() => {
-    if (ready || error) SplashScreen.hideAsync().catch(() => {});
+    if (ready || error) SplashScreen.hideAsync().catch(() => { });
   }, [ready, error]);
 
   // Escape hatch for a local DB that won't open: drop this phone's copy of the
@@ -266,6 +283,12 @@ function RootNavigator({
       <Stack.Screen name="attendee-picker" options={{ title: "Add attendees", presentation: "modal", contentStyle: cardStyle }} />
       {/* Settings is one modal with its own stack (app/settings/_layout.tsx): hub, AI, tools, appearance, sync. */}
       <Stack.Screen name="settings" options={{ headerShown: false, presentation: "modal", contentStyle: cardStyle }} />
+      {/* The hidden pixel games: full-bleed under a transparent bar, so their
+          Close item floats over the game (in the side rail on the Duo). Each game
+          draws its own backdrop; no side padding means it runs under the rail. */}
+      {PIXEL_GAME_ROUTES.map((name) => (
+        <Stack.Screen key={name} name={name} options={{ ...PIXEL_GAME_OPTIONS, contentStyle: { backgroundColor } }} />
+      ))}
       <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
       <Stack.Screen name="restore" options={{ title: "Deleted Notes" }} />
       {/* Native iOS sheets for the contextual pickers (tags, move,

@@ -42,6 +42,8 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:electron": "npm run compile && playwright test -c playwright.electron.config.ts",
+    "arcade:play": "node scripts/arcade-play/serve.mjs",
+    "arcade:bench": "node scripts/arcade-play/bench.mjs",
     "screenshots": "playwright test -c playwright.screenshots.config.ts",
     "screenshots:update": "playwright test -c playwright.screenshots.config.ts",
     "screenshots:electron": "npm run compile && node --experimental-strip-types scripts/capture-screenshots.ts",

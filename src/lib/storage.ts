@@ -20,12 +20,15 @@ export const storage = {
     }
   },
 
-  set<T>(key: string, value: T): void {
-    if (typeof window === "undefined") return;
+  /** False when the write failed (storage full or blocked), so a caller can keep the change and retry. */
+  set<T>(key: string, value: T): boolean {
+    if (typeof window === "undefined") return false;
     try {
       localStorage.setItem(PREFIX + key, JSON.stringify(value));
+      return true;
     } catch (e) {
       console.error("[cairn:storage] write error", e);
+      return false;
     }
   },
 

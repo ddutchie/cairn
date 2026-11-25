@@ -6,9 +6,12 @@ import { getMeta, setMeta } from "@/db";
 import { loadPeople, loadTeams } from "@/db/people";
 import { loadLocalToday } from "@/lib/local-today";
 import { localTodayLine } from "@cairn/shared/today/local";
+import { CARTRIDGES, type ArcadeGameId } from "@cairn/shared/arcade/menu";
 
 /** Where the Workspace tab sends you, and what the pinned accessory can show. */
-export type ToolId = "today" | "people" | "graph" | "usage" | "sync";
+type BaseToolId = "today" | "people" | "graph" | "usage" | "sync";
+/** The arcade and its games join the tools once the arcade is unlocked. */
+export type ToolId = BaseToolId | "arcade" | ArcadeGameId;
 
 export interface WorkspaceTool {
   id: ToolId;
@@ -18,7 +21,22 @@ export interface WorkspaceTool {
   blurb: string;
 }
 
+const titleCase = (s: string) => s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
+const sentenceCase = (s: string) => (s.charAt(0) + s.slice(1).toLowerCase()).replace(/\b3d\b/g, "3D");
+
+/** The arcade picker, then every game, in menu order. */
+export const ARCADE_TOOLS: ToolId[] = ["arcade", ...CARTRIDGES.map((c) => c.id)];
+type ToolSymbol = "sun.max" | "person.2" | "point.3.connected.trianglepath.dotted" | "chart.bar" | "arrow.triangle.2.circlepath" | "gamecontroller";
+
+const BEST_KEY = new Map<string, string>(CARTRIDGES.map((c) => [c.id, c.bestKey]));
+
+export const isArcadeTool = (id: ToolId): boolean => ARCADE_TOOLS.includes(id);
+
 export const WORKSPACE_TOOLS: Record<ToolId, WorkspaceTool> = {
+  arcade: { id: "arcade", title: "Arcade", href: "/arcade" as Href, blurb: "Your workspace as pixel games" },
+  ...(Object.fromEntries(
+    CARTRIDGES.map((c) => [c.id, { id: c.id, title: titleCase(c.name), href: `/${c.id}` as Href, blurb: sentenceCase(c.blurb) }]),
+  ) as Record<ArcadeGameId, WorkspaceTool>),
   today: { id: "today", title: "Today", href: "/workspace/today" as Href, blurb: "What needs you today" },
   people: { id: "people", title: "People", href: "/workspace/people" as Href, blurb: "Who you work with, and their teams" },
   graph: { id: "graph", title: "Knowledge graph", href: "/workspace/graph" as Href, blurb: "Projects, notes and tasks as a map" },
@@ -31,6 +49,9 @@ export const ACCESSORY_HEIGHT = 56;
 
 export const PINNABLE: ToolId[] = ["today", "people", "graph", "usage"];
 
+/** The workspace tools, plus the arcade's once it is unlocked (a pin can only be set from a visible row). */
+export const isPinnable = (id: string): id is ToolId => (PINNABLE as string[]).includes(id) || (ARCADE_TOOLS as string[]).includes(id);
+
 /** One live line for a tool, or its blurb when there is nothing to count. Cheap, synchronous SQLite. */
 export function liveLine(id: ToolId): string {
   try {
@@ -40,6 +61,11 @@ export function liveLine(id: ToolId): string {
       const teams = loadTeams().length;
       const p = `${people} ${people === 1 ? "person" : "people"}`;
       return teams > 0 ? `${p}, ${teams} ${teams === 1 ? "team" : "teams"}` : p;
+    }
+    const bestKey = BEST_KEY.get(id);
+    if (bestKey) {
+      const best = parseInt(getMeta(bestKey) ?? "", 10);
+      if (best > 0) return `Best ${best.toLocaleString()} · ${WORKSPACE_TOOLS[id].blurb}`;
     }
   } catch {
     // The DB may not be ready; fall back to the blurb.
@@ -60,7 +86,7 @@ function read(): ToolId | null {
     } catch {
       v = null;
     }
-    cache = v && (PINNABLE as string[]).includes(v) ? (v as ToolId) : null;
+    cache = v && isPinnable(v) ? v : null;
   }
   return cache;
 }
@@ -98,13 +124,53 @@ export function usePinnedToolForRail(): ToolId | null {
   return showRail ? pinned : null;
 }
 
-export const TOOL_SYMBOL = {
+export const TOOL_SYMBOL: Record<ToolId, ToolSymbol> = {
   today: "sun.max",
   people: "person.2",
   graph: "point.3.connected.trianglepath.dotted",
   usage: "chart.bar",
   sync: "arrow.triangle.2.circlepath",
-} as const satisfies Record<ToolId, string>;
+  arcade: "gamecontroller",
+  ...(Object.fromEntries(CARTRIDGES.map((c) => [c.id, "gamecontroller"])) as Record<ArcadeGameId, ToolSymbol>),
+};
+
+// Five taps on the Cairn icon unlock the arcade; from then on its games are Workspace tools.
+const ARCADE_KEY = "arcade.unlocked";
+const arcadeListeners = new Set<() => void>();
+let arcadeCache: boolean | undefined;
+
+function readArcade(): boolean {
+  if (arcadeCache === undefined) {
+    try {
+      arcadeCache = getMeta(ARCADE_KEY) === "1";
+    } catch {
+      arcadeCache = false;
+    }
+  }
+  return arcadeCache;
+}
+
+export function unlockArcade(): void {
+  if (readArcade()) return;
+  arcadeCache = true;
+  try {
+    setMeta(ARCADE_KEY, "1");
+  } catch {
+    // Not persisted; unlocked for this session.
+  }
+  arcadeListeners.forEach((l) => l());
+}
+
+export function useArcadeUnlocked(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      arcadeListeners.add(cb);
+      return () => arcadeListeners.delete(cb);
+    },
+    readArcade,
+    readArcade,
+  );
+}
 
 function useAccessoryContext(): { showAccessory: boolean; showRail: boolean } {
   const pathname = usePathname();

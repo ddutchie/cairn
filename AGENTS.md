@@ -48,6 +48,8 @@ npm run compile         # rebuilds dist-electron/ + dist-mcp/mcp-server.bundle.j
 npm run type-check:all  # type-check renderer + electron (always run after changes)
 ```
 
+Arcade games (`shared/arcade/`) can be played, profiled and screenshotted in a browser with `npm run arcade:play` — see [`docs/arcade-play.md`](docs/arcade-play.md). To add a game, follow [`docs/arcade-new-game.md`](docs/arcade-new-game.md).
+
 esbuild is stricter than tsc — backticks inside template literals must be unescaped at the template level. Use `import * as z from "zod"` (not `import { z }`) in all Electron files.
 
 **Pull requests:** GitHub's default template (`.github/PULL_REQUEST_TEMPLATE.md`) is the desktop one. For changes under `mobile/`, use `.github/PULL_REQUEST_TEMPLATE/mobile.md` instead — pass its contents with `gh pr create --body-file`, or open the PR with `?template=mobile.md`. GitHub cannot choose a template by changed path.
