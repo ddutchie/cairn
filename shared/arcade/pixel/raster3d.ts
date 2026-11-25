@@ -23,7 +23,15 @@ export interface Tri3D {
 
 export interface Mesh3D {
   tris: Tri3D[];
+  /** Bounding sphere in mesh space (centre on the Z axis), for culling whole meshes. */
+  cz: number;
+  rad: number;
+  /** Half-resolution stand-in, drawn when the mesh is small on screen. */
+  lod?: Mesh3D;
 }
+
+/** Below this projected radius (framebuffer pixels) a mesh draws its `lod`. */
+export const LOD_PX = 14;
 
 export interface Cam3D {
   ex: number; ey: number; ez: number;
@@ -90,72 +98,141 @@ export function screenRay(c: Cam3D, sx: number, sy: number): { origin: Vec3; dir
   return { origin: { x: c.ex, y: c.ey, z: c.ez }, dir: { x: dx / l, y: dy / l, z: dz / l } };
 }
 
-/** Convert a Cairn `Model` (stacked voxel slices) into a culled, shaded 3D mesh. */
+/**
+ * Convert a Cairn `Model` (stacked voxel slices) into a culled, shaded 3D mesh.
+ * Visible faces of the same colour that touch on one plane merge into a single
+ * rectangle (greedy meshing), so a prop costs tens of triangles, not hundreds.
+ */
 export function meshFromModel(m: Model, scale = 1.6, zScale = scale): Mesh3D {
-  const tris: Tri3D[] = [];
-  const hw = m.w * 0.5, hd = m.d * 0.5;
-  const at = (x: number, y: number, z: number): [number, number, number] | null => {
-    if (x < 0 || y < 0 || z < 0 || x >= m.w || y >= m.d || z >= m.h) return null;
-    const o = (y * m.w + x) * 4;
+  const W = m.w, D = m.d, H = m.h;
+  // Packed 0xRRGGBB + 1 per voxel, 0 = empty.
+  const vox = new Int32Array(W * D * H);
+  for (let z = 0; z < H; z++) {
     const buf = m.layers[z];
-    if (buf[o + 3] < 128) return null;
-    return [buf[o], buf[o + 1], buf[o + 2]];
+    for (let i = 0; i < W * D; i++) {
+      const o = i * 4;
+      if (buf[o + 3] >= 128) vox[z * W * D + i] = ((buf[o] << 16) | (buf[o + 1] << 8) | buf[o + 2]) + 1;
+    }
+  }
+  const mesh = meshVoxels(vox, W, D, H, scale, zScale);
+  if (mesh.tris.length > 96 && W > 4 && D > 4 && H > 4) {
+    const half = halveVoxels(vox, W, D, H);
+    const lod = meshVoxels(half.vox, half.w, half.d, half.h, scale * (W / half.w), zScale * (H / half.h));
+    if (lod.tris.length < mesh.tris.length * 0.7) mesh.lod = lod;
+  }
+  return mesh;
+}
+
+/**
+ * Halve a voxel grid: each 2×2×2 block becomes one voxel when at least half of
+ * it is solid, coloured by its most common colour.
+ */
+function halveVoxels(vox: Int32Array, W: number, D: number, H: number): { vox: Int32Array; w: number; d: number; h: number } {
+  const w = Math.ceil(W / 2), d = Math.ceil(D / 2), h = Math.ceil(H / 2);
+  const out = new Int32Array(w * d * h);
+  const keys: number[] = [], counts: number[] = [];
+  for (let z = 0; z < h; z++) for (let y = 0; y < d; y++) for (let x = 0; x < w; x++) {
+    keys.length = counts.length = 0;
+    let solid = 0;
+    for (let k = 0; k < 8; k++) {
+      const X = x * 2 + (k & 1), Y = y * 2 + ((k >> 1) & 1), Z = z * 2 + (k >> 2);
+      if (X >= W || Y >= D || Z >= H) continue;
+      const v = vox[(Z * D + Y) * W + X];
+      if (!v) continue;
+      solid++;
+      const i = keys.indexOf(v);
+      if (i < 0) { keys.push(v); counts.push(1); } else counts[i]++;
+    }
+    if (solid < 4) continue;
+    let best = 0;
+    for (let i = 1; i < keys.length; i++) if (counts[i] > counts[best]) best = i;
+    out[(z * d + y) * w + x] = keys[best];
+  }
+  return { vox: out, w, d, h };
+}
+
+function meshVoxels(vox: Int32Array, W: number, D: number, H: number, scale: number, zScale: number): Mesh3D {
+  const tris: Tri3D[] = [];
+  const hw = W * 0.5, hd = D * 0.5;
+  const at = (x: number, y: number, z: number): number =>
+    x < 0 || y < 0 || z < 0 || x >= W || y >= D || z >= H ? 0 : vox[(z * D + y) * W + x];
+
+  const X = (x: number) => (x - hw) * scale, Y = (y: number) => (y - hd) * scale, Z = (z: number) => z * zScale;
+  const emit = (p: number[], key: number, shade: number) => {
+    const c = key - 1;
+    const r = clamp(Math.round(((c >> 16) & 255) * shade), 0, 255);
+    const g = clamp(Math.round(((c >> 8) & 255) * shade), 0, 255);
+    const b = clamp(Math.round((c & 255) * shade), 0, 255);
+    tris.push({ ax: p[0], ay: p[1], az: p[2], bx: p[3], by: p[4], bz: p[5], cx: p[6], cy: p[7], cz: p[8], r, g, b });
+    tris.push({ ax: p[0], ay: p[1], az: p[2], bx: p[6], by: p[7], bz: p[8], cx: p[9], cy: p[10], cz: p[11], r, g, b });
   };
 
-  const quad = (
-    p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3,
-    r: number, g: number, b: number, shade: number,
+  /**
+   * One face direction: for each slice, mask the visible faces by colour, then
+   * cover the mask with rectangles. `corners(slice, u0, u1, v0, v1)` returns
+   * the quad in the same winding the single-voxel face used.
+   */
+  const sweep = (
+    slices: number, nu: number, nv: number,
+    face: (s: number, u: number, v: number) => number,
+    corners: (s: number, u0: number, u1: number, v0: number, v1: number) => number[],
+    shade: number,
   ) => {
-    const cr = clamp(Math.round(r * shade), 0, 255);
-    const cg = clamp(Math.round(g * shade), 0, 255);
-    const cb = clamp(Math.round(b * shade), 0, 255);
-    tris.push({
-      ax: p0.x, ay: p0.y, az: p0.z,
-      bx: p1.x, by: p1.y, bz: p1.z,
-      cx: p2.x, cy: p2.y, cz: p2.z,
-      r: cr, g: cg, b: cb,
-    });
-    tris.push({
-      ax: p0.x, ay: p0.y, az: p0.z,
-      bx: p2.x, by: p2.y, bz: p2.z,
-      cx: p3.x, cy: p3.y, cz: p3.z,
-      r: cr, g: cg, b: cb,
-    });
-  };
-
-  for (let z = 0; z < m.h; z++) {
-    const z0 = z * zScale, z1 = (z + 1) * zScale;
-    for (let y = 0; y < m.d; y++) {
-      const y0 = (y - hd) * scale, y1 = (y + 1 - hd) * scale;
-      for (let x = 0; x < m.w; x++) {
-        const col = at(x, y, z);
-        if (!col) continue;
-        const x0 = (x - hw) * scale, x1 = (x + 1 - hw) * scale;
-        const [r, g, b] = col;
-        // +Z top
-        if (!at(x, y, z + 1)) {
-          quad({ x: x0, y: y0, z: z1 }, { x: x1, y: y0, z: z1 }, { x: x1, y: y1, z: z1 }, { x: x0, y: y1, z: z1 }, r, g, b, 1.06);
-        }
-        // -Y north (facing camera when looking south)
-        if (!at(x, y - 1, z)) {
-          quad({ x: x0, y: y0, z: z0 }, { x: x1, y: y0, z: z0 }, { x: x1, y: y0, z: z1 }, { x: x0, y: y0, z: z1 }, r, g, b, 0.92);
-        }
-        // +Y south
-        if (!at(x, y + 1, z)) {
-          quad({ x: x1, y: y1, z: z0 }, { x: x0, y: y1, z: z0 }, { x: x0, y: y1, z: z1 }, { x: x1, y: y1, z: z1 }, r, g, b, 0.72);
-        }
-        // -X west
-        if (!at(x - 1, y, z)) {
-          quad({ x: x0, y: y1, z: z0 }, { x: x0, y: y0, z: z0 }, { x: x0, y: y0, z: z1 }, { x: x0, y: y1, z: z1 }, r, g, b, 0.84);
-        }
-        // +X east
-        if (!at(x + 1, y, z)) {
-          quad({ x: x1, y: y0, z: z0 }, { x: x1, y: y1, z: z0 }, { x: x1, y: y1, z: z1 }, { x: x1, y: y0, z: z1 }, r, g, b, 0.78);
+    const mask = new Int32Array(nu * nv);
+    for (let sl = 0; sl < slices; sl++) {
+      for (let v = 0; v < nv; v++) for (let u = 0; u < nu; u++) mask[v * nu + u] = face(sl, u, v);
+      for (let v = 0; v < nv; v++) {
+        for (let u = 0; u < nu; ) {
+          const key = mask[v * nu + u];
+          if (!key) { u++; continue; }
+          let du = 1;
+          while (u + du < nu && mask[v * nu + u + du] === key) du++;
+          let dv = 1;
+          grow: while (v + dv < nv) {
+            for (let k = 0; k < du; k++) if (mask[(v + dv) * nu + u + k] !== key) break grow;
+            dv++;
+          }
+          for (let j = 0; j < dv; j++) mask.fill(0, (v + j) * nu + u, (v + j) * nu + u + du);
+          emit(corners(sl, u, u + du, v, v + dv), key, shade);
+          u += du;
         }
       }
     }
-  }
-  return { tris };
+  };
+
+  const vis = (x: number, y: number, z: number, nx: number, ny: number, nz: number): number => {
+    const k = at(x, y, z);
+    return k && !at(x + nx, y + ny, z + nz) ? k : 0;
+  };
+  // +Z top (u = x, v = y)
+  sweep(H, W, D, (z, x, y) => vis(x, y, z, 0, 0, 1),
+    (z, x0, x1, y0, y1) => [X(x0), Y(y0), Z(z + 1), X(x1), Y(y0), Z(z + 1), X(x1), Y(y1), Z(z + 1), X(x0), Y(y1), Z(z + 1)], 1.06);
+  // -Y north (u = x, v = z)
+  sweep(D, W, H, (y, x, z) => vis(x, y, z, 0, -1, 0),
+    (y, x0, x1, z0, z1) => [X(x0), Y(y), Z(z0), X(x1), Y(y), Z(z0), X(x1), Y(y), Z(z1), X(x0), Y(y), Z(z1)], 0.92);
+  // +Y south
+  sweep(D, W, H, (y, x, z) => vis(x, y, z, 0, 1, 0),
+    (y, x0, x1, z0, z1) => [X(x1), Y(y + 1), Z(z0), X(x0), Y(y + 1), Z(z0), X(x0), Y(y + 1), Z(z1), X(x1), Y(y + 1), Z(z1)], 0.72);
+  // -X west (u = y, v = z)
+  sweep(W, D, H, (x, y, z) => vis(x, y, z, -1, 0, 0),
+    (x, y0, y1, z0, z1) => [X(x), Y(y1), Z(z0), X(x), Y(y0), Z(z0), X(x), Y(y0), Z(z1), X(x), Y(y1), Z(z1)], 0.84);
+  // +X east
+  sweep(W, D, H, (x, y, z) => vis(x, y, z, 1, 0, 0),
+    (x, y0, y1, z0, z1) => [X(x + 1), Y(y0), Z(z0), X(x + 1), Y(y1), Z(z0), X(x + 1), Y(y1), Z(z1), X(x + 1), Y(y0), Z(z1)], 0.78);
+
+  const cz = (H * zScale) / 2;
+  const rad = Math.hypot(hw * scale, hd * scale, cz);
+  return { tris, cz, rad };
+}
+
+/**
+ * Render size for a 3D view shown at `w × h` game pixels: the same aspect,
+ * scaled to about `budget` pixels so cost doesn't depend on the screen's
+ * shape (a tall folded phone and a wide unfolded Duo cost the same).
+ */
+export function fbSizeFor(w: number, h: number, budget = 48_000): { w: number; h: number } {
+  const k = Math.min(1, Math.sqrt(budget / Math.max(1, w * h)));
+  return { w: Math.max(96, Math.round(w * k)), h: Math.max(72, Math.round(h * k)) };
 }
 
 interface ClipV {
@@ -208,23 +285,27 @@ export class Framebuffer3D {
     r: number, g: number, b: number,
     doubleSided = false,
   ): void {
-    const p0 = worldToCam(cam, ax, ay, az);
-    const p1 = worldToCam(cam, bx, by, bz);
-    const p2 = worldToCam(cam, cx, cy, cz);
+    // World to camera space, inline (no per-vertex objects on the hot path).
+    let dx = ax - cam.ex, dy = ay - cam.ey, dz = az - cam.ez;
+    const x0 = dx * cam.rx + dy * cam.ry + dz * cam.rz, y0 = dx * cam.ux + dy * cam.uy + dz * cam.uz, z0 = dx * cam.fx + dy * cam.fy + dz * cam.fz;
+    dx = bx - cam.ex; dy = by - cam.ey; dz = bz - cam.ez;
+    const x1 = dx * cam.rx + dy * cam.ry + dz * cam.rz, y1 = dx * cam.ux + dy * cam.uy + dz * cam.uz, z1 = dx * cam.fx + dy * cam.fy + dz * cam.fz;
+    dx = cx - cam.ex; dy = cy - cam.ey; dz = cz - cam.ez;
+    const x2 = dx * cam.rx + dy * cam.ry + dz * cam.rz, y2 = dx * cam.ux + dy * cam.uy + dz * cam.uz, z2 = dx * cam.fx + dy * cam.fy + dz * cam.fz;
 
     const near = cam.near;
     const far = cam.far;
-    if (p0.z < near && p1.z < near && p2.z < near) return;
-    if (p0.z > far && p1.z > far && p2.z > far) return;
+    if (z0 < near && z1 < near && z2 < near) return;
+    if (z0 > far && z1 > far && z2 > far) return;
 
     // Fast path: all 3 vertices in front of near plane.
-    if (p0.z >= near && p1.z >= near && p2.z >= near) {
-      this.rasterCamTri(cam, p0, p1, p2, r, g, b, doubleSided);
+    if (z0 >= near && z1 >= near && z2 >= near) {
+      this.rasterCamTri(cam, x0, y0, z0, x1, y1, z1, x2, y2, z2, r, g, b, doubleSided);
       return;
     }
 
     // Sutherland-Hodgman clip against z >= near.
-    const pts: ClipV[] = [p0, p1, p2];
+    const pts: ClipV[] = [{ x: x0, y: y0, z: z0 }, { x: x1, y: y1, z: z1 }, { x: x2, y: y2, z: z2 }];
     const out: ClipV[] = [];
     for (let i = 0; i < 3; i++) {
       const a = pts[i], d = pts[(i + 1) % 3];
@@ -235,13 +316,37 @@ export class Framebuffer3D {
         out.push({ x: a.x + (d.x - a.x) * t, y: a.y + (d.y - a.y) * t, z: near });
       }
     }
+    const o = out[0];
     for (let i = 1; i + 1 < out.length; i++) {
-      this.rasterCamTri(cam, out[0], out[i], out[i + 1], r, g, b, doubleSided);
+      const p = out[i], q = out[i + 1];
+      this.rasterCamTri(cam, o.x, o.y, o.z, p.x, p.y, p.z, q.x, q.y, q.z, r, g, b, doubleSided);
     }
+  }
+
+  /**
+   * True when a world-space sphere is wholly off screen, behind the camera or
+   * past the far plane, so a whole mesh can be skipped before its triangles.
+   */
+  sphereHidden(cam: Cam3D, wx: number, wy: number, wz: number, rad: number): boolean {
+    const dx = wx - cam.ex, dy = wy - cam.ey, dz = wz - cam.ez;
+    const z = dx * cam.fx + dy * cam.fy + dz * cam.fz;
+    if (z + rad < cam.near || z - rad > cam.far) return true;
+    const x = dx * cam.rx + dy * cam.ry + dz * cam.rz;
+    const y = dx * cam.ux + dy * cam.uy + dz * cam.uz;
+    // Distance from each side plane through the eye; the plane's normal is (1, 0, -a) / |…|.
+    const ax = cam.hw / cam.focal, ay = cam.hh / cam.focal;
+    const kx = rad * Math.sqrt(1 + ax * ax), ky = rad * Math.sqrt(1 + ay * ay);
+    return x - ax * z > kx || -x - ax * z > kx || y - ay * z > ky || -y - ay * z > ky;
   }
 
   /** Draw a Mesh3D at world (tx, ty, tz) rotated around Z by `yaw`. */
   drawMesh(cam: Cam3D, mesh: Mesh3D, tx: number, ty: number, tz: number, yaw = 0, scale = 1, tint = 1): void {
+    const wz = tz + mesh.cz * scale, rad = mesh.rad * scale;
+    if (this.sphereHidden(cam, tx, ty, wz, rad)) return;
+    if (mesh.lod) {
+      const depth = (tx - cam.ex) * cam.fx + (ty - cam.ey) * cam.fy + (wz - cam.ez) * cam.fz;
+      if (depth > 0 && (rad * cam.focal) / depth < LOD_PX) mesh = mesh.lod;
+    }
     const c = Math.cos(yaw), s = Math.sin(yaw);
     const tris = mesh.tris;
     for (let i = 0; i < tris.length; i++) {
@@ -264,16 +369,74 @@ export class Framebuffer3D {
     }
   }
 
+  /**
+   * Draw a Mesh3D with a full pose, pivoting on its bounding-sphere centre:
+   * `roll` tips it about the forward (+Y) axis, `pitch` about the side (+X)
+   * axis, then `yaw` turns it about +Z. For riders mid-flip; static props
+   * should use `drawMesh`.
+   */
+  drawMeshPose(cam: Cam3D, mesh: Mesh3D, tx: number, ty: number, tz: number, yaw: number, pitch: number, roll: number, scale = 1): void {
+    if (pitch === 0 && roll === 0) {
+      this.drawMesh(cam, mesh, tx, ty, tz, yaw, scale);
+      return;
+    }
+    const pz = mesh.cz;
+    const wz = tz + pz * scale;
+    if (this.sphereHidden(cam, tx, ty, wz, mesh.rad * scale)) return;
+    // R = Rz(yaw) · Rx(pitch) · Ry(roll)
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const cr = Math.cos(roll), sr = Math.sin(roll);
+    const m00 = cy * cr - sy * sp * sr, m01 = -sy * cp, m02 = cy * sr + sy * sp * cr;
+    const m10 = sy * cr + cy * sp * sr, m11 = cy * cp, m12 = sy * sr - cy * sp * cr;
+    const m20 = -cp * sr, m21 = sp, m22 = cp * cr;
+    const k = scale;
+    const tris = mesh.tris;
+    for (let i = 0; i < tris.length; i++) {
+      const t = tris[i];
+      const az = t.az - pz, bz = t.bz - pz, cz = t.cz - pz;
+      this.drawTri(
+        cam,
+        (m00 * t.ax + m01 * t.ay + m02 * az) * k + tx, (m10 * t.ax + m11 * t.ay + m12 * az) * k + ty, (m20 * t.ax + m21 * t.ay + m22 * az) * k + wz,
+        (m00 * t.bx + m01 * t.by + m02 * bz) * k + tx, (m10 * t.bx + m11 * t.by + m12 * bz) * k + ty, (m20 * t.bx + m21 * t.by + m22 * bz) * k + wz,
+        (m00 * t.cx + m01 * t.cy + m02 * cz) * k + tx, (m10 * t.cx + m11 * t.cy + m12 * cz) * k + ty, (m20 * t.cx + m21 * t.cy + m22 * cz) * k + wz,
+        t.r, t.g, t.b,
+      );
+    }
+  }
+
+  /** An axis-aligned box (no bottom face), for posts, gates and banners. */
+  drawBox(cam: Cam3D, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, r: number, g: number, b: number): void {
+    const sh = (v: number, k: number) => Math.round(v * k);
+    // top
+    this.drawTri(cam, x0, y0, z1, x1, y0, z1, x1, y1, z1, r, g, b, true);
+    this.drawTri(cam, x0, y0, z1, x1, y1, z1, x0, y1, z1, r, g, b, true);
+    // front/back (±y)
+    const fr = sh(r, 0.84), fg = sh(g, 0.84), fb = sh(b, 0.84);
+    this.drawTri(cam, x0, y0, z0, x1, y0, z0, x1, y0, z1, fr, fg, fb, true);
+    this.drawTri(cam, x0, y0, z0, x1, y0, z1, x0, y0, z1, fr, fg, fb, true);
+    this.drawTri(cam, x0, y1, z0, x1, y1, z0, x1, y1, z1, fr, fg, fb, true);
+    this.drawTri(cam, x0, y1, z0, x1, y1, z1, x0, y1, z1, fr, fg, fb, true);
+    // sides (±x)
+    const sr = sh(r, 0.72), sg = sh(g, 0.72), sb = sh(b, 0.72);
+    this.drawTri(cam, x0, y0, z0, x0, y1, z0, x0, y1, z1, sr, sg, sb, true);
+    this.drawTri(cam, x0, y0, z0, x0, y1, z1, x0, y0, z1, sr, sg, sb, true);
+    this.drawTri(cam, x1, y0, z0, x1, y1, z0, x1, y1, z1, sr, sg, sb, true);
+    this.drawTri(cam, x1, y0, z0, x1, y1, z1, x1, y0, z1, sr, sg, sb, true);
+  }
+
   private rasterCamTri(
     cam: Cam3D,
-    p0: ClipV, p1: ClipV, p2: ClipV,
+    cx0: number, cy0: number, cz0: number,
+    cx1: number, cy1: number, cz1: number,
+    cx2: number, cy2: number, cz2: number,
     r: number, g: number, b: number,
     doubleSided: boolean,
   ): void {
-    const inv0 = cam.focal / p0.z, inv1 = cam.focal / p1.z, inv2 = cam.focal / p2.z;
-    const x0 = cam.hw + p0.x * inv0, y0 = cam.hh - p0.y * inv0;
-    const x1 = cam.hw + p1.x * inv1, y1 = cam.hh - p1.y * inv1;
-    const x2 = cam.hw + p2.x * inv2, y2 = cam.hh - p2.y * inv2;
+    const inv0 = cam.focal / cz0, inv1 = cam.focal / cz1, inv2 = cam.focal / cz2;
+    const x0 = cam.hw + cx0 * inv0, y0 = cam.hh - cy0 * inv0;
+    const x1 = cam.hw + cx1 * inv1, y1 = cam.hh - cy1 * inv1;
+    const x2 = cam.hw + cx2 * inv2, y2 = cam.hh - cy2 * inv2;
 
     const area = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0);
     if (!doubleSided && area >= 0) return;
@@ -286,7 +449,7 @@ export class Framebuffer3D {
     if (minX > maxX || minY > maxY) return;
 
     // Fog factor computed per triangle (fast & clean at retro pixel res).
-    const avgZ = (p0.z + p1.z + p2.z) * 0.3333;
+    const avgZ = (cz0 + cz1 + cz2) * 0.3333;
     const fog = clamp((avgZ - this.fogStart) / (this.fogEnd - this.fogStart), 0, 0.85);
     const fr = Math.round(r + (this.fogR - r) * fog);
     const fg = Math.round(g + (this.fogG - g) * fog);
@@ -302,7 +465,7 @@ export class Framebuffer3D {
     const dx20 = y2 - y0, dy20 = x0 - x2;
 
     // Perspective-correct 1/z depth interpolation eliminates Z-fighting on large/steep tris.
-    const iz0 = 1 / p0.z, iz1 = 1 / p1.z, iz2 = 1 / p2.z;
+    const iz0 = 1 / cz0, iz1 = 1 / cz1, iz2 = 1 / cz2;
 
     for (let y = minY; y <= maxY; y++) {
       const py = y + 0.5;

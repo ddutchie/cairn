@@ -84,7 +84,7 @@ export function seedFromWorkspace(projects: ArcadeProject[]): number {
 export type TideglassPhase = "calm" | "wind" | "squall" | "ebb";
 export type TideglassState = "title" | "play";
 export type SecretId = "stayed-bridge" | "missed-ferry" | "moved-crate" | "lit-beacon" | "tideglass";
-export type TideglassEvent = "start" | "step" | "crank" | "tune" | "jam" | "lock" | "argue" | "flare" | "intercept" | "witness" | "secret" | "log" | "phase" | "shard" | "drop" | "zone" | "win";
+export type TideglassEvent = "start" | "step" | "crank" | "tune" | "jam" | "lock" | "argue" | "flare" | "intercept" | "witness" | "secret" | "log" | "phase" | "shard" | "glass" | "drop" | "zone" | "win";
 
 export type AltZone = "PEAK" | "ALPINE" | "FOREST" | "SHORE";
 
@@ -97,6 +97,9 @@ export type AltZone = "PEAK" | "ALPINE" | "FOREST" | "SHORE";
 function ridgeAt(x: number, y: number): number {
   return 0.35 * Math.sin(x * 0.03) * Math.sin(y * 0.025) + 0.2 * Math.sin(x * 0.07 + y * 0.05);
 }
+
+/** Below this altitude (ledges) the ground is under the sea. */
+export const SEA_LEVEL = 0.034;
 
 /** Altitude in "ledges" (0 shore … ~3 summit) at a world point. */
 export function heightAt(x: number, y: number): number {
@@ -119,7 +122,9 @@ export function heightAt(x: number, y: number): number {
   const L = 0.55, q = t / L, i = Math.floor(q), f = q - i;
   const r = clamp((f - 0.7) / 0.3, 0, 1);
   const s = r * r * (3 - 2 * r);
-  return i * L + s * L;
+  // The lowest terrace is a beach that shelves gently into the sea instead of a flat at sea level.
+  const beach = i === 0 ? (1 - s) * Math.min(f, 0.7) * 0.22 : 0;
+  return i * L + s * L + beach;
 }
 
 /** Terrace the height sits on (0 … 5). Equal = same ledge. */
@@ -176,6 +181,21 @@ export function trailDist(x: number, y: number): number {
   return best;
 }
 
+/**
+ * Open water, judged on the ground averaged over a few steps so tide pools
+ * and the wet edge are wadeable and the shoreline doesn't flicker.
+ */
+export function isSea(x: number, y: number): boolean {
+  const r = 6;
+  const avg = (heightAt(x, y) + heightAt(x - r, y) + heightAt(x + r, y) + heightAt(x, y - r) + heightAt(x, y + r)) / 5;
+  return avg < SEA_LEVEL * 0.6;
+}
+
+/** The drowned end of the trail: stepping stones bared at ebb. */
+export function onCauseway(x: number, y: number): boolean {
+  return y > 960 && trailDist(x, y) < 16;
+}
+
 interface CliffWall {
   y: number;
   x0: number;
@@ -212,7 +232,7 @@ export interface Npc {
 
 export interface Pickup {
   id: number;
-  kind: "gear" | "shard";
+  kind: "gear" | "shard" | "glass";
   x: number;
   y: number;
   bob: number;
@@ -272,6 +292,44 @@ export function loopClock(cycleTick: number): string {
   return `${String((s / 60) | 0).padStart(1, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
+// ── Sea glass & glide ───────────────────────────────────────────────
+// Sea glass sits on cliff lips and ridge tops off the trail: the reward for
+// hopping and gliding instead of walking the switchbacks. Every few pieces
+// lengthen the oilskin glide, which opens longer lines down the mountain.
+
+export const GLASS_COUNT = 24;
+export const GLASS_PER_TIER = 4;
+/** Frames of glide on a full oilskin, and what each tier of sea glass adds. */
+export const GLIDE_BASE = 75;
+export const GLIDE_PER_TIER = 30;
+
+// ── Leads ───────────────────────────────────────────────────────────
+// Places the Wick has seen or been told about. They sit on the compass and
+// glow when their moment in the day is close. Nothing is marked until
+// it's known.
+
+export type LeadId = "lamp" | "mill" | "radio" | "hut" | "dock" | "vault" | "flats";
+export const LEAD_DEFS: Record<LeadId, { x: number; y: number; label: string }> = {
+  lamp: { x: LIGHTHOUSE_POS.x, y: LIGHTHOUSE_POS.y, label: "LAMP" },
+  mill: { x: MILL_POS.x, y: MILL_POS.y, label: "MILL" },
+  radio: { x: RADIO_POS.x, y: RADIO_POS.y, label: "MAST" },
+  hut: { x: HUT_POS.x, y: HUT_POS.y, label: "HUT" },
+  dock: { x: DOCK_POS.x, y: DOCK_POS.y, label: "DOCK" },
+  vault: { x: VAULT_POS.x, y: VAULT_POS.y, label: "VAULT" },
+  flats: { x: FLAT_POS.x, y: FLAT_POS.y, label: "FLATS" },
+};
+/** How close the Wick must come to spot a place without being told. */
+export const SIGHT_RANGE = 210;
+
+export interface Lead {
+  id: LeadId;
+  x: number;
+  y: number;
+  label: string;
+  /** Its moment is now or soon. */
+  hot: boolean;
+}
+
 const NPC_DEFS: Omit<Npc, "x" | "y" | "a" | "homeX" | "homeY" | "say" | "sayTimer" | "path" | "repath" | "gx" | "gy">[] = [
   { id: "mira", name: "MIRA", role: "HABOURMASTER", accent: "#e3a23b" },
   { id: "ios", name: "IOS", role: "KEEPER", accent: "#47a3e6" },
@@ -304,7 +362,10 @@ export class TideglassSim {
   best: number;
   events: TideglassEvent[] = [];
 
-  wick = { x: SUMMIT_START.x, y: SUMMIT_START.y, z: 2.7, vx: 0, vy: 0, vz: 0, a: 0, walkPhase: 0, air: 0, gliding: false };
+  wick = { x: SUMMIT_START.x, y: SUMMIT_START.y, z: 2.7, vx: 0, vy: 0, vz: 0, a: 0, walkPhase: 0, air: 0, gliding: false, glide: GLIDE_BASE };
+  /** Sea glass found, and the places the Wick knows about. */
+  glass = 0;
+  known = new Set<LeadId>(["lamp"]);
   /** Top-left of the viewport in volume pixels (the renderer pans here). */
   camVX = 0;
   camVY = 0;
@@ -414,9 +475,77 @@ export class TideglassSim {
     this.spawnPickup("gear", MILL_POS.x - 22 + jx2, MILL_POS.y + 26 + jy2);
     // One tide shard already glints on the flats, for whoever gets down early.
     this.spawnPickup("shard", FLAT_POS.x + 18, FLAT_POS.y + 8);
+    this.placeGlass();
   }
 
-  private spawnPickup(kind: "gear" | "shard", x: number, y: number): void {
+  /**
+   * Scatter sea glass on cliff lips and ridges away from the trail, a quota
+   * per altitude band so every stretch of the descent has some. Its own
+   * stream from the seed, so the rest of the island deals the same.
+   */
+  private placeGlass(): void {
+    const rand = mulberry32(this.seed ^ 0x51ea55);
+    const quota: Record<AltZone, number> = { PEAK: 4, ALPINE: 7, FOREST: 7, SHORE: 6 };
+    const avoid = [LIGHTHOUSE_POS, MILL_POS, RADIO_POS, HUT_POS, VAULT_POS, DOCK_POS, FLAT_POS];
+    const placed: { x: number; y: number }[] = [];
+    for (let tries = 0; tries < 6000 && placed.length < GLASS_COUNT; tries++) {
+      const x = 60 + rand() * (WORLD_W - 120);
+      const y = 120 + rand() * (WORLD_H - 200);
+      const h = heightAt(x, y);
+      if (h < 0.25) continue;
+      const zone = altZone(h);
+      if (quota[zone] <= 0) continue;
+      if (trailDist(x, y) < 34) continue;
+      if (avoid.some((p) => Math.hypot(x - p.x, y - p.y) < 46)) continue;
+      if (placed.some((p) => Math.hypot(x - p.x, y - p.y) < 70)) continue;
+      // A lip: the ground falls away just south (where gliding starts).
+      const lip = h - heightAt(x, y + 16) > 0.3 || h - Math.min(heightAt(x - 16, y), heightAt(x + 16, y)) > 0.4;
+      if (!lip && rand() > 0.15) continue;
+      quota[zone]--;
+      placed.push({ x, y });
+      this.spawnPickup("glass", x, y);
+    }
+  }
+
+  /** Glide frames on a full oilskin, from the sea glass found. */
+  get glideMax(): number {
+    return GLIDE_BASE + Math.floor(this.glass / GLASS_PER_TIER) * GLIDE_PER_TIER;
+  }
+
+  private learn(id: LeadId): void {
+    if (this.known.has(id)) return;
+    this.known.add(id);
+    this.log(`NOTED THE ${LEAD_DEFS[id].label} ON THE COMPASS.`);
+  }
+
+  /** Known places, with the ones whose moment is near marked hot. */
+  leads(): Lead[] {
+    const f = Math.min(this.cycleTick / CYCLE_FRAMES, 1);
+    const hot: Record<LeadId, boolean> = {
+      lamp: (!this.argueFired && f < 0.5) || (this.phase === "squall" && this.lampCrank < 3) || (f > 0.45 && f < EBB_F && this.lampCrank < 3),
+      mill: !this.lockedFired && (this.hasGear || f > LOCK_F - 0.08),
+      radio: this.flareActive || (f > FLARE_F - 0.06 && f < FLARE_END_F && !this.intercepted),
+      hut: this.witnessedMove && !this.secrets.has("moved-crate"),
+      dock: !this.moveFired && f > MOVE_F - 0.08,
+      vault: !this.vaultLit && this.shards >= 3 && this.secrets.size >= 2,
+      flats: this.causewayOpen && (!this.chestOpened || this.pickups.some((p) => p.kind === "shard" && !p.taken)),
+    };
+    return [...this.known].map((id) => ({ id, ...LEAD_DEFS[id], hot: hot[id] }));
+  }
+
+  /** The next beat of the day the Wick knows about, for the HUD. */
+  nextBeat(): { label: string; at: string } | null {
+    const f = Math.min(this.cycleTick / CYCLE_FRAMES, 1);
+    const at = (x: number) => loopClock(Math.round(x * CYCLE_FRAMES));
+    if (!this.lockedFired && this.known.has("mill")) return { label: "SLUICE LOCKS", at: at(LOCK_F) };
+    if (!this.moveFired && this.known.has("dock") && f < MOVE_F) return { label: "CRATE MOVES", at: at(MOVE_F) };
+    if (f < FLARE_F && this.freqKnown) return { label: `FLARE ON ${FREQS[this.flareFreq]}`, at: at(FLARE_F) };
+    if (this.phase !== "squall" && f < 0.55) return { label: "SQUALL", at: at(0.55) };
+    if (f < EBB_F) return { label: "EBB TIDE", at: at(EBB_F) };
+    return null;
+  }
+
+  private spawnPickup(kind: Pickup["kind"], x: number, y: number): void {
     this.pickups.push({ id: this.nextPickupId++, kind, x, y, bob: this.rand() * Math.PI * 2, taken: false });
   }
 
@@ -472,6 +601,16 @@ export class TideglassSim {
     return { x: f.top.rx - 44, y: f.top.y - 1, w: 44, h: 11 };
   }
 
+  /** Touch only: hop (tap) and glide (hold), bottom-right of the content. */
+  hopButtonRect(): { x: number; y: number; w: number; h: number } {
+    const f = hudFrame(this.hud, this.W, this.H);
+    return { x: f.bottom.rx - 30, y: f.bottom.y - 32, w: 30, h: 30 };
+  }
+
+  private hopHeld = false;
+  private stuck = 0;
+  private lastWalk = { x: 0, y: 0 };
+
   actButtonRect(): { x: number; y: number; w: number; h: number } {
     const f = hudFrame(this.hud, this.W, this.H);
     const w = Math.min(156, Math.max(96, f.content.rx - f.content.lx - 16));
@@ -521,6 +660,16 @@ export class TideglassSim {
       this.events.push("log");
       return;
     }
+    if (this.inputMode === "touch") {
+      const hb = this.hopButtonRect();
+      if (x >= hb.x - 6 && x <= hb.x + hb.w + 6 && y >= hb.y - 6 && y <= hb.y + hb.h + 6) {
+        // Hop now; keep holding to open the oilskin. Any walk route carries on.
+        this.hopHeld = true;
+        this.keys.add("Jump");
+        this.tryJump();
+        return;
+      }
+    }
     const ab = this.actButtonRect();
     if (this.nearby && x >= ab.x - 6 && x <= ab.x + ab.w + 6 && y >= ab.y - 6 && y <= ab.y + ab.h + 6) {
       this.interact();
@@ -547,6 +696,11 @@ export class TideglassSim {
   }
 
   up(): void {
+    if (this.hopHeld) {
+      this.hopHeld = false;
+      this.keys.delete("Jump");
+      return;
+    }
     if (this.state === "play" && !this.showLog && this.dragOrigin && !this.dragMoved) {
       // Quick tap -> route around cliffs via the passes, not straight at them.
       const w = this.screenToWorld(this.dragOrigin.x, this.dragOrigin.y);
@@ -697,13 +851,14 @@ export class TideglassSim {
         this.pop(`FLARE ON ${FREQS[this.flareFreq]}!`, "#fff2a0", LIGHTHOUSE_POS.x, LIGHTHOUSE_POS.y - 16);
         this.rings.push({ x: LIGHTHOUSE_POS.x, y: LIGHTHOUSE_POS.y, r: 6, color: "#fff2a0", life: 50 });
         this.events.push("argue");
+        this.learn("radio");
       }
     }
     if (f >= FLARE_F && f <= FLARE_END_F) {
       if (!this.flareActive) {
         this.flareActive = true;
         this.flareFiredLoop = this.loop;
-        this.log(`1:52 SIGNAL FLARE UP — FREQ ${FREQS[this.flareFreq]}.`);
+        this.log(`SIGNAL FLARE UP OVER THE SUMMIT.`);
         this.rings.push({ x: LIGHTHOUSE_POS.x, y: LIGHTHOUSE_POS.y - 10, r: 5, color: "#ff5e8a", life: 60 });
         this.events.push("flare");
       }
@@ -711,7 +866,7 @@ export class TideglassSim {
       this.flareActive = false;
       if (!this.intercepted && !this.ferryGone) {
         this.ferryGone = true;
-        this.log("2:02 FERRY SAILED ON TIME WITH THE FLARE SEEN.");
+        this.log("THE FERRY SAILED ON TIME WITH THE FLARE SEEN.");
       }
     }
     // Beacon check: full crank held through the squall.
@@ -797,7 +952,8 @@ export class TideglassSim {
         this.addScore(25);
         this.events.push("step");
         this.pop("+ DRIFTWOOD GEAR", "#d9b078", p.x, p.y - 10);
-        this.log("FOUND DRIFTWOOD GEAR. JAM THE SLUICE BEFORE 0:40.");
+        this.log(`FOUND DRIFTWOOD GEAR. JAM THE MILL SLUICE BEFORE ${loopClock(Math.round(LOCK_F * CYCLE_FRAMES))}.`);
+        this.learn("mill");
         return true;
       }
       case "sluice": {
@@ -845,7 +1001,7 @@ export class TideglassSim {
           this.events.push("intercept");
           if (!this.calm) this.shake = Math.max(this.shake, 2);
           this.pop("FLARE CAUGHT!", "#ff5e8a", RADIO_POS.x, RADIO_POS.y - 12);
-          this.log(`1:5x INTERCEPTED THE FLARE ON ${FREQS[this.freq]} — PIOTR MISSED THE FERRY.`);
+          this.log(`INTERCEPTED THE FLARE ON ${FREQS[this.freq]} — PIOTR MISSED THE FERRY.`);
           this.unlock("missed-ferry", 350, "FERRY MISSED", RADIO_POS.x, RADIO_POS.y);
           return true;
         }
@@ -919,6 +1075,8 @@ export class TideglassSim {
               : "LEDGER: WATCH THE DOCK. LISTEN AT THE SUMMIT.";
           this.pop(hint.slice(0, 26), "#c7e4ff", HUT_POS.x, HUT_POS.y - 12);
           this.log(hint);
+          this.learn("dock");
+          this.learn("radio");
         }
         this.events.push("log");
         return true;
@@ -928,6 +1086,9 @@ export class TideglassSim {
         if (!n) return false;
         n.say = this.npcHint(n.id);
         n.sayTimer = 200;
+        // What they talk about goes on the compass.
+        const teaches: Record<Npc["id"], LeadId[]> = { mira: ["mill", "flats"], ios: ["lamp", "vault"], june: ["radio"], piotr: ["dock", "hut"] };
+        for (const id of teaches[n.id]) this.learn(id);
         this.events.push("log");
         return true;
       }
@@ -946,7 +1107,7 @@ export class TideglassSim {
       case "june":
         return this.freqKnown ? `FLARE'S ON ${FREQS[this.flareFreq]}. YOU HEARD IT.` : "CATCH OUR ARGUMENT AT THE SUMMIT IF YOU WANT THE FREQ.";
       case "piotr":
-        return this.crateAtDock ? "CRATE SAILS AT THE FLARE. WATCH ~1:21." : this.witnessedMove ? "SAW WHO TOOK IT? TELL THE HUT." : "CRATE'S GONE. SOMEONE SIGNED. ASK THE HUT.";
+        return this.crateAtDock ? `CRATE SAILS AT THE FLARE. SOMEONE MOVES IT ABOUT ${loopClock(Math.round(MOVE_F * CYCLE_FRAMES))}.` : this.witnessedMove ? "SAW WHO TOOK IT? TELL THE HUT." : "CRATE'S GONE. SOMEONE SIGNED. ASK THE HUT.";
     }
   }
 
@@ -960,7 +1121,10 @@ export class TideglassSim {
     if (tx < 18 || tx > WORLD_W - 18 || ty < 26 || ty > WORLD_H - 18) return false;
     if (Math.hypot(tx - LIGHTHOUSE_POS.x, ty - LIGHTHOUSE_POS.y) < 12) return false;
     if (!ignoreWater) {
-      if (!this.causewayOpen && Math.hypot(tx - FLAT_POS.x, ty - FLAT_POS.y) < 40) return false;
+      const toFlats = Math.hypot(tx - FLAT_POS.x, ty - FLAT_POS.y);
+      if (!this.causewayOpen && toFlats < 40) return false;
+      // Open sea: the Wick can't swim. At ebb the flats around the causeway are bare.
+      if (isSea(tx, ty) && !(this.causewayOpen && (toFlats < 64 || onCauseway(tx, ty)))) return false;
       if (!this.bridgeDown && tx > CHANNEL.x0 && tx < CHANNEL.x1 && Math.abs(ty - CHANNEL.y) < 12) return false;
     }
     // Terraced cliff walls: climbing north through one only works inside
@@ -995,7 +1159,8 @@ export class TideglassSim {
   }
 
   private los(ax: number, ay: number, bx: number, by: number, ignoreWater: boolean): boolean {
-    const d = Math.hypot(bx - ax, by - ay), steps = Math.max(1, Math.ceil(d / 8));
+    // 4-unit samples: narrower than the gap any open water leaves (see isSea).
+    const d = Math.hypot(bx - ax, by - ay), steps = Math.max(1, Math.ceil(d / 4));
     let px = ax, py = ay;
     for (let i = 1; i <= steps; i++) {
       const qx = ax + ((bx - ax) * i) / steps, qy = ay + ((by - ay) * i) / steps;
@@ -1054,7 +1219,9 @@ export class TideglassSim {
         const ni = ci + di, nj = cj + dj;
         if (ni < 0 || ni > 53 || nj < 0 || nj > 64 || seen.has(key(ni, nj))) continue;
         const nc = this.cellCenter(ni, nj);
-        if (!this.canStep(cc.x, cc.y, nc.x, nc.y, ignoreWater)) continue;
+        // Check halfway too: a narrow strip of sea between two dry cell centres still blocks.
+        const mx = (cc.x + nc.x) / 2, my = (cc.y + nc.y) / 2;
+        if (!this.canStep(cc.x, cc.y, mx, my, ignoreWater) || !this.canStep(mx, my, nc.x, nc.y, ignoreWater)) continue;
         if (di !== 0 && dj !== 0) {
           const ox = this.cellCenter(ci + di, cj), oy = this.cellCenter(ci, cj + dj);
           if (!this.canStep(cc.x, cc.y, ox.x, ox.y, ignoreWater) || !this.canStep(cc.x, cc.y, oy.x, oy.y, ignoreWater)) continue;
@@ -1112,6 +1279,19 @@ export class TideglassSim {
         dy = vy / len;
       }
     } else if (dx === 0 && dy === 0 && this.walkPath.length) {
+      // A route that stops making progress gets one re-plan from here, then is dropped.
+      if (Math.hypot(this.wick.x - this.lastWalk.x, this.wick.y - this.lastWalk.y) < 0.5) {
+        if (++this.stuck === 20) {
+          const goal = this.walkPath[this.walkPath.length - 1];
+          this.walkPath = this.findPath(this.wick.x, this.wick.y, goal.x, goal.y);
+        } else if (this.stuck > 50) {
+          this.walkPath = [];
+          this.stuck = 0;
+        }
+      } else this.stuck = 0;
+      this.lastWalk = { x: this.wick.x, y: this.wick.y };
+    }
+    if (dx === 0 && dy === 0 && !(this.dragOrigin && this.dragMoved) && this.walkPath.length) {
       const wp = this.walkPath[0];
       const vx = wp.x - this.wick.x;
       const vy = wp.y - this.wick.y;
@@ -1125,7 +1305,9 @@ export class TideglassSim {
     const hBefore = heightAt(this.wick.x, this.wick.y);
     const airborne = this.wick.z > hBefore + 0.06 || this.wick.air > 0;
     const jumpHeld = this.keys.has("Jump");
-    this.wick.gliding = airborne && jumpHeld && this.wick.vz <= 0.04;
+    this.wick.gliding = airborne && jumpHeld && this.wick.vz <= 0.04 && this.wick.glide > 0;
+    if (this.wick.gliding) this.wick.glide--;
+    else if (!airborne) this.wick.glide = Math.min(this.glideMax, this.wick.glide + 3);
 
     const len = Math.hypot(dx, dy);
     if (len > 0.01) {
@@ -1203,10 +1385,35 @@ export class TideglassSim {
       if (zone === "SHORE") this.addScore(50);
     }
     if (h < this.deepest) this.deepest = h;
+    if (this.t % 15 === 0) {
+      for (const id of Object.keys(LEAD_DEFS) as LeadId[]) {
+        const d = LEAD_DEFS[id];
+        if (!this.known.has(id) && Math.hypot(this.wick.x - d.x, this.wick.y - d.y) < SIGHT_RANGE) this.learn(id);
+      }
+    }
     for (let i = this.pickups.length - 1; i >= 0; i--) {
       const p = this.pickups[i];
       p.bob += 0.08;
-      if (p.taken || p.kind !== "shard") continue;
+      if (p.taken) continue;
+      if (p.kind === "glass") {
+        if (Math.hypot(this.wick.x - p.x, this.wick.y - p.y) <= 13 && this.wick.z >= heightAt(p.x, p.y) - 0.1) {
+          p.taken = true;
+          const tierBefore = Math.floor(this.glass / GLASS_PER_TIER);
+          this.glass++;
+          this.addScore(30);
+          this.events.push("glass");
+          this.rings.push({ x: p.x, y: p.y, r: 4, color: "#8ff0ff", life: 24 });
+          if (Math.floor(this.glass / GLASS_PER_TIER) > tierBefore) {
+            this.wick.glide = this.glideMax;
+            this.banner(`SEA GLASS ${this.glass}/${GLASS_COUNT} - THE OILSKIN GLIDES LONGER`, "#8ff0ff");
+            this.log(`${this.glass} PIECES OF SEA GLASS. THE OILSKIN CATCHES MORE AIR.`);
+          } else {
+            this.pop(`SEA GLASS ${this.glass}/${GLASS_COUNT}`, "#8ff0ff", p.x, p.y - 10);
+          }
+        }
+        continue;
+      }
+      if (p.kind !== "shard") continue;
       if (!(this.phase === "ebb" && this.causewayOpen)) continue;
       if (Math.hypot(this.wick.x - p.x, this.wick.y - p.y) <= 16) {
         p.taken = true;

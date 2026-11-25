@@ -9,6 +9,7 @@ import {
   CAIRN_POS,
   CHEST_POS,
   CYCLE_FRAMES,
+  FEED_FUEL,
   HEARTH_POS,
   RADIO_POS,
   SLUICE_POS,
@@ -214,5 +215,51 @@ describe("BasecampSim", () => {
     renderer.resize(520, 320);
     expect(sim.W).toBe(520);
     expect(renderer.draw()).toBe(4);
+  });
+
+  it("feeds the hearth with timber and loses the camp when it goes out", () => {
+    const sim = startSim();
+    sim.timber = 1;
+    sim.fuel = 40;
+    sim.warden.x = HEARTH_POS.x + 16;
+    sim.warden.y = HEARTH_POS.y;
+    sim.step();
+    expect(sim.nearby?.kind).toBe("hearth");
+    expect(sim.interact()).toBe(true);
+    expect(sim.timber).toBe(0);
+    expect(sim.fuel).toBeGreaterThan(40 + FEED_FUEL - 1);
+
+    sim.fuel = 0.001;
+    sim.step();
+    expect(sim.state).toBe("over");
+    expect(sim.events).toContain("over");
+    for (let i = 0; i < 100; i++) sim.step();
+    sim.down(10, 10);
+    expect(sim.state).toBe("play");
+    expect(sim.day).toBe(1);
+  });
+
+  it("sends the Twilight at night; light burns wisps and dawn counts the night", () => {
+    const sim = startSim();
+    sim.advanceClock(Math.round(CYCLE_FRAMES * 0.6));
+    expect(sim.phase).toBe("night");
+    sim.fuel = 100;
+    for (let i = 0; i < 400; i++) sim.step();
+    expect(sim.wisps.length + sim.dispelled).toBeGreaterThan(0);
+
+    // A wisp inside a lit watchfire's reach burns away.
+    const br = sim.braziers[0];
+    br.lit = true;
+    sim.wisps = [{ id: 999, x: br.x + 10, y: br.y, hp: 1, speed: 0, wob: 0 }];
+    const before = sim.dispelled;
+    for (let i = 0; i < 60; i++) sim.step();
+    expect(sim.dispelled).toBeGreaterThan(before);
+
+    // Through to dawn: the night is counted and the watchfires burn out.
+    sim.fuel = 100;
+    sim.advanceClock(CYCLE_FRAMES - (sim.cycleTick % CYCLE_FRAMES));
+    expect(sim.nightsSurvived).toBe(1);
+    expect(sim.wisps).toHaveLength(0);
+    expect(sim.litBraziersCount).toBe(0);
   });
 });

@@ -1,6 +1,14 @@
 /**
- * Basecamp simulation — Cozy voxel colony built from your Cairn workspace,
- * woven into a repeating dawn-to-midnight clockwork mystery. Pure TypeScript.
+ * Basecamp simulation — keep the light. Pure TypeScript.
+ *
+ * Your workspace is a camp in a forest valley: each project a lodge with a
+ * settler, each open task a bramble. By day you clear brambles for timber,
+ * build up lodges and feed the hearth. By night the Twilight creeps out of
+ * the forest as wisps that dim lodges, regrow brambles and drain the hearth.
+ * Lit watchfires burn them, upgraded lodges keep a settler on watch, and the
+ * Warden can swat them with an ember. If the hearth goes out the camp is
+ * lost; every night is harder. The valley's old secrets (sluice, bell,
+ * cairn) are side paths that pay in sparks.
  */
 
 import { DEMO_DATA, type ArcadeProject } from "../pixel/arcade-data";
@@ -18,10 +26,23 @@ export const RADIO_POS = { x: 92, y: 326 };
 export const POND_POS = { x: 326, y: 318 };
 export const CHEST_POS = { x: 336, y: 332 };
 
-export const CYCLE_FRAMES = 5400; // 90 seconds at 60 Hz
+export const CYCLE_FRAMES = 7200; // two minutes at 60 Hz; night is the last 35%
 export const UPGRADE_TIMBER = 2;
 
-export type BasecampState = "title" | "play";
+/** The hearth: fuel 0…100, what a log adds, and how fast it burns by day and by night. */
+export const HEARTH_MAX = 100;
+export const HEARTH_START = 70;
+export const FEED_FUEL = 25;
+export const BURN_DAY = 0.008;
+export const BURN_NIGHT = 0.014;
+/** How far light reaches against wisps: a lit watchfire, a settler on watch, the Warden's ember. */
+export const BRAZIER_REACH = 54;
+export const WATCH_REACH = 34;
+export const EMBER_REACH = 13;
+/** Nights to see through for the camp to endure (play carries on after). */
+export const ENDURE_NIGHTS = 5;
+
+export type BasecampState = "title" | "play" | "over";
 export type ClockPhase = "dawn" | "noon" | "dusk" | "night";
 export type SecretId = "watchfires" | "causeway" | "dusk-bell" | "workshops" | "cairn";
 export type BasecampEvent =
@@ -35,7 +56,23 @@ export type BasecampEvent =
   | "build"
   | "secret"
   | "log"
-  | "phase";
+  | "phase"
+  | "feed"
+  | "dispel"
+  | "dim"
+  | "endure"
+  | "over";
+
+/** A piece of the Twilight drifting toward the camp. */
+export interface BasecampWisp {
+  id: number;
+  x: number;
+  y: number;
+  /** Burns down in the light; gone at 0. */
+  hp: number;
+  speed: number;
+  wob: number;
+}
 
 export interface BasecampLodge {
   id: string;
@@ -143,11 +180,13 @@ export interface BasecampSpec {
   projects?: ArcadeProject[];
 }
 
+export const NIGHT_F = 0.65;
+
 export function phaseAt(cycleTick: number): ClockPhase {
   const f = (cycleTick % CYCLE_FRAMES) / CYCLE_FRAMES;
-  if (f < 0.25) return "dawn";
-  if (f < 0.55) return "noon";
-  if (f < 0.8) return "dusk";
+  if (f < 0.15) return "dawn";
+  if (f < 0.45) return "noon";
+  if (f < NIGHT_F) return "dusk";
   return "night";
 }
 
@@ -185,6 +224,15 @@ export class BasecampSim {
   camY = 0;
   timber = 0;
   sparks = 0;
+  /** Hearth fuel; at 0 the camp is lost. */
+  fuel = HEARTH_START;
+  wisps: BasecampWisp[] = [];
+  nightsSurvived = 0;
+  dispelled = 0;
+  shake = 0;
+  overT = 0;
+  private nextWispId = 1;
+  private wispTimer = 0;
 
   lodges: BasecampLodge[] = [];
   settlers: BasecampSettler[] = [];
@@ -263,10 +311,11 @@ export class BasecampSim {
       sayTimer: 0,
     }));
 
+    // Watchfires stand between the lodges so their light covers two each.
     this.braziers = [
-      { id: "b-west", label: "WEST WATCHFIRE", x: 148, y: 204, lit: false },
-      { id: "b-north", label: "RIDGE WATCHFIRE", x: 210, y: 126, lit: false },
-      { id: "b-east", label: "EAST WATCHFIRE", x: 274, y: 204, lit: false },
+      { id: "b-west", label: "WEST WATCHFIRE", x: 124, y: 198, lit: false },
+      { id: "b-south", label: "SOUTH WATCHFIRE", x: 210, y: 292, lit: false },
+      { id: "b-east", label: "EAST WATCHFIRE", x: 296, y: 198, lit: false },
     ];
 
     // Seed Twilight Brambles from real open/overdue tasks around perimeter paths
@@ -319,6 +368,37 @@ export class BasecampSim {
     }
 
     this.nearby = this.findNearbyTarget();
+  }
+
+  /** Start over after the hearth goes out: same valley, fresh camp. */
+  private restart(): void {
+    this.day = 1;
+    this.cycleTick = 420;
+    this.phase = phaseAt(this.cycleTick);
+    this.score = 0;
+    this.timber = 0;
+    this.sparks = 0;
+    this.fuel = HEARTH_START;
+    this.wisps = [];
+    this.nightsSurvived = 0;
+    this.dispelled = 0;
+    this.pickups = [];
+    this.secrets.clear();
+    this.sluiceOpen = false;
+    this.duskBellRung = false;
+    this.radioTuned = false;
+    this.chestOpened = false;
+    this.cairnAwakened = false;
+    Object.assign(this.warden, { x: HEARTH_POS.x, y: HEARTH_POS.y + 34, hasEmber: false, emberTimer: 0 });
+    this.buildWorld();
+    this.state = "play";
+    this.events.push("start");
+    this.banner("A NEW FIRE · KEEP IT BURNING", "#a8f4e8");
+  }
+
+  /** Overdue tasks in the workspace: they feed the dark. */
+  private get overdueCount(): number {
+    return this.projects.reduce((n, p) => n + p.tasks.filter((t) => t.overdue).length, 0);
   }
 
   private spawnPickup(kind: "timber" | "spark", x: number, y: number): void {
@@ -412,6 +492,10 @@ export class BasecampSim {
   }
 
   down(x: number, y: number): void {
+    if (this.state === "over") {
+      if (this.overT <= 0) this.restart();
+      return;
+    }
     if (this.state === "title") {
       this.state = "play";
       this.events.push("start");
@@ -474,6 +558,13 @@ export class BasecampSim {
   }
 
   setKey(code: string, isDown: boolean): boolean {
+    if (isDown && this.state === "over") {
+      if ((code === "Space" || code === "Enter") && this.overT <= 0) {
+        this.restart();
+        return true;
+      }
+      return false;
+    }
     if (isDown && this.state === "title") {
       if (code === "Space" || code === "Enter") {
         this.state = "play";
@@ -550,13 +641,13 @@ export class BasecampSim {
 
   private onPhaseEnter(p: ClockPhase): void {
     this.events.push("phase");
-    if (p === "noon") this.banner("HIGH NOON · SETTLERS HAUL SUPPLIES", "#fff2a0");
-    if (p === "dusk") this.banner("DUSK FALLS · THE EAST BELL ECHOES FAR", "#ff9e44");
+    if (p === "noon") this.banner("HIGH NOON · CLEAR, BUILD, FEED THE FIRE", "#fff2a0");
+    if (p === "dusk") this.banner("DUSK · CARRY EMBER TO THE WATCHFIRES", "#ff9e44");
     if (p === "night") {
-      this.banner(
-        this.sluiceOpen ? "NIGHT MIST · DRAINED POND REVEALS STONES!" : "NIGHT FALLS · LIGHT THE WATCHFIRES",
-        "#8fb8ff",
-      );
+      this.wispTimer = 30;
+      // Brambles left standing feed the dark: every second one sends a wisp now.
+      this.brambles.filter((b) => !b.cleared).forEach((b, i) => { if (i % 2 === 0) this.spawnWisp(b.x, b.y); });
+      this.banner(this.sluiceOpen ? "NIGHT · THE TWILIGHT COMES · POND STONES BARE" : "NIGHT · THE TWILIGHT COMES", "#c45aa8");
     }
   }
 
@@ -565,28 +656,134 @@ export class BasecampSim {
     this.duskBellRung = false;
     this.radioTuned = false;
 
-    // Bonus for defending the camp through Night with all 3 watchfires lit
-    if (this.braziers.every((b) => b.lit)) {
-      this.addScore(100);
-      this.pop("NIGHT SURVIVED +100", "#fff2a0", HEARTH_POS.x, HEARTH_POS.y - 16);
-      this.unlockSecret("watchfires", 250, "WATCHFIRES LIT", HEARTH_POS.x, HEARTH_POS.y);
-    } else {
-      // Unprotected night dims uncompleted braziers so the loop invites lighting all 3
-      if (!this.secrets.has("watchfires")) {
-        for (const b of this.braziers) b.lit = false;
+    // The night is over: what's left of the Twilight fades.
+    this.wisps = [];
+    if (this.state === "play") {
+      this.nightsSurvived++;
+      const intact = this.upgradedLodgesCount;
+      const bonus = 100 * this.nightsSurvived + 50 * intact;
+      this.addScore(bonus);
+      this.pop(`NIGHT ${this.nightsSurvived} SURVIVED +${bonus}`, "#fff2a0", HEARTH_POS.x, HEARTH_POS.y - 16);
+      if (this.nightsSurvived === ENDURE_NIGHTS) {
+        this.addScore(1000);
+        this.events.push("endure");
+        this.banner(`${ENDURE_NIGHTS} NIGHTS · THE CAMP ENDURES +1000`, "#fff2a0");
       }
     }
+    // Watchfires burn out by morning; relight them each dusk.
+    for (const b of this.braziers) b.lit = false;
 
-    // Respawn fresh timber & 1 spark at upgraded workshops each dawn
+    // Workshops turn out timber and a spark; deadfall drops at the forest edge.
     for (const l of this.lodges) {
-      if (l.level === 2 && this.pickups.length < 16) {
+      if (l.level === 2 && this.pickups.length < 18) {
         this.spawnPickup("spark", l.x + (this.rand() - 0.5) * 18, l.y + 18);
+        this.spawnPickup("timber", l.x + (this.rand() - 0.5) * 18, l.y + 22);
       }
+    }
+    for (let i = 0; i < 2 && this.pickups.length < 20; i++) {
+      const a = this.rand() * Math.PI * 2;
+      this.spawnPickup("timber", clamp(HEARTH_POS.x + Math.cos(a) * 150, 40, WORLD_W - 40), clamp(HEARTH_POS.y + Math.sin(a) * 140, 50, WORLD_H - 40));
+    }
+    // Tasks left undone grow back: one bramble, plus one per overdue task (up to 3).
+    const regrow = 1 + Math.min(3, this.overdueCount);
+    const cleared = this.brambles.filter((b) => b.cleared);
+    for (let i = 0; i < regrow && cleared.length; i++) {
+      cleared.splice(Math.floor(this.rand() * cleared.length), 1)[0].cleared = false;
     }
     if (!this.secrets.has("causeway")) {
       this.sluiceOpen = false;
     }
-    this.banner(`DAY ${this.day} · DAWN RESETS THE CLOCK`, "#a8f4e8");
+    if (this.nightsSurvived !== ENDURE_NIGHTS) this.banner(`DAY ${this.day} · DAWN · THE FIRE NEEDS WOOD`, "#a8f4e8");
+  }
+
+  // ── The Twilight ────────────────────────────────────────────────────
+
+  /** A wisp out of the forest: from `x,y` if given, else a random point on the treeline. */
+  private spawnWisp(x?: number, y?: number): void {
+    if (x === undefined || y === undefined) {
+      const a = this.rand() * Math.PI * 2;
+      x = clamp(HEARTH_POS.x + Math.cos(a) * 200, 14, WORLD_W - 14);
+      y = clamp(HEARTH_POS.y + Math.sin(a) * 200, 18, WORLD_H - 14);
+    }
+    this.wisps.push({ id: this.nextWispId++, x, y, hp: 1, speed: 0.28 + this.day * 0.05 + this.rand() * 0.08, wob: this.rand() * 6 });
+  }
+
+  /** The wisp's mark: the nearest lodge, or the hearth when it is nearer. */
+  private wispTarget(w: BasecampWisp): { x: number; y: number; lodge: BasecampLodge | null } {
+    let best: BasecampLodge | null = null, bd = Math.hypot(w.x - HEARTH_POS.x, w.y - HEARTH_POS.y);
+    for (const l of this.lodges) {
+      const d = Math.hypot(w.x - l.x, w.y - l.y);
+      if (d < bd) {
+        bd = d;
+        best = l;
+      }
+    }
+    return best ? { x: best.x, y: best.y, lodge: best } : { x: HEARTH_POS.x, y: HEARTH_POS.y, lodge: null };
+  }
+
+  private stepTwilight(): void {
+    if (this.phase === "night" && --this.wispTimer <= 0) {
+      this.spawnWisp();
+      this.wispTimer = Math.max(45, 240 - this.day * 30);
+    }
+    for (let i = this.wisps.length - 1; i >= 0; i--) {
+      const w = this.wisps[i];
+      w.wob += 0.08;
+      const tg = this.wispTarget(w);
+      const dx = tg.x - w.x, dy = tg.y - w.y, d = Math.hypot(dx, dy) || 1;
+      w.x += (dx / d) * w.speed + Math.cos(w.wob) * 0.25;
+      w.y += (dy / d) * w.speed + Math.sin(w.wob * 1.3) * 0.25;
+
+      // Light burns it down.
+      let burn = 0;
+      for (const b of this.braziers) if (b.lit && Math.hypot(w.x - b.x, w.y - b.y) < BRAZIER_REACH) burn += 1 / 45;
+      for (const l of this.lodges) if (l.level === 2 && Math.hypot(w.x - l.x, w.y - l.y) < WATCH_REACH) burn += 1 / 70;
+      w.hp -= burn;
+      if (this.warden.hasEmber && Math.hypot(w.x - this.warden.x, w.y - (this.warden.y - 4)) < EMBER_REACH) w.hp = 0;
+      if (w.hp <= 0) {
+        this.wisps.splice(i, 1);
+        this.dispelled++;
+        this.addScore(20);
+        this.events.push("dispel");
+        this.burst(w.x, w.y, "#c45aa8", 8);
+        continue;
+      }
+
+      if (d < 10) {
+        this.wisps.splice(i, 1);
+        if (!this.calm) this.shake = Math.max(this.shake, 2.5);
+        this.events.push("dim");
+        if (tg.lodge) {
+          const l = tg.lodge;
+          if (l.level === 2) {
+            l.level = 1;
+            this.pop(`${l.project.name.slice(0, 10)} DIMMED`, "#c45aa8", l.x, l.y - 16);
+          } else {
+            // A lodge with no light left gets overgrown: a cleared bramble nearby grows back.
+            const near = this.brambles.filter((b) => b.cleared).sort((a, b) => Math.hypot(a.x - l.x, a.y - l.y) - Math.hypot(b.x - l.x, b.y - l.y))[0];
+            if (near) near.cleared = false;
+            this.fuel -= 4;
+            this.pop("OVERGROWN", "#c45aa8", l.x, l.y - 16);
+          }
+        } else {
+          this.fuel -= 12;
+          this.pop("THE FIRE GUTTERS", "#c45aa8", HEARTH_POS.x, HEARTH_POS.y - 16);
+        }
+        this.burst(w.x, w.y, "#3a1a52", 10);
+      }
+    }
+  }
+
+  private stepHearth(): void {
+    this.fuel -= this.phase === "night" ? BURN_NIGHT : BURN_DAY;
+    if (this.fuel <= 0 && this.state === "play") {
+      this.fuel = 0;
+      this.state = "over";
+      this.overT = 90;
+      this.showLog = false;
+      this.events.push("over");
+      this.banner("THE HEARTH WENT OUT", "#c45aa8");
+    }
   }
 
   private findNearbyTarget(): InteractTarget | null {
@@ -643,6 +840,17 @@ export class BasecampSim {
         y: CHEST_POS.y,
         prompt: "OPEN SUNKEN CHEST",
         urgent: true,
+      });
+    }
+
+    if (this.timber > 0 && this.fuel < HEARTH_MAX - 8) {
+      push(Math.hypot(wx - HEARTH_POS.x, wy - HEARTH_POS.y), 30, {
+        kind: "hearth",
+        id: "hearth",
+        x: HEARTH_POS.x,
+        y: HEARTH_POS.y,
+        prompt: "FEED THE HEARTH (1 WOOD)",
+        urgent: this.fuel < 40,
       });
     }
 
@@ -816,6 +1024,17 @@ export class BasecampSim {
         return true;
       }
 
+      case "hearth": {
+        if (this.timber <= 0 || this.fuel >= HEARTH_MAX - 8) return false;
+        this.timber--;
+        this.fuel = Math.min(HEARTH_MAX, this.fuel + FEED_FUEL);
+        this.addScore(10);
+        this.events.push("feed");
+        this.pop(`FIRE ${Math.round(this.fuel)}`, "#ffb347", HEARTH_POS.x, HEARTH_POS.y - 14);
+        this.burst(HEARTH_POS.x, HEARTH_POS.y - 4, "#ffb347", 12);
+        return true;
+      }
+
       case "settler": {
         const s = this.settlers.find((item) => item.lodgeId === t.id);
         if (!s) return false;
@@ -835,15 +1054,16 @@ export class BasecampSim {
     if (lodge && lodge.level === 1 && this.timber >= UPGRADE_TIMBER) {
       return `UPGRADE ${s.name} WITH WOOD!`;
     }
+    if (this.fuel < 40) return "THE FIRE'S LOW. BRING WOOD!";
     switch (this.phase) {
       case "dawn":
-        return "OPEN SLUICE BEFORE NIGHT!";
+        return this.day > 1 ? "THE BRAMBLES GREW BACK" : "OPEN THE SLUICE BEFORE NIGHT";
       case "noon":
-        return "HEARTH EMBERS LIGHT BRAZIERS";
+        return lodge && lodge.level === 1 ? "A WORKSHOP KEEPS ONE ON WATCH" : "THE BELL SINGS AT DUSK";
       case "dusk":
-        return "DUSK BELL REACHES SW TOWER";
+        return "LIGHT THE WATCHFIRES. IT'S COMING.";
       case "night":
-        return this.sluiceOpen ? "CROSS SE POND STONES!" : "STAY NEAR LIT WATCHFIRES";
+        return this.sluiceOpen ? "THE POND STONES ARE BARE" : "SWAT THEM WITH YOUR EMBER";
     }
   }
 
@@ -963,10 +1183,16 @@ export class BasecampSim {
           ty = RADIO_POS.y - 8;
         }
       } else {
-        // Night: gather warmly near Hearthfire unless Pond causeway is open
+        // Night: workshop settlers keep watch at their lodge; the rest huddle by the hearth.
+        const lodge = this.lodges.find((l) => l.id === s.lodgeId);
         const ang = (Math.PI * 2 * i) / Math.max(1, this.settlers.length);
-        tx = HEARTH_POS.x + Math.cos(ang) * 20;
-        ty = HEARTH_POS.y + Math.sin(ang) * 18;
+        if (lodge && lodge.level === 2) {
+          tx = lodge.x + Math.cos(this.t * 0.02 + i) * 14;
+          ty = lodge.y + 12 + Math.sin(this.t * 0.02 + i) * 6;
+        } else {
+          tx = HEARTH_POS.x + Math.cos(ang) * 20;
+          ty = HEARTH_POS.y + Math.sin(ang) * 18;
+        }
       }
 
       const vx = tx - s.x;
@@ -983,6 +1209,7 @@ export class BasecampSim {
 
   step(): void {
     this.t++;
+    this.shake = this.calm ? 0 : Math.max(0, this.shake - 0.2);
     if (this.bellCooldown > 0) this.bellCooldown--;
     if (this.bannerTimer > 0) this.bannerTimer--;
     if (this.auroraTimer > 0) this.auroraTimer--;
@@ -1012,10 +1239,19 @@ export class BasecampSim {
       return;
     }
 
+    if (this.state === "over") {
+      if (this.overT > 0) this.overT--;
+      this.stepSettlers();
+      this.centerCamera();
+      return;
+    }
+
     if (!this.showLog) {
       this.advanceClock(1);
       this.stepWarden();
       this.stepSettlers();
+      this.stepTwilight();
+      this.stepHearth();
     }
     this.nearby = this.findNearbyTarget();
     this.centerCamera();

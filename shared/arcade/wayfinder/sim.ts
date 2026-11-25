@@ -23,6 +23,7 @@ import {
   RETREAT_PENALTY,
   TRADE_COST,
   WALK_FRAMES,
+  LANDING_FRAMES,
   applyRelic,
   dealDeck,
   exploreLayout,
@@ -963,7 +964,7 @@ export class WayfinderSim {
       swing: 0,
       hit: 0,
       hurt: 0,
-      cool: CHOICE_COOLDOWN,
+      cool: LANDING_FRAMES,
       toast: { s: mood === "lost" ? "A LOST ISLAND..." : "ASHORE!", c: mood === "lost" ? "#c7e4ff" : "#8dff9a", t: 60 },
     };
     this.events.push("dock");

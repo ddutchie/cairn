@@ -44,6 +44,8 @@ export const KO_PENALTY = 360;
 /** Frames between two choices, so a double tap can't skip a step. */
 export const CHOICE_COOLDOWN = 10;
 export const WALK_FRAMES = 24;
+/** The camera's dive from the sea view down to the captain's shoulder; choices wait for it. */
+export const LANDING_FRAMES = 64;
 export const KO_FRAMES = 90;
 
 export interface Voyage {

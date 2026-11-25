@@ -9,7 +9,7 @@ import { textWidth } from "../pixel/font";
 import { hudFrame } from "../pixel/hud";
 import { clamp, lerpHex } from "../pixel/kinds";
 import { INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel/painter";
-import { fbm, hash2, rgb } from "../pixel/terrain";
+import { fbmSampler, hash2, rgb } from "../pixel/terrain";
 import {
   BELL_MODEL,
   BRAMBLE_MODEL,
@@ -29,7 +29,12 @@ import {
 } from "./models";
 import {
   BELL_POS,
+  BRAZIER_REACH,
   CAIRN_POS,
+  ENDURE_NIGHTS,
+  HEARTH_MAX,
+  NIGHT_F,
+  WATCH_REACH,
   CHEST_POS,
   CYCLE_FRAMES,
   HEARTH_POS,
@@ -57,15 +62,27 @@ function setPx(buf: Uint8Array, i: number, c: [number, number, number]): void {
   buf[i + 3] = 255;
 }
 
+/** Warm wash over the valley at dawn and dusk. Night is drawn as darkness with light pools instead. */
 function phaseTint(cycleTick: number): { color: string; alpha: number } {
   const f = (cycleTick % CYCLE_FRAMES) / CYCLE_FRAMES;
-  if (f < 0.12) return { color: "#e88a68", alpha: 0.16 * (1 - f / 0.12) };
-  if (f < 0.55) return { color: "#ffffff", alpha: 0 };
-  if (f < 0.72) return { color: "#d96b27", alpha: 0.2 * ((f - 0.55) / 0.17) };
-  if (f < 0.82) return { color: "#141c3c", alpha: 0.2 + 0.26 * ((f - 0.72) / 0.1) };
-  if (f < 0.94) return { color: "#0b122b", alpha: 0.46 };
-  return { color: "#141c3c", alpha: 0.46 * (1 - (f - 0.94) / 0.06) };
+  if (f < 0.1) return { color: "#e88a68", alpha: 0.16 * (1 - f / 0.1) };
+  if (f < 0.45) return { color: "#ffffff", alpha: 0 };
+  if (f < NIGHT_F) return { color: "#d96b27", alpha: 0.22 * ((f - 0.45) / (NIGHT_F - 0.45)) };
+  return { color: "#ffffff", alpha: 0 };
 }
+
+/** How dark the night is (0…1): falls in at nightfall, lifts before dawn. */
+function nightDepth(cycleTick: number): number {
+  const f = (cycleTick % CYCLE_FRAMES) / CYCLE_FRAMES;
+  if (f < NIGHT_F - 0.04) return 0;
+  if (f < NIGHT_F + 0.04) return (f - (NIGHT_F - 0.04)) / 0.08;
+  if (f > 0.97) return (1 - f) / 0.03;
+  return 1;
+}
+
+/** Darkness levels the night overlay is quantised to (fewer rects per frame). */
+const DARK_STEPS = 6;
+const DARK_CELL = 8;
 
 const PHASE_LABEL: Record<ClockPhase, { label: string; col: string }> = {
   dawn: { label: "DAWN", col: "#ffd2a0" },
@@ -136,6 +153,24 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
     const stoneA = rgb("#5d667a");
     const creekA = rgb("#2a74d2");
     const creekB = rgb("#47a3e6");
+    const creekBank = rgb("#1b3a58");
+    const cobbleA = rgb("#8d98ad");
+    const flagDark = rgb("#485061");
+    const stair = rgb("#6c768a");
+    const riser = rgb("#3a4256");
+    const plateauShadow = rgb("#232a3c");
+    const autumn = rgb("#c98a3b");
+    const flowerA = rgb("#fff2a0");
+    const flowerB = rgb("#ff9e44");
+    const noise = fbmSampler(31);
+    const earthTop = rgb("#6b4a2c");
+    const earthWall = rgb("#4a3220");
+    const lipLight = rgb("#5fa34a");
+    const creekAt = (x: number, y: number): number => Math.min(
+      distToSegment(x, y, 26, 74, SLUICE_POS.x, SLUICE_POS.y),
+      distToSegment(x, y, SLUICE_POS.x, SLUICE_POS.y, 146, 152),
+      distToSegment(x, y, 270, 274, POND_POS.x - 16, POND_POS.y - 12),
+    );
 
     const paths: [number, number, number, number][] = [
       [HEARTH_POS.x, HEARTH_POS.y, CAIRN_POS.x, CAIRN_POS.y + 10],
@@ -148,25 +183,25 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
     for (let y = 0; y < WORLD_H; y++) {
       for (let x = 0; x < WORLD_W; x++) {
         const i = (y * WORLD_W + x) * 4;
-        const n = fbm(x * 0.045, y * 0.045, 31);
+        const n = noise.at(x * 0.045, y * 0.045);
         const grain = hash2(x, y, 17);
         // Sunken creek channel with 3D north earthen bank, extending toward SE pond
-        const creekD = Math.min(
-          distToSegment(x, y, 26, 74, SLUICE_POS.x, SLUICE_POS.y),
-          distToSegment(x, y, SLUICE_POS.x, SLUICE_POS.y, 146, 152),
-          distToSegment(x, y, 270, 274, POND_POS.x - 16, POND_POS.y - 12),
-        );
-        const creekNorth = Math.min(
-          distToSegment(x, y + 4, 26, 74, SLUICE_POS.x, SLUICE_POS.y),
-          distToSegment(x, y + 4, SLUICE_POS.x, SLUICE_POS.y, 146, 152),
-          distToSegment(x, y + 4, 270, 274, POND_POS.x - 16, POND_POS.y - 12),
-        );
+        // The creek only runs through two boxes of the map; skip the distance maths elsewhere.
+        const nearCreek = (x < 160 && y > 60 && y < 166) || (x > 256 && x < 324 && y > 260 && y < 320);
+        const creekD = nearCreek ? creekAt(x, y) : 99;
         if (creekD < 8.5) {
-          setPx(buf, i, creekNorth >= 8.5 ? rgb("#1b3a58") : grain < 0.35 ? creekB : creekA);
+          // Sunk below the meadow: how far down from the creek's north edge is this pixel?
+          let down = 0;
+          while (down < 7 && creekAt(x, y - down - 1) < 8.5) down++;
+          if (down < 3) setPx(buf, i, down === 0 ? earthTop : earthWall); // the far bank's earth face
+          else if (down < 6) setPx(buf, i, creekBank); // water in the bank's shadow
+          else setPx(buf, i, grain < 0.35 ? creekB : creekA);
           continue;
         }
-        if (creekD < 11) {
-          setPx(buf, i, grain < 0.45 ? stoneA : grassC);
+        if (creekD < 10.5) {
+          // Near (south) lip catches the light; far rim is worn dark.
+          const southLip = creekAt(x, y - 3) < 8.5;
+          setPx(buf, i, southLip ? (grain < 0.5 ? lipLight : grassB) : grain < 0.45 ? stoneA : grassC);
           continue;
         }
 
@@ -174,13 +209,13 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
         const hd = Math.hypot(x - HEARTH_POS.x, y - HEARTH_POS.y);
         if (hd < 28) {
           const ring = hd > 19 && hd < 25;
-          setPx(buf, i, ring ? rgb((x + y) % 3 === 0 ? "#8d98ad" : "#5d667a") : grain < 0.28 ? pathB : pathA);
+          setPx(buf, i, ring ? ((x + y) % 3 === 0 ? cobbleA : stoneA) : grain < 0.28 ? pathB : pathA);
           continue;
         }
 
         // Radio Outpost flagstones (SW)
         if (Math.hypot(x - RADIO_POS.x, y - RADIO_POS.y) < 18) {
-          setPx(buf, i, (x + y) % 5 === 0 ? rgb("#485061") : stoneA);
+          setPx(buf, i, (x + y) % 5 === 0 ? flagDark : stoneA);
           continue;
         }
 
@@ -190,16 +225,19 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
         if (cd < plateauR) {
           const onStairs = Math.abs(x - CAIRN_POS.x) <= 5 && y > CAIRN_POS.y + 14;
           const onRiser = y > CAIRN_POS.y + 16 && !onStairs;
-          setPx(buf, i, onStairs ? rgb(y % 3 === 0 ? "#8d98ad" : "#6c768a") : onRiser ? rgb("#3a4256") : stoneA);
+          setPx(buf, i, onStairs ? (y % 3 === 0 ? cobbleA : stair) : onRiser ? riser : stoneA);
           continue;
         }
         if (Math.hypot(x - CAIRN_POS.x, y - (CAIRN_POS.y + 4)) < plateauR && y > CAIRN_POS.y + 18) {
-          setPx(buf, i, rgb("#232a3c")); // ground shadow under plateau cliff
+          setPx(buf, i, plateauShadow); // ground shadow under plateau cliff
           continue;
         }
 
         // Dirt footpaths from Hearthfire
-        const onPath = paths.some(([ax, ay, bx, by]) => distToSegment(x, y, ax, ay, bx, by) < 7 + (n - 0.5) * 4);
+        const pathR = 7 + (n - 0.5) * 4;
+        const onPath = paths.some(([ax, ay, bx, by]) =>
+          x >= Math.min(ax, bx) - 10 && x <= Math.max(ax, bx) + 10 && y >= Math.min(ay, by) - 10 && y <= Math.max(ay, by) + 10 &&
+          distToSegment(x, y, ax, ay, bx, by) < pathR);
         if (onPath || Math.hypot(x - HEARTH_POS.x, y - HEARTH_POS.y) < 24) {
           setPx(buf, i, grain < 0.28 ? pathB : pathA);
           continue;
@@ -211,9 +249,9 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
         if (forestEdge || n < 0.38) {
           setPx(buf, i, grain < 0.14 ? grassA : grassC);
         } else if (nearBell && grain > 0.88) {
-          setPx(buf, i, rgb("#c98a3b")); // autumn leaf scatter around Bell Bluff
+          setPx(buf, i, autumn); // autumn leaf scatter around Bell Bluff
         } else if (grain > 0.994 && n > 0.45) {
-          setPx(buf, i, rgb(grain > 0.997 ? "#fff2a0" : "#ff9e44"));
+          setPx(buf, i, grain > 0.997 ? flowerA : flowerB);
         } else if (n > 0.62 || grain < 0.16) {
           setPx(buf, i, grassB);
         } else {
@@ -234,8 +272,10 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
   draw(): Frame {
     const s = this.sim;
     const W = this.W, H = this.H;
-    const cx0 = Math.round(s.camX);
-    const cy0 = Math.round(s.camY);
+    const jx = s.shake > 0 ? Math.round((hash2(s.t, 1, 3) - 0.5) * s.shake * 2) : 0;
+    const jy = s.shake > 0 ? Math.round((hash2(s.t, 2, 3) - 0.5) * s.shake * 2) : 0;
+    const cx0 = Math.round(s.camX) + jx;
+    const cy0 = Math.round(s.camY) + jy;
 
     this.clear("#1c331e");
     // Blit visible chunk of baked valley floor
@@ -255,9 +295,17 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
     // Dynamic South-East Pond & Moonlit Causeway stepping stones
     const px = Math.round(POND_POS.x - cx0);
     const py = Math.round(POND_POS.y - cy0);
-    const waterCol = s.sluiceOpen ? "#2a567a" : "#2a74d2";
-    this.circle(px, py, 36, waterCol, 0.95);
-    this.circle(px, py, 30, s.sluiceOpen ? "#1b3a58" : "#47a3e6", 0.65);
+    // A hollow in the meadow: the far (north) earth wall shows as a crescent above
+    // the water, the water's top edge sits in that wall's shadow, and the near
+    // rim catches the light. Drained, the water drops and more wall and mud show.
+    const drop = s.sluiceOpen ? 10 : 5;
+    this.circle(px, py + 1, 37, "#2e612a", 1); // worn grass rim
+    this.circle(px, py, 35, "#4a3220", 1); // earth wall
+    this.circle(px, py - 1, 35, "#6b4a2c", 0.5, true); // lit top of the far bank
+    if (s.sluiceOpen) this.circle(px, py + drop - 2, 34 - drop + 3, "#3a2a1c", 1); // wet mud
+    this.circle(px, py + drop, 35 - drop, s.sluiceOpen ? "#1b3a58" : "#1d5a9e", 1); // water in shadow
+    this.circle(px, py + drop + 4, 31 - drop, s.sluiceOpen ? "#2a567a" : "#2a74d2", 1); // open water
+    this.circle(px, py + 2, 36, "#5fa34a", 0.35, true); // sunlit near lip
     // Ripple glints
     const rip = (Math.sin(s.t * 0.08) * 3) | 0;
     this.rect(px - 14 + rip, py - 8, 8, 1, "#cfeeff", 0.45);
@@ -414,30 +462,51 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
     items.sort((a, b) => a.y - b.y);
     for (const item of items) item.draw();
 
-    // Clockwork Day/Dusk/Night lighting veil
+    // Dawn and dusk wash
     const tint = phaseTint(s.cycleTick);
     if (tint.alpha > 0.01) {
       this.rect(0, 0, W, H, tint.color, tint.alpha);
     }
 
-    // Warm glowing lantern/fire pools when the valley dims
-    const warmStrength = tint.alpha > 0.05 ? clamp(tint.alpha * 1.15, 0.14, 0.42) : 0.08;
+    // Night: darkness everywhere the camp's light doesn't reach.
+    const depth = nightDepth(s.cycleTick);
+    const fire = s.fuel / HEARTH_MAX;
+    const lights: [number, number, number][] = [[HEARTH_POS.x, HEARTH_POS.y, 40 + fire * 50]];
+    for (const br of s.braziers) if (br.lit) lights.push([br.x, br.y, BRAZIER_REACH + 6]);
+    for (const l of s.lodges) if (l.level === 2) lights.push([l.x, l.y, WATCH_REACH + 6]);
+    if (s.warden.hasEmber) lights.push([s.warden.x, s.warden.y, 30]);
+    else lights.push([s.warden.x, s.warden.y, 16]);
+    if (s.cairnAwakened) lights.push([CAIRN_POS.x, CAIRN_POS.y, 60]);
+    if (depth > 0.01) this.drawDarkness(cx0, cy0, lights, depth * 0.72);
+
+    // Warm glow at each light's heart
+    const warm = 0.08 + depth * 0.3;
     const drawGlow = (wx: number, wy: number, r: number, col = "#ffb347") => {
       const gx = wx - cx0, gy = wy - cy0;
-      this.circle(gx, gy, r, col, warmStrength * 0.45);
-      this.circle(gx, gy, r * 0.55, "#fff2a0", warmStrength * 0.35);
+      this.circle(gx, gy, r, col, warm * 0.45);
+      this.circle(gx, gy, r * 0.55, "#fff2a0", warm * 0.35);
     };
-    drawGlow(HEARTH_POS.x, HEARTH_POS.y, 44);
-    if (s.warden.hasEmber || s.phase === "night" || s.phase === "dusk") {
-      drawGlow(s.warden.x, s.warden.y - 4, s.warden.hasEmber ? 30 : 20);
+    drawGlow(HEARTH_POS.x, HEARTH_POS.y, 18 + fire * 26);
+    if (s.warden.hasEmber) drawGlow(s.warden.x, s.warden.y - 4, 16);
+    for (const br of s.braziers) if (br.lit) drawGlow(br.x, br.y, 22);
+    for (const l of s.lodges) if (l.level === 2) drawGlow(l.x, l.y, 16, l.project.accent);
+    if (s.cairnAwakened) drawGlow(CAIRN_POS.x, CAIRN_POS.y, 30, "#a8f4e8");
+
+    // The Twilight: violet wisps with a dark core, eyes on their mark.
+    for (const w of s.wisps) {
+      const wx = Math.round(w.x - cx0), wy = Math.round(w.y - cy0);
+      if (wx < -10 || wx > W + 10 || wy < -10 || wy > H + 10) continue;
+      const k = 0.45 + w.hp * 0.55;
+      this.circle(wx, wy, 7 * k, "#c45aa8", 0.22);
+      this.circle(wx, wy, 4.5 * k, "#2a1240", 0.9);
+      this.circle(wx, wy - 1, 2.5 * k, "#7a3a9a", 0.9);
+      if (((s.t + w.id * 7) >> 3) % 6) {
+        this.px(wx - 2, wy - 1, "#ffd2ff");
+        this.px(wx + 1, wy - 1, "#ffd2ff");
+      }
+      const trail = Math.sin(w.wob) * 2;
+      this.px(wx + trail, wy + 5, "#c45aa8", 1, 0.6);
     }
-    for (const br of s.braziers) {
-      if (br.lit) drawGlow(br.x, br.y, 38);
-    }
-    for (const l of s.lodges) {
-      if (l.level === 2) drawGlow(l.x, l.y, 28, l.project.accent);
-    }
-    if (s.cairnAwakened) drawGlow(CAIRN_POS.x, CAIRN_POS.y, 52, "#a8f4e8");
 
     // Rising Hearthfire ember sparks & daytime butterflies
     for (let i = 0; i < 4; i++) {
@@ -533,6 +602,7 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
     this.drawHud();
     if (s.showLog) this.drawFieldLog();
     if (s.state === "title") this.drawTitle();
+    if (s.state === "over") this.drawOver();
 
     return this.snapshot();
   }
@@ -548,16 +618,34 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
     this.band(0, ty + 22, 0.62);
     this.text(`DAY ${s.day}`, lx, ty, "#ffffff");
     this.text(pInfo.label, lx + 26, ty, pInfo.col);
+    // Countdown to dark at dusk, wisps on the field at night.
+    const dayF = (s.cycleTick % CYCLE_FRAMES) / CYCLE_FRAMES;
+    if (s.phase === "dusk") {
+      const secs = Math.ceil(((NIGHT_F - dayF) * CYCLE_FRAMES) / 60);
+      this.text(`DARK IN ${secs}S`, lx + 26 + textWidth(pInfo.label) + 6, ty, "#ff9e44");
+    } else if (s.phase === "night" && s.wisps.length) {
+      this.text(`${s.wisps.length} WISPS`, lx + 26 + textWidth(pInfo.label) + 6, ty, "#c45aa8");
+    }
 
     const lb = s.logButtonRect();
     this.rect(lb.x, lb.y, lb.w, lb.h, s.showLog ? "#fff2a0" : INK, s.showLog ? 1 : 0.85);
     this.strokeRect(lb.x, lb.y, lb.w, lb.h, s.showLog ? "#fff2a0" : "#5b8dd6");
     this.textC(`LOG ${s.secrets.size}/5`, lb.x + lb.w / 2, lb.y + 3, s.showLog ? INK : "#fff2a0", 1, null);
 
-    // Row 2: resources on left, padded score on right
-    this.text(`WOOD ${s.timber}  SP ${s.sparks}${s.warden.hasEmber ? "  EMBER" : ""}`, lx, ty + 9, s.warden.hasEmber ? "#ffb347" : "#c7e4ff");
+    // Row 2: resources, the hearth's fuel, score
+    const res = `WOOD ${s.timber} SP ${s.sparks}`;
+    this.text(res, lx, ty + 9, s.warden.hasEmber ? "#ffb347" : "#c7e4ff");
     const sc = String(s.score).padStart(5, "0");
     this.text(sc, rx - textWidth(sc), ty + 9, "#fff2a0");
+    const gx0 = lx + textWidth(res) + 8, gx1 = rx - textWidth(sc) - 8;
+    if (gx1 - gx0 > 30) {
+      this.text("FIRE", gx0, ty + 9, "#ffb347");
+      const bx = gx0 + 18, bw = gx1 - bx;
+      const k = s.fuel / HEARTH_MAX;
+      const low = k < 0.3;
+      this.rect(bx, ty + 10, bw, 3, INK);
+      this.rect(bx, ty + 10, Math.round(bw * k), 3, low ? ((s.t >> 3) & 1 ? "#ff5c44" : "#ffb347") : "#ffb347");
+    }
 
     // Row 3: full-width sundial day progress bar
     const cycleFrac = (s.cycleTick % CYCLE_FRAMES) / CYCLE_FRAMES;
@@ -581,9 +669,57 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
       const msg = s.inputMode === "pointer" ? `${label} (E)` : label;
       this.textC(PixelPainter.clip(msg, Math.floor((r.w - 6) / 4)), r.x + r.w / 2, r.y + 4, "#ffffff");
       this.textC("PRESS SPACE OR E", r.x + r.w / 2, r.y + 12, s.nearby.urgent ? "#fff2a0" : "#a8f4e8", 1, null);
-    } else if (s.t < 240 && ((s.t >> 5) & 1)) {
-      const hint = s.inputMode === "pointer" ? "WASD WALK · SPACE ACT · L LOG" : "DRAG OR TAP TO EXPLORE";
+    } else if (s.t < 300 && ((s.t >> 5) & 1)) {
+      const hint = s.inputMode === "pointer" ? "WASD WALK · SPACE ACT · L LOG" : "DRAG OR TAP TO WALK";
       this.textC(hint, f.content.cx, f.bottom.y - 10, "#c7e4ff");
+    }
+  }
+
+  /**
+   * Night darkness on an 8px grid: each cell's darkness falls off inside the
+   * nearest light, quantised to a few levels and merged into horizontal runs
+   * so a frame is a few hundred rects, not thousands.
+   */
+  private drawDarkness(cx0: number, cy0: number, lights: [number, number, number][], max: number): void {
+    const W = this.W, H = this.H;
+    const cols = Math.ceil(W / DARK_CELL), rows = Math.ceil(H / DARK_CELL);
+    for (let r = 0; r < rows; r++) {
+      const wy = cy0 + r * DARK_CELL + DARK_CELL / 2;
+      let runStart = 0, runLevel = -1;
+      for (let c = 0; c <= cols; c++) {
+        let level = runLevel;
+        if (c < cols) {
+          const wx = cx0 + c * DARK_CELL + DARK_CELL / 2;
+          let lit = 0;
+          for (const [lx, ly, lr] of lights) {
+            const d = Math.hypot(wx - lx, wy - ly);
+            if (d < lr) lit = Math.max(lit, 1 - (d / lr) * (d / lr));
+          }
+          level = Math.round((1 - lit) * DARK_STEPS);
+        }
+        if (c === cols || level !== runLevel) {
+          if (runLevel > 0 && c > runStart) {
+            this.rect(runStart * DARK_CELL, r * DARK_CELL, (c - runStart) * DARK_CELL, DARK_CELL, "#070b1c", (runLevel / DARK_STEPS) * max);
+          }
+          runStart = c;
+          runLevel = level;
+        }
+      }
+    }
+  }
+
+  private drawOver(): void {
+    const s = this.sim;
+    const f = hudFrame(s.hud, this.W, this.H);
+    const cx = f.content.cx;
+    const by = Math.round(this.H * 0.34);
+    this.band(by - 8, 74, 0.78);
+    this.textC("THE HEARTH WENT OUT", cx, by, "#c45aa8", 2);
+    this.textC(`DAY ${s.day} · ${s.nightsSurvived} ${s.nightsSurvived === 1 ? "NIGHT" : "NIGHTS"} SURVIVED`, cx, by + 18, "#ffffff");
+    this.textC(`${s.dispelled} WISPS DISPELLED · ${s.upgradedLodgesCount} WORKSHOPS`, cx, by + 28, "#c7e4ff");
+    this.textC(`SCORE ${s.score} · BEST ${s.best}`, cx, by + 40, "#fff2a0");
+    if (s.overT <= 0 && ((s.t >> 5) & 1)) {
+      this.textC(s.inputMode === "pointer" ? "CLICK OR SPACE TO LIGHT A NEW FIRE" : "TAP TO LIGHT A NEW FIRE", cx, by + 54, "#ffffff");
     }
   }
 
@@ -600,7 +736,7 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
     this.strokeRect(mx, my, mw, mh, "#5b8dd6");
 
     this.textC("WARDEN FIELD LOG", f.content.cx, my + 7, "#fff2a0");
-    this.textC(`DAY ${s.day} · ${s.secrets.size}/5 SECRETS FOUND`, f.content.cx, my + 16, "#a8f4e8");
+    this.textC(`DAY ${s.day} · ${s.nightsSurvived} NIGHTS · ${s.secrets.size}/5 SECRETS`, f.content.cx, my + 16, "#a8f4e8");
     this.line(mx + 6, my + 24, mx + mw - 6, my + 24, "#2c3658");
 
     const list = s.getSecretList();
@@ -628,13 +764,13 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
     this.band(top, 70, 0.58);
     this.textC("YOUR WORKSPACE IN THE VALLEY", cx, top + 6, "#c7e4ff");
     this.textC("BASECAMP", cx, top + 18, "#ff9e44", 3);
-    this.textC("CLOCKWORK COLONY & MYSTERY", cx, top + 44, "#a8f4e8");
-    this.textC("CLEAR BRAMBLES · BUILD LODGES · 5 SECRETS", cx, top + 54, "#e6eefc");
+    this.textC("KEEP THE LIGHT", cx, top + 44, "#ffb347");
+    this.textC("BY DAY: CLEAR BRAMBLES, BUILD, FEED THE FIRE", cx, top + 54, "#e6eefc");
 
     const bot = this.H - s.hud.bottom - 70;
     this.band(bot, 46, 0.58);
-    this.textC("HEARTH TO CAIRN · DAWN TO NIGHT", cx, bot + 6, "#ff9e44");
-    this.textC("CARRY EMBER TO LIGHT THE WATCHFIRES", cx, bot + 16, "#fff2a0");
+    this.textC("BY NIGHT: THE TWILIGHT CREEPS IN", cx, bot + 6, "#c45aa8");
+    this.textC(`LIGHT THE WATCHFIRES · SEE ${ENDURE_NIGHTS} NIGHTS THROUGH`, cx, bot + 16, "#fff2a0");
     if ((s.t >> 5) & 1) {
       const prompt = s.inputMode === "pointer" ? "CLICK OR SPACE TO TEND CAMP" : "TAP TO TEND CAMP";
       this.textC(prompt, cx, bot + 30, "#ffffff");

@@ -35,6 +35,8 @@ function onEvent(e: PowderEvent): void {
     case "land":
       return haptics.impactMedium();
     case "hurt":
+    case "bail":
+    case "over":
     case "clear":
     case "win":
       return haptics.impactHeavy();

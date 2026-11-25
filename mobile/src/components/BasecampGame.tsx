@@ -32,6 +32,9 @@ function onEvent(e: BasecampEvent): void {
   switch (e) {
     case "start":
     case "build":
+    case "dim":
+    case "over":
+    case "endure":
     case "bell":
       return haptics.impactMedium();
     case "secret":

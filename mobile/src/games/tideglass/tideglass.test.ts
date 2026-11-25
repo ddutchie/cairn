@@ -7,6 +7,7 @@ import {
   CHEST_POS,
   CLIFFS,
   CYCLE_FRAMES,
+  isSea,
   DOCK_POS,
   HUT_POS,
   LIGHTHOUSE_POS,
@@ -295,9 +296,25 @@ describe("TideglassSim", () => {
       sim.step();
       expect(onScreen()).toBe(true);
     }
-    // Arrives at the closest reachable shore: the flooded flat itself is blocked.
+    // Stops at the shore: the causeway to the flats is under water until ebb.
     expect(sim.walkPath.length).toBe(0);
-    expect(Math.hypot(sim.wick.x - 540, sim.wick.y - 1180)).toBeLessThan(80);
+    expect(isSea(sim.wick.x, sim.wick.y)).toBe(false);
+    expect(Math.hypot(sim.wick.x - 540, sim.wick.y - 1180)).toBeGreaterThan(80);
+
+    // At ebb (with the sluice jammed open) the stones are bare and the walk reaches the flats.
+    sim.jammed = true;
+    sim.advanceClock(Math.round(CYCLE_FRAMES * 0.85));
+    sim.walkPath = sim.findPath(sim.wick.x, sim.wick.y, 540, 1180);
+    for (let i = 0; i < 1500 && sim.walkPath.length; i++) sim.step();
+    expect(Math.hypot(sim.wick.x - 540, sim.wick.y - 1180)).toBeLessThan(40);
+  });
+
+  it("keeps the Wick out of the open sea", () => {
+    const sim = startSim();
+    sim.wick.x = 600;
+    sim.wick.y = 985;
+    expect(sim.canStep(600, 985, 1040, 1300)).toBe(false);
+    expect(sim.canStep(640, 1010, 650, 1020)).toBe(!isSea(650, 1020));
   });
 
   it("keeps the wick on screen everywhere on the map", () => {

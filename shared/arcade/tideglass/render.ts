@@ -12,9 +12,9 @@ import { textWidth } from "../pixel/font";
 import { hudFrame } from "../pixel/hud";
 import { clamp } from "../pixel/kinds";
 import { INK, PixelPainter, type PixelBackend } from "../pixel/painter";
-import { Framebuffer3D, makeCam3D, meshFromModel, screenRay, worldToCam, type Cam3D, type Mesh3D } from "../pixel/raster3d";
+import { Framebuffer3D, fbSizeFor, makeCam3D, meshFromModel, screenRay, worldToCam, type Cam3D, type Mesh3D } from "../pixel/raster3d";
 import { makeModel } from "../pixel/models";
-import { hash2 } from "../pixel/terrain";
+import { fbm, hash2 } from "../pixel/terrain";
 import {
   BRIDGE_MODEL,
   CHEST_MODEL,
@@ -38,6 +38,7 @@ import {
   CHANNEL,
   CYCLE_FRAMES,
   DOCK_POS,
+  GLASS_COUNT,
   FLAT_POS,
   HUT_POS,
   LIGHTHOUSE_POS,
@@ -46,8 +47,11 @@ import {
   VAULT_POS,
   WORLD_H,
   WORLD_W,
+  SEA_LEVEL,
+  TRAIL,
   altZone,
   heightAt,
+  onCauseway,
   trailDist,
   type TideglassPhase,
   type TideglassSim,
@@ -70,18 +74,45 @@ const PHASE_LABEL: Record<TideglassPhase, { label: string; col: string; skyTop: 
   ebb: { label: "EBB", col: "#8fb8ff", skyTop: [14, 24, 54], skyHor: [56, 86, 132] },
 };
 
-function zoneRgb(zone: string, alt: boolean): [number, number, number] {
-  switch (zone) {
-    case "PEAK":
-      return alt ? [220, 232, 244] : [182, 196, 214];
-    case "ALPINE":
-      return alt ? [116, 142, 126] : [92, 114, 124];
-    case "FOREST":
-      return alt ? [68, 156, 88] : [48, 120, 68];
-    default:
-      return alt ? [226, 206, 148] : [192, 168, 116];
+/** Ground colour by altitude (ledges): beach, dune grass, forest, meadow, slate, snow. */
+const GROUND_STOPS: [number, number, number, number][] = [
+  [0.0, 206, 188, 136],
+  [0.3, 186, 180, 116],
+  [0.62, 96, 150, 80],
+  [1.0, 56, 124, 70],
+  [1.38, 46, 106, 64],
+  [1.6, 112, 140, 98],
+  [2.0, 116, 126, 128],
+  [2.3, 214, 226, 240],
+  [3.3, 240, 246, 252],
+];
+
+function groundRgb(h: number): [number, number, number] {
+  for (let i = 1; i < GROUND_STOPS.length; i++) {
+    const b = GROUND_STOPS[i];
+    if (h <= b[0]) {
+      const a = GROUND_STOPS[i - 1];
+      const t = (h - a[0]) / (b[0] - a[0]);
+      return [a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t];
+    }
   }
+  const l = GROUND_STOPS[GROUND_STOPS.length - 1];
+  return [l[1], l[2], l[3]];
 }
+
+/** Light over the island through the day. */
+const PHASE_TINT: Record<TideglassPhase, [number, number, number]> = {
+  calm: [1, 1, 1],
+  wind: [1.05, 0.97, 0.88],
+  squall: [0.6, 0.66, 0.8],
+  ebb: [0.72, 0.7, 0.92],
+};
+
+const GLASS_MODEL = makeModel(3, 3, 5, (x, y, z) => {
+  const r = Math.abs(x - 1) + Math.abs(y - 1);
+  if (z === 0 || z === 4) return r === 0 ? "#bff8ff" : null;
+  return r <= 1 ? (z === 2 && r === 0 ? "#ffffff" : (x + z) % 2 ? "#6fe0f0" : "#9ff2fa") : null;
+});
 
 export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPainter<Img, Frame> {
   private readonly sim: TideglassSim;
@@ -103,6 +134,7 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
   private readonly signMesh: Mesh3D;
   private readonly bridgeMesh: Mesh3D;
   private readonly cloudMesh: Mesh3D;
+  private readonly glassMesh: Mesh3D;
   private readonly huts = new Map<string, Mesh3D>();
   private readonly npcsMap = new Map<string, Mesh3D>();
   private readonly trees: [number, number][];
@@ -129,6 +161,7 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
     this.signMesh = meshFromModel(SIGN_MODEL, 1.4, 1.5);
     this.bridgeMesh = meshFromModel(BRIDGE_MODEL, 2.4, 1.8);
     this.cloudMesh = meshFromModel(CLOUD_MODEL, 5.5, 4.0);
+    this.glassMesh = meshFromModel(GLASS_MODEL, 1.3, 1.3);
 
     const landmarks = [LIGHTHOUSE_POS, MILL_POS, RADIO_POS, HUT_POS, VAULT_POS, DOCK_POS, FLAT_POS];
     const clearSpot = (x: number, y: number): boolean =>
@@ -151,9 +184,8 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
   }
 
   private allocFB(w: number, h: number): Framebuffer3D {
-    const rw = Math.max(120, Math.min(w, 230));
-    const rh = Math.max(100, Math.round((rw * h) / Math.max(1, w)));
-    return new Framebuffer3D(rw, rh);
+    const size = fbSizeFor(w, h);
+    return new Framebuffer3D(size.w, size.h);
   }
 
   override resize(width: number, height: number): void {
@@ -186,7 +218,7 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
     const wz = Math.max(hGround, s.wick.z) * H_SCALE;
     const jx = s.shake > 0 && !s.calm ? (s.rand() * 2 - 1) * s.shake * 1.4 : 0;
     const jz = s.shake > 0 && !s.calm ? (s.rand() * 2 - 1) * s.shake * 0.8 : 0;
-    const eye = { x: s.wick.x + 14 + jx, y: s.wick.y - 110, z: wz + 88 + jz };
+    const eye = { x: s.wick.x + 14 + jx, y: s.wick.y - 118, z: wz + 96 + jz };
     const target = { x: s.wick.x, y: s.wick.y + 42, z: wz + 10 };
     return makeCam3D(eye, target, this.fb.w, this.fb.h, 55, 8, 860);
   }
@@ -243,91 +275,162 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
     const s = this.sim;
     const fb = this.fb;
 
-    // Subdivided 3D ocean tiles around the camera (prevents huge-tri depth warping).
+    // Ocean tiles around the camera, finer near the Wick, with a slow swell of colour.
     const seaZ = 1.2;
-    const seaStep = 160;
-    const ox0 = Math.floor((s.wick.x - 640) / seaStep) * seaStep;
-    const ox1 = Math.ceil((s.wick.x + 640) / seaStep) * seaStep;
-    const oy0 = Math.floor((s.wick.y - 160) / seaStep) * seaStep;
-    const oy1 = Math.ceil((s.wick.y + 820) / seaStep) * seaStep;
-    for (let y = oy0; y < oy1; y += seaStep) {
-      for (let x = ox0; x < ox1; x += seaStep) {
-        fb.drawTri(cam, x, y, seaZ, x + seaStep, y, seaZ, x + seaStep, y + seaStep, seaZ, 24, 86, 124);
-        fb.drawTri(cam, x, y, seaZ, x + seaStep, y + seaStep, seaZ, x, y + seaStep, seaZ, 22, 82, 118);
+    const [tr, tg, tb] = PHASE_TINT[s.phase];
+    const swell = s.calm ? 0 : s.t * 0.04;
+    for (const [step, reach] of [[80, 320], [160, 720]] as const) {
+      const ox0 = Math.floor((s.wick.x - reach) / step) * step;
+      const ox1 = Math.ceil((s.wick.x + reach) / step) * step;
+      const oy0 = Math.floor((s.wick.y - 160) / step) * step;
+      const oy1 = Math.ceil((s.wick.y + (step === 80 ? 360 : 820)) / step) * step;
+      for (let y = oy0; y < oy1; y += step) {
+        for (let x = ox0; x < ox1; x += step) {
+          // The fine ring is drawn first; the coarse ring skips what it covered.
+          if (step === 160 && Math.abs(x + 80 - s.wick.x) < 320 && y + 160 > s.wick.y - 160 && y < s.wick.y + 360) continue;
+          const w = Math.sin(swell + x * 0.021 + y * 0.017) * 9;
+          const r = clamp((26 + w * 0.5) * tr, 0, 255), g = clamp((92 + w) * tg, 0, 255), b = clamp((128 + w) * tb, 0, 255);
+          fb.drawTri(cam, x, y, seaZ, x + step, y, seaZ, x + step, y + step, seaZ, r, g, b);
+          fb.drawTri(cam, x, y, seaZ, x + step, y + step, seaZ, x, y + step, seaZ, r * 0.95, g * 0.96, b * 0.97);
+        }
       }
     }
 
-    // Local 3D mountain mesh around the camera.
-    const xMin = Math.max(0, Math.floor((s.wick.x - 380) / GRID_STEP) * GRID_STEP);
-    const xMax = Math.min(WORLD_W, Math.ceil((s.wick.x + 380) / GRID_STEP) * GRID_STEP);
-    const yMin = Math.max(0, Math.floor((s.wick.y - 160) / GRID_STEP) * GRID_STEP);
-    const yMax = Math.min(WORLD_H, Math.ceil((s.wick.y + 580) / GRID_STEP) * GRID_STEP);
-
-    const sunX = -0.55, sunY = -0.4, sunZ = 0.73;
-
-    const emitTri = (
-      x0: number, y0: number, z0: number,
-      x1: number, y1: number, z1: number,
-      x2: number, y2: number, z2: number,
-    ) => {
-      const ux = x1 - x0, uy = y1 - y0, uz = z1 - z0;
-      const vx = x2 - x0, vy = y2 - y0, vz = z2 - z0;
-      let nx = uy * vz - uz * vy;
-      let ny = uz * vx - ux * vz;
-      let nz = ux * vy - uy * vx;
-      const nl = Math.hypot(nx, ny, nz) || 1;
-      nx /= nl; ny /= nl; nz /= nl;
-      if (nz < 0) {
-        nx = -nx; ny = -ny; nz = -nz;
+    // The causeway: stepping stones along the drowned trail, bared at ebb.
+    if (s.causewayOpen) {
+      for (let i = 0; i < TRAIL.length - 1; i++) {
+        const a = TRAIL[i], b = TRAIL[i + 1];
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        for (let d = 0; d < len; d += 13) {
+          const x = a.x + ((b.x - a.x) * d) / len, y = a.y + ((b.y - a.y) * d) / len;
+          if (!onCauseway(x, y) || heightAt(x, y) >= SEA_LEVEL) continue;
+          if (Math.abs(x - s.wick.x) > 320 || y < s.wick.y - 160 || y > s.wick.y + 600) continue;
+          const j = hash2(Math.round(x), Math.round(y), 11);
+          const r = 5 + j * 2, ox = (j - 0.5) * 6;
+          fb.drawBox(cam, x + ox - r, y - r * 0.8, seaZ - 2, x + ox + r, y + r * 0.8, seaZ + 1.6, 150 * tr, 140 * tg, 120 * tb);
+        }
       }
+    }
 
-      const cx = (x0 + x1 + x2) * 0.3333;
-      const cy = (y0 + y1 + y2) * 0.3333;
-      const cz = (z0 + z1 + z2) * 0.3333;
-      const h = cz / H_SCALE;
-      const zone = altZone(h);
-
-      let cr: number, cg: number, cb: number;
-      const edgeDist = Math.min(cx, WORLD_W - cx, cy - 22, WORLD_H - cy);
-      if (edgeDist < 12) {
-        [cr, cg, cb] = edgeDist < 6 ? [26, 94, 130] : [194, 232, 248];
-      } else if (cx > CHANNEL.x0 && cx < CHANNEL.x1 && cy >= CHANNEL.y - 9 && cy < CHANNEL.y + 9) {
-        [cr, cg, cb] = s.bridgeDown && Math.abs(cx - 240) < 28 ? [138, 90, 50] : [29, 84, 118];
-      } else if (!s.causewayOpen && Math.hypot(cx - FLAT_POS.x, cy - FLAT_POS.y) < 42) {
-        [cr, cg, cb] = [29, 82, 114];
-      } else if (nz < 0.78) {
-        // Steep slope => exposed 3D rocky cliff face!
-        [cr, cg, cb] = zone === "FOREST" ? [102, 82, 66] : zone === "SHORE" ? [146, 120, 86] : [88, 98, 124];
-      } else if (trailDist(cx, cy) < 11) {
-        [cr, cg, cb] = [222, 198, 152];
-      } else {
-        const checker = (((Math.floor(cx / GRID_STEP) + Math.floor(cy / GRID_STEP)) & 1) === 0);
-        [cr, cg, cb] = zoneRgb(zone, checker);
+    // Local 3D mountain mesh around the camera, from the baked grid.
+    const T = this.terrain();
+    const step = GRID_STEP;
+    const i0 = Math.max(0, Math.floor((s.wick.x - 380) / step)), i1 = Math.min(T.nx - 1, Math.ceil((s.wick.x + 380) / step));
+    const j0 = Math.max(0, Math.floor((s.wick.y - 160) / step)), j1 = Math.min(T.ny - 1, Math.ceil((s.wick.y + 580) / step));
+    for (let j = j0; j < j1; j++) {
+      const y = T.ys[j], yn = T.ys[j + 1];
+      for (let i = i0; i < i1; i++) {
+        const x = T.xs[i], xn = T.xs[i + 1];
+        const z00 = T.z[j * T.nx + i], z10 = T.z[j * T.nx + i + 1];
+        const z01 = T.z[(j + 1) * T.nx + i], z11 = T.z[(j + 1) * T.nx + i + 1];
+        const c = (j * (T.nx - 1) + i) * 2;
+        let a = T.col[c], b = T.col[c + 1];
+        if (a < 0) a = this.terrainColour(x, y, z00, xn, y, z10, xn, yn, z11);
+        if (b < 0) b = this.terrainColour(x, y, z00, xn, yn, z11, x, yn, z01);
+        fb.drawTri(cam, x, y, z00, xn, y, z10, xn, yn, z11, Math.min(255, ((a >> 16) & 255) * tr), ((a >> 8) & 255) * tg, (a & 255) * tb, true);
+        fb.drawTri(cam, x, y, z00, xn, yn, z11, x, yn, z01, Math.min(255, ((b >> 16) & 255) * tr), ((b >> 8) & 255) * tg, (b & 255) * tb, true);
       }
+    }
+  }
 
-      const ndotl = clamp(nx * sunX + ny * sunY + nz * sunZ, 0, 1);
-      const shade = 0.56 + ndotl * 0.48;
-      fb.drawTri(
-        cam, x0, y0, z0, x1, y1, z1, x2, y2, z2,
-        clamp(Math.round(cr * shade), 0, 255),
-        clamp(Math.round(cg * shade), 0, 255),
-        clamp(Math.round(cb * shade), 0, 255),
-        true,
-      );
+  /** The island's grid: vertex heights and lit triangle colours, built once (the island never changes). */
+  private terrainGrid: { nx: number; ny: number; xs: number[]; ys: number[]; z: Float32Array; col: Int32Array } | null = null;
+  private terrain() {
+    if (this.terrainGrid) return this.terrainGrid;
+    const axis = (max: number) => {
+      const out: number[] = [];
+      for (let v = 0; v < max; v += GRID_STEP) out.push(v);
+      out.push(max);
+      return out;
     };
-
-    for (let y = yMin; y < yMax; y += GRID_STEP) {
-      const yNext = Math.min(WORLD_H, y + GRID_STEP);
-      for (let x = xMin; x < xMax; x += GRID_STEP) {
-        const xNext = Math.min(WORLD_W, x + GRID_STEP);
-        const z00 = heightAt(x, y) * H_SCALE;
-        const z10 = heightAt(xNext, y) * H_SCALE;
-        const z01 = heightAt(x, yNext) * H_SCALE;
-        const z11 = heightAt(xNext, yNext) * H_SCALE;
-        emitTri(x, y, z00, xNext, y, z10, xNext, yNext, z11);
-        emitTri(x, y, z00, xNext, yNext, z11, x, yNext, z01);
+    const xs = axis(WORLD_W), ys = axis(WORLD_H), nx = xs.length, ny = ys.length;
+    const z = new Float32Array(nx * ny);
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) z[j * nx + i] = heightAt(xs[i], ys[j]) * H_SCALE;
+    const col = new Int32Array((nx - 1) * (ny - 1) * 2);
+    for (let j = 0; j + 1 < ny; j++) {
+      for (let i = 0; i + 1 < nx; i++) {
+        const x = xs[i], xn = xs[i + 1], y = ys[j], yn = ys[j + 1];
+        const z00 = z[j * nx + i], z10 = z[j * nx + i + 1], z01 = z[(j + 1) * nx + i], z11 = z[(j + 1) * nx + i + 1];
+        const c = (j * (nx - 1) + i) * 2;
+        col[c] = this.terrainColour(x, y, z00, xn, y, z10, xn, yn, z11, true);
+        col[c + 1] = this.terrainColour(x, y, z00, xn, yn, z11, x, yn, z01, true);
       }
     }
+    this.terrainGrid = { nx, ny, xs, ys, z, col };
+    return this.terrainGrid;
+  }
+
+  /**
+   * A terrain triangle's lit colour as 0xRRGGBB. With `bake`, the cells whose
+   * colour follows the story (the mill channel and the ebb flat) return -1 so
+   * they are worked out live.
+   */
+  private terrainColour(
+    x0: number, y0: number, z0: number,
+    x1: number, y1: number, z1: number,
+    x2: number, y2: number, z2: number,
+    bake = false,
+  ): number {
+    const s = this.sim;
+    const sunX = -0.55, sunY = -0.4, sunZ = 0.73;
+    const ux = x1 - x0, uy = y1 - y0, uz = z1 - z0;
+    const vx = x2 - x0, vy = y2 - y0, vz = z2 - z0;
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    nx /= nl; ny /= nl; nz /= nl;
+    if (nz < 0) {
+      nx = -nx; ny = -ny; nz = -nz;
+    }
+    const cx = (x0 + x1 + x2) * 0.3333;
+    const cy = (y0 + y1 + y2) * 0.3333;
+    const cz = (z0 + z1 + z2) * 0.3333;
+    const zone = altZone(cz / H_SCALE);
+
+    let cr: number, cg: number, cb: number;
+    const h = cz / H_SCALE;
+    const inChannel = cx > CHANNEL.x0 && cx < CHANNEL.x1 && cy >= CHANNEL.y - 9 && cy < CHANNEL.y + 9;
+    const onFlat = Math.hypot(cx - FLAT_POS.x, cy - FLAT_POS.y) < 42;
+    if (bake && (inChannel || onFlat)) {
+      return -1;
+    } else if (inChannel) {
+      [cr, cg, cb] = s.bridgeDown && Math.abs(cx - 240) < 28 ? [138, 90, 50] : [29, 84, 118];
+    } else if (!s.causewayOpen && onFlat) {
+      [cr, cg, cb] = [29, 82, 114];
+    } else if (h < 0.06) {
+      // Wet sand and surf where the island meets the sea.
+      [cr, cg, cb] = hash2(Math.floor(cx / 6), Math.floor(cy / 6), 5) > 0.55 ? [236, 244, 246] : [168, 152, 112];
+    } else if (nz < 0.78) {
+      // Steep: bare rock, warmer low down, slate up high, banded by strata.
+      const band = (Math.floor(cz / 7) & 1) === 0 ? 1 : 0.9;
+      const [r0, g0, b0] = zone === "FOREST" ? [110, 88, 70] : zone === "SHORE" ? [150, 124, 92] : [92, 100, 122];
+      [cr, cg, cb] = [r0 * band, g0 * band, b0 * band];
+    } else if (trailDist(cx, cy) < 11) {
+      const j = 0.92 + hash2(Math.floor(cx / 5), Math.floor(cy / 5), 9) * 0.12;
+      [cr, cg, cb] = [218 * j, 194 * j, 150 * j];
+    } else {
+      // Soft patches (meadow, heather, drifts) from low-frequency noise, plus grain.
+      [cr, cg, cb] = groundRgb(h);
+      const patch = fbm(cx * 0.012, cy * 0.012, 17);
+      const grain = 0.94 + hash2(Math.floor(cx / 4), Math.floor(cy / 4), 3) * 0.1;
+      const k = (0.86 + patch * 0.26) * grain;
+      cr *= k;
+      cg *= k;
+      cb *= k;
+      if (zone === "FOREST" || zone === "SHORE") {
+        // Dry, sunlit patches drift toward gold.
+        const dry = clamp((patch - 0.55) * 3, 0, 1) * 0.35;
+        cr += (196 - cr) * dry;
+        cg += (176 - cg) * dry;
+        cb += (96 - cb) * dry;
+      } else if (zone === "PEAK" && hash2(Math.floor(cx / 3), Math.floor(cy / 3), 21) > 0.96) {
+        [cr, cg, cb] = [255, 255, 255];
+      }
+    }
+    const ndotl = clamp(nx * sunX + ny * sunY + nz * sunZ, 0, 1);
+    const shade = 0.56 + ndotl * 0.48;
+    return (clamp(Math.round(cr * shade), 0, 255) << 16) | (clamp(Math.round(cg * shade), 0, 255) << 8) | clamp(Math.round(cb * shade), 0, 255);
   }
 
   private drawShadow3D(cam: Cam3D, wx: number, wy: number, _wz: number, r: number): void {
@@ -360,11 +463,15 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
     this.drawTerrain3D(cam);
 
     // 2. 3D Landmarks, trees, rocks, pickups, NPCs, and Wick
-    const drawProp = (x: number, y: number, mesh: Mesh3D, yaw = 0, scale = 1, lift = 0, shadowR = 8) => {
+    const pt = PHASE_TINT[s.phase];
+    const propTint = (pt[0] + pt[1] + pt[2]) / 3;
+    const drawProp = (x: number, y: number, mesh: Mesh3D, yaw = 0, scale = 1, lift = 0, shadowR = 8, tint = propTint) => {
       if (Math.hypot(x - s.wick.x, y - s.wick.y) > 640) return;
+      // Anything tall between the camera and the Wick is left out, so it never hides them.
+      if (y < s.wick.y - 26 && y > s.wick.y - 150 && Math.abs(x - s.wick.x - 7) < 34 + (s.wick.y - y) * 0.5) return;
       const gz = heightAt(x, y) * H_SCALE;
       if (shadowR > 0) this.drawShadow3D(cam, x, y, gz, shadowR);
-      fb.drawMesh(cam, mesh, x, y, gz + lift, yaw, scale);
+      fb.drawMesh(cam, mesh, x, y, gz + lift, yaw, scale, tint);
     };
 
     drawProp(LIGHTHOUSE_POS.x, LIGHTHOUSE_POS.y, this.lightMesh, 0, 1, 0, 12);
@@ -393,6 +500,12 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
       if (pk.taken) continue;
       if (pk.kind === "shard" && !(s.phase === "ebb" && s.causewayOpen)) continue;
       const bob = Math.sin(pk.bob) * 3 + 2;
+      if (pk.kind === "glass") {
+        // Sea glass glints: brighter on the beat so it catches the eye from a ledge away.
+        const glint = 1.05 + Math.max(0, Math.sin(pk.bob * 0.7)) * 0.35;
+        drawProp(pk.x, pk.y, this.glassMesh, s.t * 0.06, 1, bob + 3, 3, glint);
+        continue;
+      }
       drawProp(pk.x, pk.y, pk.kind === "gear" ? this.gearMesh : this.shardMesh, s.t * 0.04, 1, bob, 4);
     }
 
@@ -472,10 +585,10 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
       this.rect(0, 0, this.W, this.H, "#ffffff", clamp(s.flash / 8, 0, 0.55));
     }
 
-    this.drawHud();
+    this.drawHud(cam);
     if (s.bannerTimer > 0 && s.state === "play") {
       const f = hudFrame(s.hud, this.W, this.H);
-      const by = f.top.y + 26;
+      const by = f.top.y + 44;
       this.band(by - 2, 13, 0.55);
       this.textC(s.bannerText.slice(0, 40), f.content.cx, by + 2, s.bannerColor);
     }
@@ -487,16 +600,15 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
     return this.snapshot();
   }
 
-  private drawHud(): void {
+  private drawHud(cam: Cam3D): void {
     const s = this.sim;
     if (s.state !== "play") return;
     const f = hudFrame(s.hud, this.W, this.H);
     const pl = PHASE_LABEL[s.phase];
     const h = heightAt(s.wick.x, s.wick.y);
-    const zone = altZone(h);
     const lx = f.top.lx, rx = f.top.rx, ty = f.top.y;
 
-    this.band(0, ty + 22, 0.62);
+    this.band(0, ty + 31, 0.62);
     this.text(this.clock(), lx, ty, "#ffffff");
     this.text(pl.label, lx + 24, ty, pl.col);
     const lb = s.logButtonRect();
@@ -507,16 +619,25 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
     const sh = `SH ${s.shards}/3`;
     this.text(sh, lb.x - textWidth(sh) - 6, ty + 1, "#a8f4e8");
 
-    this.text(`${zone} ^${h.toFixed(1)}`, lx, ty + 9, "#c7e4ff");
+    const gl = `GLASS ${s.glass}/${GLASS_COUNT}`;
+    this.text(gl, lx, ty + 9, "#8ff0ff");
     const sc = String(s.score).padStart(5, "0");
     this.text(sc, rx - textWidth(sc), ty + 9, "#fff2a0");
+    const beat = s.nextBeat();
+    if (beat) {
+      const room = Math.floor((rx - textWidth(sc) - 6 - (lx + textWidth(gl) + 6)) / 4);
+      const msg = PixelPainter.clip(`${beat.label} ${beat.at}`, room);
+      this.textC(msg, (lx + textWidth(gl) + rx - textWidth(sc)) / 2, ty + 9, "#c7e4ff");
+    }
 
     const frac = Math.min(s.cycleTick / CYCLE_FRAMES, 1);
     this.rect(lx, ty + 17, rx - lx, 2, INK);
     this.rect(lx, ty + 17, Math.round((rx - lx) * frac), 2, pl.col);
 
+    this.drawCompass(cam, lx, rx, ty + 22);
+
     // Altitude ribbon on right edge
-    const altx = f.content.rx - 6, ry0 = ty + 26, ry1 = f.bottom.y - 28;
+    const altx = f.content.rx - 6, ry0 = ty + 36, ry1 = f.bottom.y - 40;
     if (ry1 > ry0 + 30) {
       const zones: [string, string][] = [["PEAK", "#aeb9cc"], ["ALPINE", "#7d8aa0"], ["FOREST", "#3d8a52"], ["SHORE", "#d9c48a"]];
       const segH = (ry1 - ry0) / zones.length;
@@ -526,9 +647,60 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
       this.circle(altx + 2, ry0 + afrac * (ry1 - ry0), 3, "#0a0f1e", 0.35, true);
     }
 
-    if (s.t < 240 && !s.nearby && ((s.t >> 5) & 1)) {
-      const hint = s.inputMode === "pointer" ? "WASD MOVE · SPACE GLIDE/ACT · L LOG" : "DRAG TO MOVE · TAP TO WALK";
-      this.textC(hint, f.content.cx, f.bottom.y - 10, "#c7e4ff");
+    // Oilskin: how much glide is left, shown while it matters.
+    const max = s.glideMax;
+    if (s.wick.gliding || s.wick.glide < max) {
+      const w = 44, x0 = Math.round(f.content.cx - w / 2), y0 = f.bottom.y - (s.nearby ? 32 : 10);
+      const k = s.wick.glide / max;
+      this.rect(x0 - 1, y0 - 1, w + 2, 4, INK, 0.8);
+      this.rect(x0, y0, Math.round(w * k), 2, k < 0.25 ? "#ff9e44" : "#e8a33d");
+    }
+
+    if (s.inputMode === "touch") {
+      const hb = s.hopButtonRect();
+      const held = s.wick.gliding;
+      this.circle(hb.x + hb.w / 2, hb.y + hb.h / 2, hb.w / 2, INK, held ? 0.9 : 0.6);
+      this.circle(hb.x + hb.w / 2, hb.y + hb.h / 2, hb.w / 2, held ? "#e8a33d" : "#a8f4e8", 0.85, true);
+      this.textC(held ? "GLIDE" : "HOP", hb.x + hb.w / 2, hb.y + hb.h / 2 - 2, held ? "#e8a33d" : "#ffffff", 1, null);
+    }
+
+    if (s.t < 300 && !s.nearby && ((s.t >> 5) & 1)) {
+      const hint = s.inputMode === "pointer" ? "WASD MOVE · HOLD SPACE TO GLIDE · L LOG" : "TAP TO WALK · HOLD HOP TO GLIDE";
+      this.textC(hint, f.content.cx, f.bottom.y - 20, "#c7e4ff");
+    }
+  }
+
+  /**
+   * A strip of known places by bearing from where the camera looks: hot ones
+   * (their moment is now) glow and carry a label; off-strip ones pin to the
+   * edge with an arrow.
+   */
+  private drawCompass(cam: Cam3D, lx: number, rx: number, y: number): void {
+    const s = this.sim;
+    const mid = (lx + rx) / 2, half = (rx - lx) / 2 - 6;
+    this.rect(lx, y + 3, rx - lx, 1, "#c7e4ff", 0.35);
+    this.rect(Math.round(mid), y + 1, 1, 5, "#c7e4ff", 0.6);
+    const leads = s.leads().sort((a, b) => Number(a.hot) - Number(b.hot));
+    for (const l of leads) {
+      // Bearing in the camera's ground plane: positive is to the right of the view.
+      const dx = l.x - s.wick.x, dy = l.y - s.wick.y;
+      const a = Math.atan2(dx * cam.rx + dy * cam.ry, dx * cam.fx + dy * cam.fy);
+      const k = a / (Math.PI / 2);
+      const edge = Math.abs(k) > 1;
+      const px = Math.round(mid + clamp(k, -1, 1) * half);
+      const near = Math.hypot(l.x - s.wick.x, l.y - s.wick.y) < 40;
+      const col = l.hot ? "#fff2a0" : near ? "#8dff9a" : "#a8b8d0";
+      const pulse = l.hot && !s.calm && ((s.t >> 4) & 1) ? 1 : 0;
+      if (edge) {
+        this.text(k < 0 ? "<" : ">", px - 1, y, col);
+      } else {
+        this.rect(px - 1 - pulse, y + 1 - pulse, 3 + pulse * 2, 5 + pulse * 2, col);
+        this.px(px, y + 3, INK);
+      }
+      if (l.hot || (!edge && Math.abs(k) < 0.15)) {
+        const lbx = clamp(px, lx + textWidth(l.label) / 2, rx - textWidth(l.label) / 2);
+        this.textC(l.label, lbx, y + 8, col);
+      }
     }
   }
 
@@ -558,8 +730,8 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
     this.band(top, 70, 0.58);
     this.textC("ONE MOUNTAIN, ONE DAY", cx, top + 6, "#c7e4ff");
     this.textC("TIDEGLASS", cx, top + 18, "#fff2a0", 3);
-    this.textC("SUMMIT TO SHORE · HOLD SPACE TO GLIDE", cx, top + 44, "#e6eefc");
-    this.textC("LEARN THE ISLAND · FIVE SECRETS", cx, top + 54, "#a8f4e8");
+    this.textC(s.inputMode === "pointer" ? "SUMMIT TO SHORE · HOLD SPACE TO GLIDE" : "SUMMIT TO SHORE · HOLD HOP TO GLIDE", cx, top + 44, "#e6eefc");
+    this.textC("SEA GLASS ON THE LEDGES · FIVE SECRETS", cx, top + 54, "#a8f4e8");
 
     const bot = this.H - s.hud.bottom - 70;
     this.band(bot, 46, 0.58);

@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { DEMO_ARCADE_PROJECTS } from "@cairn/shared/arcade/pixel/arcade-data";
 import { NO_HUD } from "@cairn/shared/arcade/pixel/hud";
 import { fbm, fbmSampler } from "@cairn/shared/arcade/pixel/terrain";
-import { KO_PENALTY, MAX_HP, RETREAT_PENALTY, applyRelic, dealDeck, exploreLayout, freshVoyage, goldFor, isFight, kindAt, landRect, type StepKind } from "@cairn/shared/arcade/wayfinder/expedition";
+import { KO_PENALTY, LANDING_FRAMES, MAX_HP, RETREAT_PENALTY, applyRelic, dealDeck, exploreLayout, freshVoyage, goldFor, isFight, kindAt, landRect, type StepKind } from "@cairn/shared/arcade/wayfinder/expedition";
+import { IslandStage3D } from "@cairn/shared/arcade/wayfinder/island3d";
 import { WD, WayfinderSim, type Isle } from "@cairn/shared/arcade/wayfinder/sim";
 
 describe("WayfinderSim", () => {
@@ -118,7 +119,8 @@ describe("Wayfinder island expeditions", () => {
     const is = anchorBeside(sim, pick);
     sim.setKey("KeyE", true);
     expect(sim.state).toBe("explore");
-    settle(sim);
+    // Wait out the landing dive: choices are held until the camera reaches the captain.
+    for (let i = 0; i < LANDING_FRAMES; i++) sim.step();
     const exp = sim.exp!;
     // Fix the deck so a test walks known encounters.
     if (middle) exp.deck = ["shore", ...middle, "shrine"];
@@ -134,6 +136,37 @@ describe("Wayfinder island expeditions", () => {
     }
     sim.voyage.hp = Math.min(sim.voyage.hp, sim.voyage.maxHp);
   };
+
+  it("stages the landed island in 3D: a level trail that only climbs, on land, after a dive from the sea view", () => {
+    const { sim, exp } = ashore();
+    const stage = new IslandStage3D(sim);
+    stage.resize(180, 320);
+    const horizon = exploreLayout(180, 320, NO_HUD).horizon;
+    // The dive starts at the sea view and ends on the captain's shoulder.
+    const t = exp.t;
+    exp.t = 0;
+    expect(stage.render(exp, horizon, { x: 0, y: 0 }).landing).toBe(0);
+    exp.t = t;
+    expect(stage.render(exp, horizon, { x: 0, y: 0 }).landing).toBe(1);
+    // Internals under test: the shaped trail and the point/heading lookup.
+    const inner = stage as unknown as { trail: { x: number[]; y: number[]; z: number[] }; along(s: number): { x: number; y: number; dx: number; dy: number }; bake: { tlen: Float32Array; stepLen: number } };
+    const tr = inner.trail;
+    for (let i = 1; i < tr.z.length; i++) expect(tr.z[i]).toBeGreaterThanOrEqual(tr.z[i - 1]);
+    for (let i = 0; i < tr.x.length; i++) expect(sim.E[Math.round(tr.y[i]) * WD + Math.round(tr.x[i])]).toBeGreaterThan(0);
+    // Level across its width at every station.
+    for (let k = 0; k < exp.deck.length; k++) {
+      const p = inner.along(k * inner.bake.stepLen), w = 8;
+      const l = stage.groundAt(p.x - p.dy * w, p.y + p.dx * w), r = stage.groundAt(p.x + p.dy * w, p.y - p.dx * w);
+      expect(Math.abs(l - r)).toBeLessThan(0.5);
+    }
+    // Every encounter on the deck draws, and a foe has somewhere to hang its health bar.
+    for (let k = 0; k < exp.deck.length; k++) {
+      exp.step = k;
+      exp.walk = 0;
+      const a = stage.render(exp, horizon, { x: 0, y: 0 });
+      if (isFight(kindAt(exp))) expect(a.actorTop).not.toBeNull();
+    }
+  });
 
   it("offers a landing only beside an unexplored note island at low speed", () => {
     const sim = start();
