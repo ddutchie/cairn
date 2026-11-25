@@ -334,6 +334,8 @@ export class PowderRunSim {
     r.air = true;
     r.airT = 0;
     r.z += hop;
+    // An air flick is measured from here, not from where the finger first touched the snow.
+    if (this.downPos && this.lastPos) this.downPos = { ...this.lastPos };
   }
 
   private canInput(): boolean {
@@ -502,6 +504,8 @@ export class PowderRunSim {
       r.pitch = 0;
     }
 
+    // A landing that cost the last heart ends the run here: nothing more to pick up.
+    if (this.state !== "ride") return;
     this.stepItems();
 
     if (r.y >= RUN_LEN && this.state === "ride") {
@@ -617,6 +621,7 @@ export class PowderRunSim {
       }
       // Notes float high: only a jump reaches them.
       const note = it.kind === "note";
+      if (note && !r.air) continue;
       const lift = note ? NOTE_LIFT : TASK_LIFT[it.pr];
       if (Math.abs(r.z - (iz + lift)) > 14) continue;
       it.taken = true;

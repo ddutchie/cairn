@@ -26,6 +26,7 @@ function createTideglass({ width, height, hud, best }: PixelGameSpec): PixelGame
     down: (x, y) => sim.down(x, y),
     move: (x, y) => sim.move(x, y),
     up: () => sim.up(),
+    cancel: () => sim.cancel(),
   };
 }
 

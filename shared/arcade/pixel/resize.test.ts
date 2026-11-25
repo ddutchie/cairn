@@ -13,6 +13,18 @@ import { WayfinderSim } from "../wayfinder/sim";
 
 // Unfolding the Duo resizes the playfield (and its insets) under a running game; the game must carry on.
 const wide: PixelHud = { ...NO_HUD, top: 6, bottom: 4, left: 10, right: 10 };
+interface ResizableSim {
+  t: number;
+  W: number;
+  H: number;
+  hud: PixelHud;
+  step(): void;
+  resize(w: number, h: number, hud: PixelHud): void;
+  down?(x: number, y: number): void;
+  up?(): void;
+}
+type SimOptions = { width: number; height: number; hud: PixelHud; inputMode: "touch"; projects: typeof DEMO_ARCADE_PROJECTS };
+
 const sims = {
   angler: AnglerSim, basecamp: BasecampSim, breakout: BreakoutSim, "inbox-zero": InboxZeroSim, "powder-run": PowderRunSim,
   stacker: StackerSim, "task-force": TaskForceSim, tideglass: TideglassSim, wayfinder: WayfinderSim,
@@ -21,7 +33,7 @@ const sims = {
 describe("live resize keeps the run", () => {
   for (const [name, Sim] of Object.entries(sims)) {
     it(name, () => {
-      const sim = new (Sim as any)({ width: 233, height: 320, hud: NO_HUD, inputMode: "touch", projects: DEMO_ARCADE_PROJECTS });
+      const sim = new (Sim as unknown as new (o: SimOptions) => ResizableSim)({ width: 233, height: 320, hud: NO_HUD, inputMode: "touch", projects: DEMO_ARCADE_PROJECTS });
       sim.down?.(116, 160);
       sim.up?.();
       for (let i = 0; i < 90; i++) sim.step();

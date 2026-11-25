@@ -668,7 +668,7 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
       const label = PixelPainter.clip(s.nearby.prompt, Math.floor((r.w - 10) / 4));
       const msg = s.inputMode === "pointer" ? `${label} (E)` : label;
       this.textC(PixelPainter.clip(msg, Math.floor((r.w - 6) / 4)), r.x + r.w / 2, r.y + 4, "#ffffff");
-      this.textC("PRESS SPACE OR E", r.x + r.w / 2, r.y + 12, s.nearby.urgent ? "#fff2a0" : "#a8f4e8", 1, null);
+      this.textC(s.inputMode === "pointer" ? "PRESS SPACE OR E" : "TAP HERE", r.x + r.w / 2, r.y + 12, s.nearby.urgent ? "#fff2a0" : "#a8f4e8", 1, null);
     } else if (s.t < 300 && ((s.t >> 5) & 1)) {
       const hint = s.inputMode === "pointer" ? "WASD WALK · SPACE ACT · L LOG" : "DRAG OR TAP TO WALK";
       this.textC(hint, f.content.cx, f.bottom.y - 10, "#c7e4ff");
@@ -741,19 +741,22 @@ export class BasecampRenderer<Img = unknown, Frame = unknown> extends PixelPaint
 
     const list = s.getSecretList();
     const maxChars = Math.floor((mw - 18) / 4);
+    // Clues wrap onto a second line when there's room, so the end of one ("AT NIGHT") is never cut off.
+    const rowH = Math.max(22, Math.min(26, Math.floor((mh - 66) / list.length)));
     let y = my + 30;
     for (const sec of list) {
       const mark = sec.unlocked ? "[X]" : "[ ]";
       this.text(`${mark} ${PixelPainter.clip(sec.title, maxChars - 4)}`, mx + 8, y, sec.unlocked ? "#7cc46a" : "#ffffff");
-      this.text(PixelPainter.clip(sec.clue, maxChars), mx + 8, y + 8, sec.unlocked ? "#5e8f58" : "#8b98bc");
-      y += 22;
+      const lines = rowH >= 24 ? PixelPainter.wrap(sec.clue, maxChars).slice(0, 2) : [PixelPainter.clip(sec.clue, maxChars)];
+      lines.forEach((ln, i) => this.text(ln, mx + 8, y + 8 + i * 7, sec.unlocked ? "#5e8f58" : "#8b98bc"));
+      y += rowH;
     }
 
     const doneBram = s.brambles.filter((b) => b.cleared).length;
     this.line(mx + 6, my + mh - 36, mx + mw - 6, my + mh - 36, "#2c3658");
     this.text(`LODGES UPGRADED: ${s.upgradedLodgesCount}/${s.lodges.length}`, mx + 8, my + mh - 30, "#c7e4ff");
     this.text(`BRAMBLES CLEARED: ${doneBram}/${s.brambles.length}`, mx + 8, my + mh - 21, "#c45aa8");
-    this.textC("TAP OR PRESS L TO CLOSE", f.content.cx, my + mh - 10, "#fff2a0");
+    this.textC(s.inputMode === "pointer" ? "CLICK OR PRESS L TO CLOSE" : "TAP TO CLOSE", f.content.cx, my + mh - 10, "#fff2a0");
   }
 
   private drawTitle(): void {

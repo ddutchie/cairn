@@ -143,11 +143,17 @@ describe("Wayfinder island expeditions", () => {
     stage.resize(180, 320);
     const horizon = exploreLayout(180, 320, NO_HUD).horizon;
     // The dive starts at the sea view and ends on the captain's shoulder.
+    // A fixed point (the captain's feet) moves on screen as the camera dives: the camera itself changes, not just the fraction.
     const t = exp.t;
     exp.t = 0;
-    expect(stage.render(exp, horizon, { x: 0, y: 0 }).landing).toBe(0);
+    const start = stage.render(exp, horizon, { x: 0, y: 0 });
+    expect(start.landing).toBe(0);
     exp.t = t;
-    expect(stage.render(exp, horizon, { x: 0, y: 0 }).landing).toBe(1);
+    const end = stage.render(exp, horizon, { x: 0, y: 0 });
+    expect(end.landing).toBe(1);
+    const a = start.actorFoot ?? start.actorTop, b = end.actorFoot ?? end.actorTop;
+    if (a && b) expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(4);
+    else expect(Boolean(a)).not.toBe(Boolean(b));
     // Internals under test: the shaped trail and the point/heading lookup.
     const inner = stage as unknown as { trail: { x: number[]; y: number[]; z: number[] }; along(s: number): { x: number; y: number; dx: number; dy: number }; bake: { tlen: Float32Array; stepLen: number } };
     const tr = inner.trail;

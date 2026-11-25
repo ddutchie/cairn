@@ -518,6 +518,7 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
     }
 
     for (const n of s.npcs) {
+      if (n.gone) continue;
       drawProp(n.x, n.y, this.npcMesh(n.accent), n.a, 1, 0, 5);
     }
 
@@ -558,6 +559,7 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
 
     // 4. Crisp 2D projected overlays (NPC names, speech, pops, rain)
     for (const n of s.npcs) {
+      if (n.gone) continue;
       const sp = this.toScreen2D(cam, n.x, n.y, heightAt(n.x, n.y) * H_SCALE + 20);
       if (!sp) continue;
       this.textC(n.name, sp.x, sp.y - 6, n.accent);
@@ -719,7 +721,7 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
     const label = PixelPainter.clip(s.nearby.prompt, Math.floor((r.w - 10) / 4));
     const msg = s.inputMode === "pointer" ? `${label} (E)` : label;
     this.textC(PixelPainter.clip(msg, Math.floor((r.w - 6) / 4)), r.x + r.w / 2, r.y + 4, "#ffffff");
-    this.textC("PRESS SPACE OR E", r.x + r.w / 2, r.y + 12, s.nearby.urgent ? "#fff2a0" : "#a8f4e8", 1, null);
+    this.textC(s.inputMode === "pointer" ? "PRESS SPACE OR E" : "TAP HERE", r.x + r.w / 2, r.y + 12, s.nearby.urgent ? "#fff2a0" : "#a8f4e8", 1, null);
   }
 
   private drawTitle(): void {
@@ -765,13 +767,17 @@ export class TideglassRenderer<Img = unknown, Frame = unknown> extends PixelPain
     this.rect(x - 3, y - 14, w + 6, h + 30, INK, 0.92);
     this.text("BRASS NOTEBOOK", x, y - 10, "#fff2a0");
     this.text(`L${s.loop} ${this.clock()} · ${s.secrets.size}/5 SECRETS`, x, y, "#8fb8ff");
-    const rows = s.notes.slice(-11);
+    // The secrets (and their clues, the vault's among them) get their room first; recent notes fill what's left.
+    const secrets = s.getSecretList();
+    const secretsH = secrets.reduce((a, g) => a + (g.unlocked ? 11 : 21), 0);
+    const fit = Math.max(0, Math.min(11, Math.floor((h - secretsH - 16) / 11)));
+    const rows = fit ? s.notes.slice(-fit) : [];
     rows.forEach((n, i) => {
       const mm = `${Math.floor((n.f * 720) / 60)}:${String(Math.floor(n.f * 720) % 60).padStart(2, "0")}`;
       this.text(`L${n.loop} ${mm} ${n.text.slice(0, 30)}`, x, y + 12 + i * 11, "#c7e4ff");
     });
     let sy = y + 12 + rows.length * 11 + 4;
-    for (const g of s.getSecretList()) {
+    for (const g of secrets) {
       this.text(`${g.unlocked ? "*" : "-"} ${g.title}`, x, sy, g.unlocked ? "#8dff9a" : "#5b6b82");
       if (!g.unlocked) this.text(g.clue.slice(0, 34), x + 8, sy + 9, "#3d4a63");
       sy += g.unlocked ? 11 : 21;

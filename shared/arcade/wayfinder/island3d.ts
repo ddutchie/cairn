@@ -436,7 +436,8 @@ export class IslandStage3D {
 
   private bakeIsland(e: Expedition): IslandBake {
     const sim = this.sim, is = sim.all.find((i) => i.i === e.isleIndex) ?? sim.islands[0];
-    const key = `${e.isleIndex}|${this.W}|${this.H}|${sim.camX}|${sim.camY}`;
+    // The trail starts from where the boat put in, so a landing further along the same camera row rebakes it.
+    const key = `${e.isleIndex}|${this.W}|${this.H}|${sim.camX}|${sim.camY}|${Math.round(sim.boat.x)}|${Math.round(sim.boat.y)}`;
     if (this.bake?.key === key) return this.bake;
     const ox = is.x, oy = is.y, r = is.r;
     // A pending fork adds a station when a route is chosen: reserve it now so the trail never rebakes mid-walk.
@@ -737,7 +738,11 @@ export class IslandStage3D {
     for (let k = 0; k < g.sea.length; k += 4) {
       const j = g.sea[k], i0 = g.sea[k + 1], i1 = g.sea[k + 2], c = g.sea[k + 3];
       const xa = X(i0), xb = X(i1), ya = Y(j), yb = Y(j + 1);
-      if (!visible((xa + xb) / 2, ya) && !visible(xa, ya) && !visible(xb, ya)) continue;
+      // Sample along the run, not just its ends and middle: a long run can cross the view between them.
+      const samples = Math.max(2, Math.ceil((xb - xa) / (cs * 3)));
+      let seen = false;
+      for (let q = 0; q <= samples && !seen; q++) seen = visible(xa + ((xb - xa) * q) / samples, ya);
+      if (!seen) continue;
       const sh = c === WATER[0] ? 0 : Math.sin(t * 0.05 + j * 0.7) * 6;
       const r = Math.min(255, ((c >> 16) & 255) + sh), gg = Math.min(255, ((c >> 8) & 255) + sh), bb = Math.min(255, (c & 255) + sh);
       fb.drawTri(cam, xa, ya, 0, xb, ya, 0, xb, yb, 0, r, gg, bb, true);

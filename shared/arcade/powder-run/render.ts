@@ -256,14 +256,15 @@ export class PowderRunRenderer<Img = unknown, Frame = unknown> extends PixelPain
     if (look.lamps) this.drawLamps(cam);
 
     // Pines lining both rims of the halfpipe, thicker toward the treeline.
-    const pineY0 = Math.max(40, Math.floor((r.y - 20) / 70) * 70);
+    // Rows sit at fixed spots down the run (40, 110, 180...); the rider only picks which are drawn.
     const pineY1 = Math.min(RUN_LEN + 80, r.y + 460);
-    for (let y = pineY0; y <= pineY1; y += 70) {
+    for (let row = Math.max(0, Math.floor((r.y - 60) / 70)); 40 + row * 70 <= pineY1; row++) {
+      const y = 40 + row * 70;
       const zl = pipeHeightAt(-PIPE_HALF_W - 14, y);
       const zr = pipeHeightAt(PIPE_HALF_W + 14, y);
       fb.drawMesh(cam, this.pine, -PIPE_HALF_W - 14, y, zl, 0, 1);
       fb.drawMesh(cam, this.pine, PIPE_HALF_W + 14, y + 32, zr, 0, 1);
-      if (((y / 70) & 1) === 0) {
+      if ((row & 1) === 0) {
         fb.drawMesh(cam, this.pine, -PIPE_HALF_W - 40, y + 20, zl, 0, 1.3);
         fb.drawMesh(cam, this.pine, PIPE_HALF_W + 44, y + 52, zr, 0, 1.2);
       }

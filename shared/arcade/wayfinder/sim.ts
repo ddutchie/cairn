@@ -23,7 +23,7 @@ import {
   RETREAT_PENALTY,
   TRADE_COST,
   WALK_FRAMES,
-  LANDING_FRAMES,
+  CONTROLS_FRAMES,
   applyRelic,
   dealDeck,
   exploreLayout,
@@ -965,7 +965,7 @@ export class WayfinderSim {
       swing: 0,
       hit: 0,
       hurt: 0,
-      cool: LANDING_FRAMES,
+      cool: CONTROLS_FRAMES,
       toast: { s: mood === "lost" ? "A LOST ISLAND..." : "ASHORE!", c: mood === "lost" ? "#c7e4ff" : "#8dff9a", t: 60 },
     };
     this.events.push("dock");
@@ -1107,7 +1107,8 @@ export class WayfinderSim {
       case "camp":
         if (A && e.crate && !e.crateTaken) {
           e.crateTaken = true;
-          this.say(this.boat.cargo.length < this.holdSize ? "CRATE LOADED ON THE BOAT" : "CRATE RESERVED AT CAMP", this.boat.cargo.length < this.holdSize ? "#8dff9a" : "#fff2a0");
+          // It only reaches the boat once the dive is banked at the shrine.
+          this.say(this.boat.cargo.length < this.holdSize ? "CRATE PACKED · BANK IT AT THE SHRINE" : "CRATE RESERVED AT CAMP", this.boat.cargo.length < this.holdSize ? "#8dff9a" : "#fff2a0");
           this.events.push("loot");
         } else if (A) this.gain(e, goldFor(e, 6), `FORAGED +${goldFor(e, 6)}G`);
         else {
@@ -1193,6 +1194,8 @@ export class WayfinderSim {
     if (this.state !== "explore" || !e) return;
     if (e.phase === "summary") return this.bank();
     if (e.phase === "ko") return;
+    // Mid-dive, before the SAIL button is drawn, there's nothing to press.
+    if (e.step === 0 && e.t < CONTROLS_FRAMES) return;
     this.clock = Math.min(DAY_FRAMES, this.clock + RETREAT_PENALTY);
     this.leaveIsland("BACK ABOARD", "TREASURE LEFT BEHIND", "#c7e4ff");
   }

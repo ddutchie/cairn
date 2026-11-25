@@ -677,7 +677,7 @@ export class AnglerRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     const what = fish.kind === "task" ? `TASK · ${(fish.priority ?? "medium").toUpperCase()}${fish.overdue ? " · OVERDUE" : ""}` : "NOTE";
     this.textC(what, ex, y, fish.overdue ? "#ff8a7a" : "#8b98bc", 1, null);
     y += 9;
-    for (const ln of wrap(fish.title, chars).slice(0, 2)) {
+    for (const ln of PixelPainter.wrap(fish.title, chars).slice(0, 2)) {
       this.textC(ln, ex, y, "#ffffff");
       y += 8;
     }
@@ -691,21 +691,4 @@ export class AnglerRenderer<Img = unknown, Frame = unknown> extends PixelPainter
       this.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4, "#fff2a0", 0.5 + 0.5 * Math.sin(t * 0.2));
     }
   }
-}
-
-/** Break a title into lines of at most `n` characters, on spaces where it can. */
-export function wrap(s: string, n: number): string[] {
-  const out: string[] = [];
-  let cur = "";
-  for (const word of s.split(/\s+/)) {
-    if (!word) continue;
-    const next = cur ? `${cur} ${word}` : word;
-    if (next.length <= n) cur = next;
-    else {
-      if (cur) out.push(cur);
-      cur = word.length > n ? word.slice(0, n) : word;
-    }
-  }
-  if (cur) out.push(cur);
-  return out;
 }

@@ -228,6 +228,8 @@ export interface Npc {
   repath: number;
   gx: number;
   gy: number;
+  /** Sailed with the ferry: off the island, not drawn and not talked to. */
+  gone?: boolean;
 }
 
 export interface Pickup {
@@ -288,7 +290,8 @@ export function phaseAt(cycleTick: number): TideglassPhase {
 }
 
 export function loopClock(cycleTick: number): string {
-  const s = Math.floor((cycleTick % CYCLE_FRAMES) / 60);
+  // The day is one-way: once it's spent the clock holds at its end, never wraps to 0:00.
+  const s = Math.floor(Math.min(Math.max(0, cycleTick), CYCLE_FRAMES) / 60);
   return `${String((s / 60) | 0).padStart(1, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
@@ -422,9 +425,13 @@ export class TideglassSim {
   /** Optional 3D screen-to-world raycast provided by the 3D renderer. */
   raycast: ((sx: number, sy: number) => { x: number; y: number } | null) | null = null;
 
-  private screenToWorld(sx: number, sy: number): { x: number; y: number } {
-    return this.raycast?.(sx, sy) ?? unproject(sx + this.camVX, sy + this.camVY, heightAt);
+  /** Null when the 3D renderer's ray misses the island (a tap on the sky): that is not a place to walk to. */
+  private screenToWorld(sx: number, sy: number): { x: number; y: number } | null {
+    if (this.raycast) return this.raycast(sx, sy);
+    return unproject(sx + this.camVX, sy + this.camVY, heightAt);
   }
+  /** The ground under the finger when it went down; a still tap walks there even if the camera moved meanwhile. */
+  private pressWorld: { x: number; y: number } | null = null;
 
   constructor(spec: TideglassSpec) {
     this.W = spec.width;
@@ -536,13 +543,19 @@ export class TideglassSim {
   /** The next beat of the day the Wick knows about, for the HUD. */
   nextBeat(): { label: string; at: string } | null {
     const f = Math.min(this.cycleTick / CYCLE_FRAMES, 1);
-    const at = (x: number) => loopClock(Math.round(x * CYCLE_FRAMES));
-    if (!this.lockedFired && this.known.has("mill")) return { label: "SLUICE LOCKS", at: at(LOCK_F) };
-    if (!this.moveFired && this.known.has("dock") && f < MOVE_F) return { label: "CRATE MOVES", at: at(MOVE_F) };
-    if (f < FLARE_F && this.freqKnown) return { label: `FLARE ON ${FREQS[this.flareFreq]}`, at: at(FLARE_F) };
-    if (this.phase !== "squall" && f < 0.55) return { label: "SQUALL", at: at(0.55) };
-    if (f < EBB_F) return { label: "EBB TIDE", at: at(EBB_F) };
-    return null;
+    // A dock approach can bring the crate move forward.
+    const moveF = this.moveAt > 0 ? Math.min(MOVE_F, this.moveAt / CYCLE_FRAMES) : MOVE_F;
+    const beats: { label: string; f: number; ok: boolean }[] = [
+      { label: "SLUICE LOCKS", f: LOCK_F, ok: !this.lockedFired && this.known.has("mill") },
+      { label: "CRATE MOVES", f: moveF, ok: !this.moveFired && this.known.has("dock") && f < moveF },
+      { label: `FLARE ON ${FREQS[this.flareFreq]}`, f: FLARE_F, ok: f < FLARE_F && this.freqKnown },
+      { label: "SQUALL", f: 0.55, ok: this.phase !== "squall" && f < 0.55 },
+      { label: "EBB TIDE", f: EBB_F, ok: f < EBB_F },
+    ];
+    // The earliest one coming up, not the first in this list.
+    let next: (typeof beats)[number] | null = null;
+    for (const b of beats) if (b.ok && (!next || b.f < next.f)) next = b;
+    return next ? { label: next.label, at: loopClock(Math.round(next.f * CYCLE_FRAMES)) } : null;
   }
 
   private spawnPickup(kind: Pickup["kind"], x: number, y: number): void {
@@ -565,7 +578,7 @@ export class TideglassSim {
   }
 
   log(text: string): void {
-    const f = (this.cycleTick % CYCLE_FRAMES) / CYCLE_FRAMES;
+    const f = Math.min(this.cycleTick / CYCLE_FRAMES, 1);
     this.notes.push({ loop: this.loop, f, text });
     if (this.notes.length > 40) this.notes.shift();
   }
@@ -677,10 +690,11 @@ export class TideglassSim {
     }
     // Screen tap -> world (3D raycast if renderer attached, else volume unproject).
     const w = this.screenToWorld(x, y);
-    if (this.nearby && Math.hypot(w.x - this.nearby.x, w.y - this.nearby.y) <= 24) {
+    if (w && this.nearby && Math.hypot(w.x - this.nearby.x, w.y - this.nearby.y) <= 24) {
       this.interact();
       return;
     }
+    this.pressWorld = w;
     this.dragOrigin = { x, y };
     this.dragCurrent = { x, y };
     this.dragMoved = false;
@@ -703,12 +717,27 @@ export class TideglassSim {
     }
     if (this.state === "play" && !this.showLog && this.dragOrigin && !this.dragMoved) {
       // Quick tap -> route around cliffs via the passes, not straight at them.
-      const w = this.screenToWorld(this.dragOrigin.x, this.dragOrigin.y);
-      const tx = clamp(w.x, 24, WORLD_W - 24);
-      const ty = clamp(w.y, 30, WORLD_H - 24);
-      this.walkPath = this.findPath(this.wick.x, this.wick.y, tx, ty);
-      if (!this.walkPath.length) this.walkPath = [{ x: tx, y: ty }];
+      const w = this.pressWorld;
+      if (w) {
+        const tx = clamp(w.x, 24, WORLD_W - 24);
+        const ty = clamp(w.y, 30, WORLD_H - 24);
+        // No route means nowhere reachable: stay put rather than press against a cliff or the channel.
+        this.walkPath = this.findPath(this.wick.x, this.wick.y, tx, ty);
+      }
     }
+    this.pressWorld = null;
+    this.dragOrigin = null;
+    this.dragCurrent = null;
+    this.dragMoved = false;
+  }
+
+  /** The OS took the touch away: let go of the hop and the drag, but don't treat it as a tap to walk. */
+  cancel(): void {
+    if (this.hopHeld) {
+      this.hopHeld = false;
+      this.keys.delete("Jump");
+    }
+    this.pressWorld = null;
     this.dragOrigin = null;
     this.dragCurrent = null;
     this.dragMoved = false;
@@ -932,6 +961,7 @@ export class TideglassSim {
       prompt: this.moveFired && !this.secrets.has("moved-crate") ? (this.witnessedMove ? `REPORT: ${this.culpritName()} MOVED IT` : "CHECK THE LEDGER") : "READ HARBOUR LEDGER",
     });
     for (const n of this.npcs) {
+      if (n.gone) continue;
       push(Math.hypot(wx - n.x, wy - n.y), 22, { kind: "npc", id: n.id, x: n.x, y: n.y, prompt: `TALK: ${n.name}` });
     }
     if (!out.length) return null;
@@ -945,7 +975,8 @@ export class TideglassSim {
     if (!t) return false;
     switch (t.kind) {
       case "gear": {
-        const p = this.pickups.find((q) => q.kind === "gear" && !q.taken);
+        // The gear the Wick is standing at, not just the first one left on the island.
+        const p = this.pickups.find((q) => q.kind === "gear" && !q.taken && `gear-${q.id}` === t.id);
         if (!p) return false;
         p.taken = true;
         this.hasGear = true;
@@ -973,6 +1004,11 @@ export class TideglassSim {
           if (Math.min(this.cycleTick / CYCLE_FRAMES, 1) >= LOCK_F) {
             this.unlock("stayed-bridge", 300, "BRIDGE HELD", MILL_POS.x, MILL_POS.y);
           }
+          return true;
+        }
+        if (this.lockedFired) {
+          // Mira's lock holds; only a jammed gear (above) beats it.
+          this.pop("LOCKED. NEEDS A GEAR", "#ff9e44", MILL_POS.x, MILL_POS.y - 12);
           return true;
         }
         this.sluiceOpen = !this.sluiceOpen;
@@ -1107,10 +1143,9 @@ export class TideglassSim {
   }
 
   private npcHint(id: Npc["id"]): string {
-    const f = (this.cycleTick % CYCLE_FRAMES) / CYCLE_FRAMES;
     switch (id) {
       case "mira":
-        return f < LOCK_F ? "THE SLUICE LOCKS EARLY. JAM IT IF YOU DARE." : this.jammed ? "THE GEAR HOLDS. CLEVER." : "BRIDGE IS UP. THE TIDE WILL TELL.";
+        return !this.lockedFired ? "THE SLUICE LOCKS EARLY. JAM IT IF YOU DARE." : this.jammed ? "THE GEAR HOLDS. CLEVER." : "BRIDGE IS UP. THE TIDE WILL TELL.";
       case "ios":
         return this.phase === "squall" ? "CRANK HER TO FULL, HOLD HER!" : "JUNE NEVER LISTENS. BRING HER UP HERE.";
       case "june":
@@ -1203,7 +1238,8 @@ export class TideglassSim {
     if (this.los(sx, sy, tx, ty, ignoreWater)) return [{ x: tx, y: ty }];
     const [si, sj] = this.cellOf(sx, sy);
     const [ti, tj] = this.cellOf(tx, ty);
-    if (si === ti && sj === tj) return [{ x: tx, y: ty }];
+    // Same cell but no line of sight: the target is blocked (the closed channel, say), so there is no route.
+    if (si === ti && sj === tj) return [];
     const key = (i: number, j: number): number => j * 54 + i;
     const prev = new Map<number, number>();
     const seen = new Set<number>([key(si, sj)]);
@@ -1281,7 +1317,7 @@ export class TideglassSim {
       // so downhill on screen stays downhill in the sim.
       const a = this.screenToWorld(this.dragOrigin.x, this.dragOrigin.y);
       const b = this.screenToWorld(this.dragCurrent.x, this.dragCurrent.y);
-      const vx = b.x - a.x, vy = b.y - a.y;
+      const vx = a && b ? b.x - a.x : 0, vy = a && b ? b.y - a.y : 0;
       const len = Math.hypot(vx, vy);
       if (len > 4) {
         dx = vx / len;
@@ -1441,6 +1477,7 @@ export class TideglassSim {
     const f = Math.min(this.cycleTick / CYCLE_FRAMES, 1);
     for (let i = 0; i < this.npcs.length; i++) {
       const n = this.npcs[i];
+      if (n.gone) continue;
       if (n.sayTimer > 0) n.sayTimer--;
       let tx = n.homeX, ty = n.homeY;
       if (n.id === "mira") {
@@ -1473,8 +1510,13 @@ export class TideglassSim {
       } else {
         // Piotr: at the dock until the ferry sails, then gone (or waiting if missed).
         if (this.ferryGone && !this.intercepted) {
-          tx = WORLD_W + 40;
-          ty = DOCK_POS.y;
+          // Out to the end of the dock (a spot he can reach), and aboard once he's there.
+          tx = DOCK_POS.x + 6;
+          ty = DOCK_POS.y - 14;
+          if (Math.hypot(n.x - tx, n.y - ty) < 6) {
+            n.gone = true;
+            continue;
+          }
         } else if (f >= MOVE_F - 0.03 && f <= MOVE_F + 0.03 && this.npcs[this.culprit].id === "piotr") {
           tx = DOCK_POS.x + 6;
           ty = DOCK_POS.y - 14;

@@ -3,7 +3,7 @@
  * renderers on both desktop (HTML5 Canvas2D) and mobile (Skia).
  */
 
-import { ADVANCE, clip, fontAtlasPixels, glyphIndices, textWidth } from "./font";
+import { ADVANCE, clip, fontAtlasPixels, glyphIndices, textWidth, wrap } from "./font";
 import type { Model } from "./models";
 import { CHUNK, MARGIN, chunkTop, visibleChunks, type Terrain } from "./terrain";
 
@@ -173,4 +173,5 @@ export abstract class PixelPainter<Img = unknown, Frame = unknown> {
     return ADVANCE * k;
   }
   static clip = clip;
+  static wrap = wrap;
 }

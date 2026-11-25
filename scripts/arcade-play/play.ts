@@ -99,10 +99,24 @@ canvas.addEventListener("pointermove", (e) => {
   sim.move(x, y, 0, 0);
 });
 canvas.addEventListener("pointerup", () => sim.up?.());
+// An orientation change can cancel the drag instead of ending it: let go without committing a tap where the game can.
+canvas.addEventListener("pointercancel", () => (sim.cancel ? sim.cancel() : sim.up?.()));
+// Keys the game took; their auto-repeats are swallowed too (so a held arrow never scrolls the page).
+const heldKeys = new Set<string>();
 addEventListener("keydown", (e) => {
-  if (!e.repeat && sim.setKey?.(e.code, true)) e.preventDefault();
+  if (e.repeat) {
+    if (heldKeys.has(e.code)) e.preventDefault();
+    return;
+  }
+  if (sim.setKey?.(e.code, true)) {
+    heldKeys.add(e.code);
+    e.preventDefault();
+  }
 });
-addEventListener("keyup", (e) => sim.setKey?.(e.code, false));
+addEventListener("keyup", (e) => {
+  heldKeys.delete(e.code);
+  sim.setKey?.(e.code, false);
+});
 
 let last = performance.now(), acc = 0, drawT = 0, frames = 0;
 const tick = (now: number) => {

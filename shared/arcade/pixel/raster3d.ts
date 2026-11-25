@@ -118,7 +118,8 @@ export function meshFromModel(m: Model, scale = 1.6, zScale = scale): Mesh3D {
   if (mesh.tris.length > 96 && W > 4 && D > 4 && H > 4) {
     const half = halveVoxels(vox, W, D, H);
     const lod = meshVoxels(half.vox, half.w, half.d, half.h, scale * (W / half.w), zScale * (H / half.h));
-    if (lod.tris.length < mesh.tris.length * 0.7) mesh.lod = lod;
+    // A sparse model can halve to nothing: keep the full mesh then.
+    if (lod.tris.length > 0 && lod.tris.length < mesh.tris.length * 0.7) mesh.lod = lod;
   }
   return mesh;
 }

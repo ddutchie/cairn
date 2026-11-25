@@ -311,7 +311,7 @@ export class BasecampSim {
       sayTimer: 0,
     }));
 
-    // Watchfires stand between the lodges so their light covers two each.
+    // West and east watchfires stand between two lodges each; the south one guards the southern lodge.
     this.braziers = [
       { id: "b-west", label: "WEST WATCHFIRE", x: 124, y: 198, lit: false },
       { id: "b-south", label: "SOUTH WATCHFIRE", x: 210, y: 292, lit: false },
@@ -390,6 +390,11 @@ export class BasecampSim {
     this.chestOpened = false;
     this.cairnAwakened = false;
     Object.assign(this.warden, { x: HEARTH_POS.x, y: HEARTH_POS.y + 34, hasEmber: false, emberTimer: 0 });
+    // The last camp's tap waypoint and drag don't carry over.
+    this.walkTarget = null;
+    this.dragOrigin = null;
+    this.dragCurrent = null;
+    this.dragMoved = false;
     this.buildWorld();
     this.state = "play";
     this.events.push("start");

@@ -38,6 +38,15 @@ describe("BasecampSim", () => {
     expect(sim.braziers).toHaveLength(3);
   });
 
+  it("grows a bramble from a known overdue workspace task", () => {
+    const late = { title: "FILE THE TAX RETURN", priority: "high" as const, dueMin: -120, overdue: true };
+    const projects = DEMO_ARCADE_PROJECTS.map((p, i) => (i === 0 ? { ...p, tasks: [late, ...p.tasks] } : p));
+    const sim = new BasecampSim({ width: 220, height: 320, hud: NO_HUD, inputMode: "pointer", projects });
+    const b = sim.brambles.find((x) => x.title === late.title);
+    expect(b).toBeDefined();
+    expect(b!.overdue).toBe(true);
+  });
+
   it("moves the Warden with WASD and quick-tap walk target", () => {
     const sim = startSim(240, 320, "pointer");
     const startY = sim.warden.y;

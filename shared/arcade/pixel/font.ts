@@ -65,3 +65,20 @@ export function fontAtlasPixels(): { w: number; h: number; pixels: Uint8Array } 
   });
   return { w, h, pixels };
 }
+
+/** Break text into lines of at most `n` characters, on spaces where it can. */
+export function wrap(s: string, n: number): string[] {
+  const out: string[] = [];
+  let cur = "";
+  for (const word of s.split(/\s+/)) {
+    if (!word) continue;
+    const next = cur ? `${cur} ${word}` : word;
+    if (next.length <= n) cur = next;
+    else {
+      if (cur) out.push(cur);
+      cur = word.length > n ? word.slice(0, n) : word;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}

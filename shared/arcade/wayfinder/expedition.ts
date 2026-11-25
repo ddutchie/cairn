@@ -46,6 +46,10 @@ export const CHOICE_COOLDOWN = 10;
 export const WALK_FRAMES = 24;
 /** The camera's dive from the sea view down to the captain's shoulder; choices wait for it. */
 export const LANDING_FRAMES = 64;
+/** How far into the landing dive the HUD and choice card appear; their controls go live at the same moment. */
+export const CONTROLS_AT = 0.8;
+/** Frames into the first step before SAIL and the choices answer (until then they aren't drawn). */
+export const CONTROLS_FRAMES = Math.ceil(LANDING_FRAMES * CONTROLS_AT);
 export const KO_FRAMES = 90;
 
 export interface Voyage {

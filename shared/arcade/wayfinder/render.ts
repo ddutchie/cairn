@@ -14,7 +14,7 @@ import { INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel
 import { BAYER, BIOMES, fbm, hash2, mulberry32, rgb, type BiomeName } from "../pixel/terrain";
 import { bakeVignette } from "./stage-bake";
 import { IslandStage3D, STAGE_SKY } from "./island3d";
-import { RELIC_INFO, WALK_FRAMES, exploreLayout, isFight, kindAt, landRect, stepCard, type Expedition, type ExploreLayout, type Rect } from "./expedition";
+import { CONTROLS_AT, RELIC_INFO, WALK_FRAMES, exploreLayout, isFight, kindAt, landRect, stepCard, type Expedition, type ExploreLayout, type Rect } from "./expedition";
 import {
   BOAT_MODEL,
   CRATE_MODELS,
@@ -742,7 +742,7 @@ export class WayfinderRenderer<Img = unknown, Frame = unknown> extends PixelPain
     if (a.landing < 1) this.fogCurtain(Math.max(0, 0.5 - a.landing * 1.6));
 
     if (e.hurt > 0 && !s.calm) this.rect(0, 0, W, H, "#ff3d6e", e.hurt / 40);
-    if (a.landing < 0.8) return;
+    if (a.landing < CONTROLS_AT) return;
     this.renderExploreHud(L, e);
     if (e.phase === "step") this.renderCard(L, e);
     if (e.phase === "summary") this.renderSummary(L, e);
