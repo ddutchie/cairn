@@ -156,6 +156,10 @@ export interface LayoutSlice extends AppUIState {
   chatSliding: boolean;
   setChatSliding: (sliding: boolean) => void;
 
+  /** True while The Workspace office is on screen, so chat can dress to match. Never persisted. */
+  officeOpen: boolean;
+  setOfficeOpen: (open: boolean) => void;
+
   /** True when the window is too narrow for even a minimum-width chat drawer beside the
    *  main column. Measured by the page; never persisted. While set, chat is either closed
    *  or expanded (center) — there is no drawer. */
@@ -240,6 +244,7 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
   lastContentView: "overview",
   sessionPresentation: "drawer",
   chatSliding: false,
+  officeOpen: false,
   windowNarrow: false,
   chatAutoExpanded: false,
   settingsSection: null,
@@ -445,6 +450,10 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
 
   setChatSliding(sliding) {
     set({ chatSliding: sliding });
+  },
+
+  setOfficeOpen(open) {
+    set({ officeOpen: open });
   },
 
   setWindowNarrow(narrow) {

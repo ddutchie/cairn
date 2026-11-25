@@ -5,8 +5,8 @@
  * sidebar unlock it; all game logic & pixel rendering live in @cairn/shared/arcade.
  */
 
-import { useMemo, useState } from "react";
-import { ArrowLeft, Building2, EyeOff } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, EyeOff } from "lucide-react";
 import { ArcadeMenu, CARTRIDGES } from "@cairn/shared/arcade/menu";
 import { ArcadeRenderer } from "@cairn/shared/arcade/menu-render";
 import { BasecampRenderer } from "@cairn/shared/arcade/basecamp/render";
@@ -217,7 +217,8 @@ const createAngler: GameFactory = ({ canvas, width, height, data, best }) => {
   };
 };
 
-const GAMES: Record<ArcadeGameId, GameFactory> = {
+/** Every cartridge but the office, whose factory needs this view's callbacks. */
+const GAMES: Record<Exclude<ArcadeGameId, "office">, GameFactory> = {
   "task-force": createTaskForce,
   stacker: createStacker,
   breakout: createBreakout,
@@ -275,8 +276,8 @@ function makeMenuFactory(onPick: (id: ArcadeGameId) => void, onSelect: (id: Arca
 }
 
 export function ArcadeView() {
-  const [game, setGame] = useState<ArcadeGameId | "workspace" | null>(null);
-  const [menuSel, setMenuSel] = useState<ArcadeGameId>("task-force");
+  const [game, setGame] = useState<ArcadeGameId | null>(null);
+  const [menuSel, setMenuSel] = useState<ArcadeGameId>("office");
   const setArcadeUnlocked = useCairnStore((s) => s.setArcadeUnlocked);
   const setView = useCairnStore((s) => s.setView);
   const setActivePreviewItem = useCairnStore((s) => s.setActivePreviewItem);
@@ -284,8 +285,15 @@ export function ArcadeView() {
   const preview = useCairnStore((s) => s.activePreviewItem ?? s.activeContextPanel);
   const centred = useCairnStore((s) => s.sessionPresentation === "center");
   const office = useMemo(() => makeOfficeFactory((ref) => setActivePreviewItem({ type: ref.type, id: ref.id }), () => setView("agent")), [setActivePreviewItem, setView]);
+  // Chat takes the office's pixel style while the office is on screen.
+  const setOfficeOpen = useCairnStore((s) => s.setOfficeOpen);
+  useEffect(() => {
+    if (game !== "office") return;
+    setOfficeOpen(true);
+    return () => setOfficeOpen(false);
+  }, [game, setOfficeOpen]);
   const leave = () => {
-    if (game === "workspace") setActivePreviewItem(null);
+    if (game === "office") setActivePreviewItem(null);
     setGame(null);
   };
 
@@ -305,7 +313,7 @@ export function ArcadeView() {
   }, [game]);
 
   const menu = useMemo(() => makeMenuFactory((id) => setGame(id), (id) => setMenuSel(id)), []);
-  const title = game === "workspace" ? "The Workspace" : game ? CARTRIDGES.find((c) => c.id === game)?.name : undefined;
+  const title = game === "office" ? "The Workspace" : game ? CARTRIDGES.find((c) => c.id === game)?.name : undefined;
 
   return (
     <div className="flex flex-col flex-1 min-h-0 min-w-0">
@@ -321,7 +329,7 @@ export function ArcadeView() {
           </span>
         }
         description={
-          game === "workspace"
+          game === "office"
             ? "Your workspace as an office. Click a desk for its board and notes, and a card or note to open it."
             : data.demo
               ? "Playing with a demo workspace (yours is a bit empty)"
@@ -330,17 +338,6 @@ export function ArcadeView() {
         actions={
           <>
             <span className="text-2xs text-[var(--text-tertiary)]">{game ? "Esc for the menu" : "Pick a game"}</span>
-            {!game && (
-              <Tooltip content="An idle office that mirrors this workspace, live">
-                <button
-                  type="button"
-                  onClick={() => setGame("workspace")}
-                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
-                >
-                  <Building2 size={12} /> The Workspace
-                </button>
-              </Tooltip>
-            )}
             <Tooltip content="Hide the Arcade again. Five clicks on the workspace icon bring it back.">
               <button
                 type="button"
@@ -356,9 +353,9 @@ export function ArcadeView() {
           </>
         }
       />
-      {game === "workspace" ? (
+      {game === "office" ? (
         <div className="flex flex-1 min-h-0 min-w-0">
-          <PixelScreen key="workspace" id="workspace" factory={office} data={data} onExit={leave} />
+          <PixelScreen key="office" id="office" factory={office} data={data} onExit={leave} />
           {preview && !centred && <PreviewPane />}
         </div>
       ) : game ? (
