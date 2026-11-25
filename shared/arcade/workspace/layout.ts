@@ -86,6 +86,8 @@ export interface FloorLayout {
   desks: Desk[];
   page: number;
   pageCount: number;
+  /** Desks a full page holds (the last page may hold fewer). */
+  perPage: number;
   wall: Rect;
   doneBoard: Rect;
   /** The wall clock, hung above the bin. */
@@ -220,7 +222,7 @@ export function layoutFloor(projects: readonly OfficeProject[], w: number, h: nu
     const r = { x, y: 6, w: 30, h: 20 };
     if (r.x + r.w < clock.x - 12 || r.x > doneBoard.x + doneBoard.w + 6) windows.push(r);
   }
-  return { w, h, zoom: g.z, desks, page: pg, pageCount, wall: { x: 0, y: 0, w, h: WALL_H }, doneBoard, clock, windows, coffee, cooler, bin, plants, spots };
+  return { w, h, zoom: g.z, desks, page: pg, pageCount, perPage, wall: { x: 0, y: 0, w, h: WALL_H }, doneBoard, clock, windows, coffee, cooler, bin, plants, spots };
 }
 
 /**

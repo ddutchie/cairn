@@ -240,8 +240,6 @@ export class OfficeSim {
   tossScored = 0;
   /** Tool-call intents by id, with the frame they arrived (attribution window). */
   intents = new Map<string, number>();
-  /** Ids whose change followed an intent: shown with the agent colour. For tests and hosts. */
-  agentMade = new Set<string>();
   /** Unlocked decor ids (`plant:<projectId>`); the host persists these. */
   decor = new Set<string>();
   /** Set when a refresh unlocks new decor; the host saves `decor` and clears it. */
@@ -384,20 +382,21 @@ export class OfficeSim {
     if (!changes.length) return;
     // Attribution: a change for an id the agent just touched is the agent's.
     // It is a timing guess, not an audit log (plan phase 3).
+    const mine = new Set<string>();
     for (const c of changes) {
       const id = "id" in c ? (c as { id: string }).id : null;
-      if (id && this.intents.has(id) && this.t - (this.intents.get(id) ?? -9999) <= AGENT_WINDOW) this.agentMade.add(id);
+      if (id && this.t - (this.intents.get(id) ?? -Infinity) <= AGENT_WINDOW) mine.add(id);
     }
     const bursts = groupChanges(changes.length > FLURRY ? changes.slice(0, FLURRY) : changes);
     for (const b of bursts) {
       for (const id of b.ids) if (b.kind !== "task.removed" && b.kind !== "note.removed" && b.kind !== "task.done") this.fresh.set(id, this.t);
-      this.spawn(b);
+      this.spawn(b, mine);
     }
     if (changes.some((c) => c.k === "task.done")) this.boardPulse = this.t + 60;
   }
 
-  private spawn(b: Burst): void {
-    const agent = b.ids.some((id) => this.agentMade.has(id));
+  private spawn(b: Burst, mine: ReadonlySet<string>): void {
+    const agent = b.ids.some((id) => mine.has(id));
     const color = agent ? "#8fe0ff" : KIND_COLOR[b.kind];
     const room = FX_CAP - this.fx.length;
     if (room <= 0) return;
@@ -684,7 +683,7 @@ export class OfficeSim {
     if (this.fx.length) this.fx = this.fx.filter((f) => this.t - f.t0 < f.life + f.delay);
     if (this.pops.length) this.pops = this.pops.filter((p) => this.t - p.t0 < 40);
     if (this.fresh.size) for (const [id, t] of this.fresh) if (this.t - t > FRESH_FRAMES) this.fresh.delete(id);
-    if (this.intents.size) for (const [id, t] of this.intents) if (this.t - t > AGENT_WINDOW + 600) this.intents.delete(id);
+    if (this.intents.size) for (const [id, t] of this.intents) if (this.t - t > AGENT_WINDOW) this.intents.delete(id);
     for (const w of this.workers.values()) this.stepWorker(w);
     this.stepPapers();
     this.stepRobot();
@@ -1153,8 +1152,7 @@ export class OfficeSim {
     this.hover = null;
     if (i === null && this.lastFocus !== null && this.floor.pageCount > 1) {
       // Back on the floor, on the page that holds the desk you left.
-      const per = Math.max(1, Math.ceil(this.projects.length / this.floor.pageCount));
-      this.page = Math.floor(this.lastFocus / per);
+      this.page = Math.floor(this.lastFocus / this.floor.perPage);
     }
     this.layout();
   }

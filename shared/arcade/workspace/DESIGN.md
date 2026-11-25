@@ -8,7 +8,7 @@ An idle office that mirrors the open workspace. It isn't a game with a score: yo
 - **Each project is a desk.** Busiest projects come first. A desk's paper pile grows with its open tasks: one voxel layer each up to four, then one per two, capped at ten. Its book pile grows with its notes the same way, capped at eight. A red tab on the pile means a card is overdue. The desk's front edge is in the project's colour, and its name tag floats below it.
 - **People sit where they're busiest.** Each assignee sits at the project where they hold the most cards in progress. The busiest people choose first, and a second person on the same project stands beside the desk. Unassigned work in progress brings the contractor, in hi-vis. A lit monitor means somebody is working there.
 - **Idle life.** Seated people get up every 10–35 seconds to go to the coffee machine, the water cooler or a colleague's desk. They walk the aisles and lanes (`route`), never through a desk, and come back.
-- **Daylight follows the clock.** Sun falls through the windows by day. From 17:00 the room dims, and after dark each monitor left on is the light: a dithered pool of screen-blue light on its desk, its piles and whoever sits there, while the rest of the room stays dark. The darkness is one cached image (`nightMap`), rebuilt only when the room, the lit desks or the hour change. `calm` (Reduce Motion) keeps people at their desks.
+- **Daylight follows the clock.** Sun falls through the windows by day. From 17:00 the room dims, and after dark each monitor left on is the light: a dithered pool of screen-blue light on its desk, its piles and whoever sits there, while the rest of the room stays dark. The darkness is one cached image (`nightMap`), rebuilt only when the room, the lit desks or the hour change. The floor planks and sunlight are cached the same way. `calm` (Reduce Motion) keeps people at their desks.
 - **Sizes.** A workspace small enough to fit gets desks at 3× (`zoom`); otherwise they're drawn at 2×, and pages hold the rest (arrows in the header, or ← →). A desk needs `deskHeight(k)` of floor (its tallest pile down to its name tag), and desks stay between the back wall's props (`BACK_GAP`) and the front strip kept for planters and the robot's pad (`FRONT_STRIP`). A test checks that no desks overlap across project counts and screen sizes. Seated people move with their desk when the floor is laid out again.
 
 ## An opened desk
@@ -21,7 +21,7 @@ Click a desk to look down at its project:
 
 ## Live data
 
-The sim never writes. `setData` takes a fresh `OfficeData` (built by `build.ts` from the store), re-lays out the room, and keeps everyone where they are. Someone whose work moved to another desk walks over to it. An open desk stays open unless its project disappears. The desktop host rebuilds 250 ms after a burst of store changes, so a chat agent editing ten cards moves the office once.
+The sim never writes. `setData` takes a fresh `OfficeData` (built by `build.ts` from the store), re-lays out the room, and keeps everyone where they are. Someone whose work moved to another desk walks over to it. An open desk stays open unless its project disappears. Both hosts also rebuild when the date changes, so overdue and "done this week" don't go stale overnight. The desktop host rebuilds 250 ms after a burst of store changes, so a chat agent editing ten cards moves the office once.
 
 ## Changes you can see
 

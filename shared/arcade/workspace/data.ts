@@ -7,8 +7,9 @@
  * Pure data, no platform code. Hosts build it (desktop: `src/components/arcade/office-data.ts`).
  */
 
+import { fontSafe } from "../pixel/font";
 import type { ColumnType, Priority } from "../../types/domain";
-import { ACCENTS, cleanArcadeTitle } from "../pixel/arcade-data";
+import { ACCENTS } from "../pixel/arcade-data";
 
 /** Where a card sits in a room: shelf, desks, review table, or the done cabinet. */
 export type Zone = "backlog" | "doing" | "review" | "done";
@@ -85,8 +86,10 @@ export function zoneForColumn(type: ColumnType, afterDoing = false): Zone {
 export const CONTRACTOR = "CONTRACTOR";
 export const holderOf = (c: OfficeCard): string => c.assignee ?? CONTRACTOR;
 
-/** A card title cleaned for the pixel font, without the arcade's tight cap (the hint bar has room). */
-export const officeTitle = (s: string): string => cleanArcadeTitle(s);
+/** Longest title the office keeps: hint bar, bubbles and name tags clip further to fit. */
+const TITLE_MAX = 28;
+/** Text cleaned for the pixel font and capped at `TITLE_MAX`; "" when none of it can be drawn. */
+export const officeTitle = (s: string): string => fontSafe(s).slice(0, TITLE_MAX).trim();
 
 const DEMO_COLUMNS: [string, Zone][] = [["TO DO", "backlog"], ["IN PROGRESS", "doing"], ["REVIEW", "review"], ["DONE", "done"]];
 const demoColumns = (p: string): OfficeColumn[] => DEMO_COLUMNS.map(([name, zone]) => ({ id: `demo-${p}-${zone}`, name, zone }));

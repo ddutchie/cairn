@@ -5,6 +5,7 @@
  * falling back to a demo workspace when the phone's workspace is thin.
  */
 
+import { toDateKey } from "@cairn/shared/arcade/workspace/week";
 import type { Priority } from "@cairn/shared/types/domain";
 import { ACCENTS, DEMO_ARCADE_PROJECTS, arcadeNoteLinks, cleanArcadeTitle, dueMinutes, type ArcadeProject } from "@cairn/shared/arcade/pixel/arcade-data";
 import { BIOME_ORDER } from "@cairn/shared/arcade/pixel/terrain";
@@ -175,9 +176,8 @@ export function loadOfficeData(now = new Date()): OfficeLoad {
     now,
   };
   const office = buildOffice(src);
-  const fp = db.getFirstSync<{ n: number; m: string | null } | null>(
-    `SELECT (SELECT COUNT(*) FROM projects) + (SELECT COUNT(*) FROM task_cards) + (SELECT COUNT(*) FROM notes) + (SELECT COUNT(*) FROM board_columns) AS n,
-            (SELECT MAX(updated_at) FROM (SELECT updated_at FROM projects UNION ALL SELECT updated_at FROM task_cards UNION ALL SELECT updated_at FROM notes UNION ALL SELECT updated_at FROM board_columns)) AS m`,
-  );
-  return { office, fingerprint: `${fp?.n ?? 0}|${fp?.m ?? ""}`, workspaceId: ws?.id ?? null };
+  // Everything the office draws, plus the date: an older-stamped peer edit, a
+  // soft delete or midnight must each redraw it.
+  const fingerprint = `${ws?.id ?? ""}|${toDateKey(now)}|${JSON.stringify(office)}`;
+  return { office, fingerprint, workspaceId: ws?.id ?? null };
 }

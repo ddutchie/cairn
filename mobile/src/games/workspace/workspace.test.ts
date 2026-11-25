@@ -906,3 +906,51 @@ describe("paper toss", () => {
     expect(s.tossMade).toBe(0);
   });
 });
+
+describe("review fixes", () => {
+  const source = (cards: Record<string, unknown>[], extra: Record<string, unknown> = {}) =>
+    buildOffice({
+      workspaceName: "日本",
+      workspaceId: null,
+      projects: [{ id: "p", workspaceId: "w", name: "Ops" }] as unknown as Project[],
+      columns: [{ id: "c", projectId: "p", workspaceId: "w", name: "日本", type: "todo", order: 0 }] as unknown as BoardColumn[],
+      cards: cards.map((c, i) => ({ id: `t${i}`, projectId: "p", columnId: "c", workspaceId: "w", title: "T", priority: "medium", order: i, ...c })) as unknown as TaskCard[],
+      notes: [] as Note[],
+      now: NOW,
+      ...extra,
+    });
+
+  it("puts a date-time due date in the overdue tray as well as the count", () => {
+    const o = source([{ dueDate: "2026-11-20T09:30:00" }]);
+    expect(o.projects[0].cards[0]).toMatchObject({ overdue: true, dueKey: "2026-11-20" });
+    expect(bucketWeek(o.projects, NOW).overdue).toHaveLength(1);
+  });
+
+  it("falls back by kind for text the pixel font can't draw", () => {
+    const o = source([{ title: "日本", assignee: "日本" }]);
+    expect(o.workspace).toBe("WORKSPACE");
+    expect(o.projects[0].columns[0].name).toBe("COLUMN");
+    expect(o.projects[0].cards[0]).toMatchObject({ title: "UNTITLED", assignee: null });
+  });
+
+  it("stops crediting the agent once its window has passed", () => {
+    const before = office([project("a", [card("x", "doing")])]);
+    const s = make(before);
+    s.agentIntent({ type: "task", id: "x" });
+    for (let i = 0; i < 400; i++) s.step();
+    s.setData(office([project("a", [card("x", "doing", null, { title: "RENAMED BY HAND" })])]));
+    expect(s.fx.length).toBeGreaterThan(0);
+    expect(s.fx.every((f) => !f.agent)).toBe(true);
+  });
+
+  it("returns to the page holding the desk you left, when the last page isn't full", () => {
+    const ps = Array.from({ length: 9 }, (_, i) => project(`p${i}`, []));
+    const s = make(office(ps), 240, 240);
+    const { perPage, pageCount } = s.floor;
+    expect(pageCount).toBeGreaterThan(1);
+    const last = perPage - 1;
+    s.setFocus(last);
+    s.setFocus(null);
+    expect(s.floor.desks.map((d) => d.index)).toContain(last);
+  });
+});

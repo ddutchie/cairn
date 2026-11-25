@@ -5,6 +5,7 @@
  */
 
 import { buildOffice } from "@cairn/shared/arcade/workspace/build";
+import { toDateKey } from "@cairn/shared/arcade/workspace/week";
 import type { OfficeData } from "@cairn/shared/arcade/workspace/data";
 import type { Ref } from "@cairn/shared/arcade/workspace/layout";
 import { cairnRefFromMeta } from "@cairn/shared/agent/session-event-fold";
@@ -78,6 +79,9 @@ export function makeOfficeFactory(open: (ref: Ref) => void, onAgent: () => void 
         }
       }, SETTLE_MS);
     });
+    // Overdue, "done this week" and the wall follow the date even if nothing is edited.
+    let day = toDateKey(new Date());
+    let frames = 0;
     // A note the AI is writing shows as a bubble over its desk until the write ends.
     const offStart = noteFilesClient.onAiWriteStarted(({ noteId }) => sim.setNoteWriting(noteId, true));
     const offEnd = noteFilesClient.onAiWriteEnded(({ noteId }) => sim.setNoteWriting(noteId, false));
@@ -95,6 +99,10 @@ export function makeOfficeFactory(open: (ref: Ref) => void, onAgent: () => void 
     return {
       update: () => {
         sim.step();
+        if (++frames % 600 === 0 && toDateKey(new Date()) !== day) {
+          day = toDateKey(new Date());
+          sim.setData(officeFromStore());
+        }
         if (sim.decorDirty) {
           saveDecor(wsId, [...sim.decor]);
           sim.decorDirty = false;

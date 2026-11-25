@@ -6,7 +6,8 @@
 import type { BoardColumn, TaskCard } from "../../types/board";
 import type { Note } from "../../types/notes";
 import type { Project } from "../../types/workspace";
-import { getDueDateStatus } from "../../format/date";
+import { getDueDateStatus, parseIsoLocal } from "../../format/date";
+import { toDateKey } from "./week";
 import { ACCENTS } from "../pixel/arcade-data";
 import { officeTitle, zoneForColumn, type OfficeCard, type OfficeColumn, type OfficeData, type OfficeProject, type Zone } from "./data";
 
@@ -64,14 +65,15 @@ export function buildOffice(src: OfficeSource): OfficeData {
       const due = getDueDateStatus(c.dueDate, now.getTime());
       cards.push({
         id: c.id,
-        title: officeTitle(c.title),
+        title: officeTitle(c.title) || "UNTITLED",
         columnId: c.columnId,
         priority: c.priority,
         zone: z,
-        assignee: c.assignee?.trim() ? officeTitle(c.assignee) : null,
+        assignee: officeTitle(c.assignee ?? "") || null,
         overdue: due === "overdue",
         dueToday: due === "today",
-        dueKey: /^\d{4}-\d{2}-\d{2}$/.test(c.dueDate ?? "") ? (c.dueDate as string) : null,
+        // The same calendar day the overdue flag compares, whether the card stores a date or a date-time.
+        dueKey: due === "none" ? null : toDateKey(parseIsoLocal(c.dueDate as string)),
       });
       order.set(c.id, c.order);
     }
@@ -79,9 +81,9 @@ export function buildOffice(src: OfficeSource): OfficeData {
     const notes = src.notes
       .filter((n) => n.projectId === p.id && !n.archivedAt && !n.deletedAt && n.title.trim())
       .sort((a, b) => Number(b.isPinned) - Number(a.isPinned) || b.updatedAt.localeCompare(a.updatedAt))
-      .map((n) => ({ id: n.id, title: officeTitle(n.title), pinned: n.isPinned, rev: n.updatedAt }));
+      .map((n) => ({ id: n.id, title: officeTitle(n.title) || "UNTITLED", pinned: n.isPinned, rev: n.updatedAt }));
     const columns: OfficeColumn[] = (byProject.get(p.id) ?? []).map((c) => ({ id: c.id, name: officeTitle(c.name) || "COLUMN", zone: zone.get(c.id) ?? "backlog" }));
-    projects.push({ id: p.id, name: officeTitle(p.name), accent: "", columns, cards, notes, doneThisWeek, doneTotal });
+    projects.push({ id: p.id, name: officeTitle(p.name) || "UNTITLED", accent: "", columns, cards, notes, doneThisWeek, doneTotal });
   }
   // Busiest rooms first; colours follow that order so a room keeps its colour while the order holds.
   projects.sort((a, b) => b.cards.length + b.notes.length - (a.cards.length + a.notes.length));

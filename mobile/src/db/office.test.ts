@@ -63,6 +63,18 @@ describe("loadOfficeData", () => {
     expect(office.projects.find((p) => p.id === "p1")!.doneTotal).toBe(1);
   });
 
+  it("changes its fingerprint for an older-stamped edit, a soft delete and a new day", () => {
+    const at = () => loadOfficeData(new Date(NOW)).fingerprint;
+    const a = at();
+    h.db.prepare(`UPDATE task_cards SET title = 'Peer edit', updated_at = '2000-01-01T00:00:00.000Z' WHERE id = 't1'`).run();
+    const b = at();
+    expect(b).not.toBe(a);
+    h.db.prepare(`UPDATE task_cards SET deleted_at = '2000-01-01T00:00:00.000Z' WHERE id = 't1'`).run();
+    const c = at();
+    expect(c).not.toBe(b);
+    expect(loadOfficeData(new Date(new Date(NOW).getTime() + 86_400_000)).fingerprint).not.toBe(c);
+  });
+
   it("changes its fingerprint when the workspace changes", () => {
     const a = loadOfficeData(new Date(NOW)).fingerprint;
     h.db.prepare(`INSERT INTO task_cards (id, column_id, project_id, workspace_id, title, "order", created_at, updated_at)

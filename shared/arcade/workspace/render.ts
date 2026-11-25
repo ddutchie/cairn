@@ -10,6 +10,7 @@ import type { PixelHud } from "../pixel/hud";
 import { lerpHex, PRIORITY_PAL } from "../pixel/kinds";
 import { INK, PixelPainter, type AtlasHandle, type PixelBackend } from "../pixel/painter";
 import type { Model } from "../pixel/models";
+import { rgb } from "../pixel/terrain";
 import { CONTRACTOR, type OfficeCard } from "./data";
 import { COL_HEAD, type Desk, type Rect } from "./layout";
 import { buildDesk, buildPerson, BIN, CHAIR, COFFEE, COOLER, deskKey, PLANTER_BUSH, PLANTER_TALL, ROBOT } from "./models";
@@ -71,6 +72,51 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
   }
 
   private night: { key: string; img: Img } | null = null;
+  private floorImg: { key: string; img: Img } | null = null;
+
+  /**
+   * The planks under the back wall, with the sunlight on them, as one image:
+   * hundreds of rects a frame otherwise. Rebuilt when the room, its windows or
+   * the daylight change.
+   */
+  private floorMap(day: number): Img {
+    const sim = this.sim;
+    const F = sim.floor;
+    const W = sim.area.w;
+    const H = Math.max(1, sim.area.h - F.wall.h);
+    const level = Math.round(day * 20) / 20;
+    const key = `${W}x${H}|${level}|${F.windows.map((w) => `${w.x},${w.w}`).join(";")}`;
+    if (this.floorImg?.key === key) return this.floorImg.img;
+    const px = new Uint8Array(W * H * 4);
+    const fill = (x: number, y: number, w: number, h: number, color: string, alpha = 1) => {
+      const [r, g, b] = rgb(color);
+      for (let yy = Math.max(0, y); yy < Math.min(H, y + h); yy++) {
+        for (let xx = Math.max(0, x); xx < Math.min(W, x + w); xx++) {
+          const i = (yy * W + xx) * 4;
+          px[i] += (r - px[i]) * alpha;
+          px[i + 1] += (g - px[i + 1]) * alpha;
+          px[i + 2] += (b - px[i + 2]) * alpha;
+          px[i + 3] = 255;
+        }
+      }
+    };
+    // Floor planks, staggered.
+    for (let y = 0; y < H; y += 6) {
+      const row = ((y + F.wall.h) / 6) | 0;
+      fill(0, y, W, 6, row % 2 ? FLOOR_A : FLOOR_B);
+      fill(0, y + 5, W, 1, FLOOR_GAP, 0.6);
+      for (let x = (row * 23) % 40; x < W; x += 40) fill(x, y, 1, 5, FLOOR_GAP, 0.5);
+    }
+    // Sunlight from each window, falling forward and to the right.
+    if (level > 0) {
+      for (const w of F.windows) {
+        for (let i = 0; i < 26; i++) fill(w.x + 2 + i, i * 3, w.w - 4, 3, SUN, 0.16 * level * (1 - i / 26));
+      }
+    }
+    const img = this.makeImage(W, H, px);
+    this.floorImg = { key, img };
+    return img;
+  }
 
   /**
    * The darkness over the floor as one image, with a pool of light cut out around every lit monitor.
@@ -232,22 +278,7 @@ export class OfficeRenderer<Img = unknown, Frame = unknown> extends PixelPainter
     const oy = a.y;
     const day = sim.daylight;
     this.clip(a.x, a.y, a.w, a.h, () => {
-      // Floor planks, staggered.
-      for (let y = F.wall.h; y < a.h; y += 6) {
-        const row = (y / 6) | 0;
-        this.rect(ox, oy + y, a.w, 6, row % 2 ? FLOOR_A : FLOOR_B);
-        this.rect(ox, oy + y + 5, a.w, 1, FLOOR_GAP, 0.6);
-        for (let x = (row * 23) % 40; x < a.w; x += 40) this.rect(ox + x, oy + y, 1, 5, FLOOR_GAP, 0.5);
-      }
-      // Sunlight from each window, falling forward and to the right.
-      if (day > 0) {
-        for (const w of F.windows) {
-          for (let i = 0; i < 26; i++) {
-            const y = F.wall.h + i * 3;
-            this.rect(ox + w.x + 2 + i, oy + y, w.w - 4, 3, SUN, 0.16 * day * (1 - i / 26));
-          }
-        }
-      }
+      this.image(this.floorMap(day), ox, oy + F.wall.h);
       // Back wall: windows, the done board, a clock.
       this.rect(ox, oy, a.w, F.wall.h, WALL);
       this.rect(ox, oy + F.wall.h - 6, a.w, 6, WAINSCOT);

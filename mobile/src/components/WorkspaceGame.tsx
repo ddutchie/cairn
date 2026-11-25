@@ -87,6 +87,11 @@ export function WorkspaceGameView() {
           if (next.fingerprint !== fp) {
             fp = next.fingerprint;
             sim.setData(next.office);
+            // The first load can fail: take up the real workspace's plants once it lands.
+            if (next.workspaceId !== wsId) {
+              wsId = next.workspaceId;
+              sim.setDecor(loadDecor(wsId));
+            }
           }
         } catch {
           // DB mid-sync: keep the last good snapshot until the next poll.
